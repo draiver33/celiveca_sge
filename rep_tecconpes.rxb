@@ -1,0 +1,92 @@
+FUNCTION MAINoGenRep
+ 17cSql,oCursor,cMsg:="",oFont1,oFont2,cWhere:="",cDescri:="",nExiste:=0,aExiste:={},I
+ 17cPiel:="",cPlan:="",cGru:="",aData:={},nAt:=0,cUndDes:=""
+ 17oReport,nLineas:=0
+  4oGenRep=NIL
+  2.F.
+ 14
+  1CursorWait()
+  1oGenRep:cWhere :=oGenRep:BuildWhere()
+  1cSql :=oGenRep:BuildSql()
+  4!EMPTY(RGO_I1) .AND. !EMPTY(RGO_F1)
+  1cWhere:="WHERE ORP_NUMERO>='"+RGO_I1+"' AND ORP_NUMERO<='"+RGO_F1+"'"
+ 14
+  1cSql:="SELECT ORP_CANTID,INV_DESCRI,COM_CODCOM,SUM(COM_CANTID*ORP_CANTID) AS COM_CANTID,COM_UNDMED,ORP_CODALM,"+ "ORP_NUMERO,ORP_FECHA,FOR_UNDMED,FOR_CODIGO,ORP_NUMMEZ,COM_COMPO,ORP_CODINV,MEM_MEMO "+ "FROM DPORDENPRODUCC INNER JOIN DPINV ON ORP_CODINV=INV_CODIGO "+ "INNER JOIN DPCOMPPRODUCCION ON ORP_CODINV=COM_CODINV AND ORP_CODFOR=COM_CODFOR "+ "INNER JOIN DPFORMULASPROD ON ORP_CODFOR=FOR_CODIGO AND ORP_CODINV=FOR_CODINV "+ "LEFT JOIN DPMEMO ON FOR_NUMMEM=MEM_NUMERO "+cWhere+ " GROUP BY COM_CODCOM,COM_COMPO,ORP_NUMERO "+ "ORDER BY INV_DESCRI"
+  1oCursor:=OpenTable(cSql,.T.)
+  1oCursor:Replace("COM_DESCRI",SPACE(40))
+  1oCursor:Replace("COL_DESCRI",SPACE(20))
+  1oCursor:Replace("INV_EXISTE",0)
+  1oCursor:Replace("UND_DESCRI",SPACE(30))
+  1oCursor:Replace("TAL_01","AA")
+  5 !oCursor:Eof()
+  1cUndDes:=SQLGET("DPUNDMED","UND_DESCRI","UND_CODIGO='"+oCursor:FOR_UNDMED+"'")
+  1oCursor:Replace("UND_DESCRI",cUndDes)
+  1cGru:=SQLGET("DPINV","INV_GRUPO","INV_CODIGO='"+oCursor:COM_CODCOM+"'")
+  1cDescri:=SQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oCursor:COM_CODCOM))
+  1oCursor:Replace("COM_DESCRI",cDescri)
+  1nExiste:=EJECUTAR("INVGETEXI",oCursor:COM_CODCOM,oCursor:COM_UNDMED,oCursor:ORP_CODALM,oDp:cSucursal,oDp:dFecha,TIME(),"MOV_FISICO")
+  1oCursor:Replace("INV_EXISTE",nExiste)
+  1nAt:=ASCAN(aData,{|a,n|a[3]==oCursor:COM_CODCOM .AND. a[5]==oCursor:COM_UNDMED .AND. a[12]=oCursor:COM_COMPO})
+  4nAt>0
+  1aData[nAt,1]:=aData[nAt,1]+oCursor:ORP_CANTID
+  1aData[nAt,14]:=aData[nAt,4]+oCursor:COM_CANTID
+  7
+  1AADD(aData,oCursor:aDataFill[oCursor:RecNo()])
+ 14
+  1oCursor:DbSkip()
+  6
+  1oCursor:aDataFill:=ACLONE(aData)
+  1Set(3,5 )
+  1oCursor:CtoDbf("CRYSTAL\TECCONPES1.DBF")
+  1Set(3,2 )
+  4!ChkSql(cSql,@cMsg)
+  1MensajeErr(cMsg,"Reporte <REPORTE>")
+  2.F.
+ 14
+  4!oGenRep:OutPut(.T.)
+  2.F.
+ 14
+  4oCursor:RecCount()=0
+  1MensajeErr("No fué posible Encontrar Información","Consulta Vacia Reporte <REPORTE>")
+  1oCursor:End()
+  2.F.
+ 14
+  1oCursor:GoTop()
+  1oFont1 := TFont():New("ARIAL",0,-10,,,,,,,,,,,,,,)
+  1oFont2 := TFont():New("ARIAL",0,-10,,.T.,,,,,,,,,,,,)
+  1oReport := DpRptBegin({{||"Requisicion de Materiales"},{||"Fecha: "+dtoc(Date())+" Hora: "+TIME()}},{},{{||"Página: "+str(oReport:nPage,3)+" Registros: "+alltrim(str(nLineas,5))}},{oFont1,oFont2},{},.F.,,,,.T.,,,"Requisicion de Materiales",,,UPPER("CENTER") )
+  1oGenRep:SetDevice(oReport)
+  1DpRptAddColumn({{||"Número de Pedido"}},,{{||oCursor:ORD_PEDNUM}},10,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Cantidad de Bultos"}},,{{||oCursor:ORP_BULTOS}},3,{"999"},,.F.,,UPPER("RIGHT"),.F.,.F.,)
+  1DpRptEnd()
+  1oReport:bSkip:={||oCursor:DbSkip()}
+  1oReport:Activate(,{||!oCursor:Eof()},,,{||RepBitmap()},,{|oGrp|oReport:NewLine()},,,,{||ONCHANGE()},,,)
+  1oGenRep:OutPut(.F.)
+  1oFont1:End()
+  1oFont2:End()
+  2NIL
+FUNCTION ONCHANGE
+  1nLineas:=nLineas+1
+  2.T.
+FUNCTION PRINTMEMOcMemo,nCol,lData,nIni
+ 17nFor,aLines
+  4Empty(cMemo)
+  2""
+ 14
+  1nIni := If(nIni == nil,1,nIni )
+  1cMemo :=STRTRAN(cMemo,CHR(10),"")
+  1aLines:=_VECTOR(cMemo,CHR(13))
+  4lData
+  2aLines[1]
+ 14
+ 10nFor := nIni TO LEN(aLines)
+  1oReport:StartLine()
+  1oReport:Say(nCol,aLines[nFor])
+  1oReport:EndLine()
+ 11
+  1oReport:Newline()
+  2""
+FUNCTION REPBITMAP
+  1oDp:cLogoBmp := If(oDp:cLogoBmp == nil,"BITMAPS\LOGO.BMP",oDp:cLogoBmp )
+  1oReport:SayBitmap(.3,.3,oDp:cLogoBmp,.5,.5)
+  2NIL

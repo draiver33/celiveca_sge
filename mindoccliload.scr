@@ -1,0 +1,219 @@
+// Programa   : MINDOCCLILOAD
+// Fecha/Hora : 08/10/2005 22:34:37
+// Propósito  : Carga de Valores en DPFACTURAV
+// Creado Por : Juan Navas
+// Llamado por: DPFACTURAV
+// Aplicación : Ventas
+// Tabla      : DPDOCCLI
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(oDoc)
+  LOCAL oTable,oCol,oGet,dFecha,cNumero:="",cLetra:=""
+  LOCAL oData,cIp:=oDp:cIpLocal
+
+  IF oDoc=NIL
+    RETURN .T.
+  ENDIF
+
+  SysRefresh(.T.)
+
+  dFecha:=IIF(oDoc:nOption=1 , oDp:dFecha , oDoc:DOC_FECHA )
+
+  oDoc:lSelCodSuc:=.F. // Seleccionar Codigo Sucursal
+  oDoc:lImportAut:=.F. 
+
+  // Valida la Fecha de Documentos Fiscales, no se puede incluir,Modifica o Anular Documentos Fiscales
+  IF oDoc:lPar_LibVta .AND. (!oDoc:nOption=0 .AND. !EJECUTAR("DPVALFECHA" , dFecha , .T. , .T. ))
+    oDoc:Cancel()
+    RETURN .F.
+  ENDIF
+
+  IF oDoc:nOption=3
+
+    IF !EJECUTAR("DPDOCCLIISDEL",oDoc) // Verifica si Puede ser Modificado
+      oDoc:Cancel()
+      RETURN .F.
+    ENDIF
+
+    IF !SQLGET("DPDOCCLICTA","SUM(CCD_MONTO)",;
+                             "CCD_CODSUC"+GetWhere("=",oDoc:DOC_CODSUC)+" AND "+;
+                             "CCD_TIPDOC"+GetWhere("=",oDoc:DOC_TIPDOC)+" AND "+;
+                             "CCD_NUMERO"+GetWhere("=",oDoc:DOC_NUMERO)+" AND "+;
+                             "CCD_ACT = 1 ")=0
+
+      MensajeErr(oDoc:cNomDoc+" ["+oDoc:DOC_NUMERO+"]"+" Posee Cuentas Contables","Debe Utilizar la Opción Documentos")
+      oDoc:Cancel()
+      RETURN .F.
+
+    ENDIF
+
+    oDoc:oScroll:UpdateFromForm()
+
+    IF oDoc:DOC_CODIGO=STRZERO(0,10)
+      EJECUTAR("DPCLICEROLEER",oDoc)
+    ENDIF
+
+  ENDIF
+
+  oDoc:SetValue("DOC_TIPDOC" ,oDoc:cTipDoc)
+
+  oDoc:lEditCli   :=.T.
+  oDoc:cCodigo    := oDoc:DOC_CODIGO
+  oDoc:cNumero    := oDoc:DOC_NUMERO
+  oDoc:DOC_DOCORG :="V" 
+  oDoc:DOC_CXC    := oDoc:nPar_CxC
+  oDoc:SetValue("DOC_TIPTRA","D")
+  oDoc:cZonaNL    :=""
+  oDoc:cInvCodMon :=""
+  oDoc:oFocusFind :=IIF(oDoc:oFocusFind=NIL,oDoc:oDOC_NUMERO,oDoc:oFocusFind)
+
+  IF oDoc:nOption=1
+
+    oDoc:nBruto    :=0
+    oDoc:nIva      :=0
+    oDoc:nItems    :=0    // Numero de Items
+    oDoc:cCliPrecio:="" 
+    oDoc:DOC_INVMON:=.F.
+    oDoc:lImportAut:=.F.
+
+    oDoc:SetValue("DOC_FECHA" ,DPFECHA()    )
+    oDoc:SetValue("DOC_CODSUC",oDp:cSucursal)
+    oDoc:SetValue("DOC_HORA"  ,DPHORA()     )
+    oDoc:SetValue("DOC_CENCOS",oDp:cCenCos  )
+    oDoc:SetValue("DOC_DESTIN","N"          ) // Nacional
+    oDoc:SetValue("DOC_CODMON",oDp:cMoneda  )
+    oDoc:SetValue("DOC_NETO"  ,0            )
+    oDoc:SetValue("DOC_NUMMEM",0            )
+    oDoc:SetValue("DOC_CODTRA",oDp:cCodTrans)
+   // oDoc:SetValue("cNumEpson" ,""           ) // Número de Ultima Factura EPSON Se inactivo para volver a imprimir con EPSON  de antes TJ
+
+    oDoc:cCodigo:=""
+    oDoc:cNumero:=""
+    oDoc:cZonaNL:="N" // Nacional Es cambiado VALCODCLI
+    oDoc:SetValue("DOC_ESTADO" ,"AC")  // Pendiente
+    oDoc:DOC_ANUFIS :=.F.  
+
+    oDoc:oScroll:UpdateFromForm()
+
+    IF !oDoc:lPar_CODCLI
+
+      oDoc:SetValue("DOC_CODIGO",STRZERO(0,10))
+      IF !EJECUTAR("DPDOCCLIVALCLI",oDoc:oDOC_CODIGO,oDoc)
+        oDoc:CANCEL()
+      ENDIF
+
+      oDoc:oCliNombre:Refresh(.T.)
+
+    ENDIF
+
+    // Se activo TJ
+    IF oDoc:nEpson<>0 .AND. oDocCli:nPar_CxC<>0
+
+      cNumero:=EJECUTAR("EPSONPF-NUM",oDocCli:nPar_CxC=1)
+
+      IF Empty(cNumero)
+         RETURN .F.
+      ENDIF
+
+      oDocCli:oDOC_NUMERO:VarPut(cNumero,.T.)
+
+    ENDIF 
+
+    // Se inactivo para volver a imprimir con EPSON  de antes TJ
+    // Numeracion de la Impresora Fiscal
+   /*
+    IF oDoc:nEpson<>0 .AND. oDocCli:nPar_CxC<>0 
+
+      EJECUTAR("EPSONDOCNUM",oDocCli)
+   */
+
+/*
+      cNumero:=EJECUTAR("EPSONPF-NUM",oDocCli:nPar_CxC=1)
+
+      cLetra:=ALLTRIM(SQLGET("DPEQUIPOSPOS","EPV_SERIEF,EPV_NUMERO","EPV_IP"    +GetWhere("=",oDp:cPcName)+" AND "+;
+                                                                    "EPV_TIPDOC"+GetWhere("=",cTipDoc )))
+
+      // Cada PC posee su Impresora   
+      IF !Empty(cLetra)
+          cNumero:=cLetra+STRZERO(VAL(cNumero)+1,9)
+      ELSE
+          cNumero:=STRZERO(VAL(cNumero)+1,10)
+      ENDIF
+
+//? cNumero,cLetra,"IMPRESORA FISCAL"
+
+      IF Empty(cNumero)
+         RETURN .F.
+      ENDIF
+
+      oData:=DATASET("SUC_V"+oDp:cSucursal,"ALL")
+      oData:Set(oDoc:cTipDoc+"Numero",cNumero)
+      oData:Set(oDoc:cTipDoc+"NumFis",cNumero)
+      oData:Save(.T.)
+      oData:End()
+
+      oDocCli:oDOC_NUMERO:VarPut(cNumero,.T.)
+*/
+
+   // ENDIF
+
+  ELSE
+
+    // Obtengo la Cantidad de Items
+
+    oDoc:nItems:=COUNT("DPMOVINV","MOV_CODSUC"+GetWhere("=",oDoc:DOC_CODSUC)+" AND "+; 
+                                  "MOV_TIPDOC"+GetWhere("=",oDoc:DOC_TIPDOC)+" AND "+;
+                                  "MOV_DOCUME"+GetWhere("=",oDoc:DOC_NUMERO)+" AND "+; 
+                                  "MOV_CODCTA"+GetWhere("=",oDoc:DOC_CODIGO)+" AND "+; 
+                                  "MOV_APLORG"+GetWhere("=", "V")+" AND "+; 
+                                  "MOV_INVACT"+GetWhere("=",1))
+
+//? oDp:nSeconds,CLPCOPY(oDp:cSql)
+
+/*
+// JN 13/12/2013 
+    oTable:=OpenTable("SELECT COUNT(*) AS MOV_ITEMS FROM DPMOVINV "+; 
+                      "WHERE MOV_CODSUC"+GetWhere("=",oDoc:DOC_CODSUC)+" AND "+; 
+                            "MOV_TIPDOC"+GetWhere("=",oDoc:DOC_TIPDOC)+" AND "+;
+                            "MOV_DOCUME"+GetWhere("=",oDoc:DOC_NUMERO)+" AND "+; 
+                            "MOV_CODCTA"+GetWhere("=",oDoc:DOC_CODIGO)+" AND "+; 
+                            "MOV_APLORG"+GetWhere("=", "V")+" AND "+; 
+                            "MOV_INVACT"+GetWhere("=",1),.T.) 
+
+    oDoc:nItems:=oTable:MOV_ITEMS 
+    oTable:End() 	
+*/
+    oDoc:cCliPrecio:=MYSQLGET("DPCLIENTES","CLI_LISTA","CLI_CODIGO"+GetWhere("=",oDoc:DOC_CODIGO))
+
+    EJECUTAR("DPDOCCLIIMP",oDoc:DOC_CODSUC,oDoc:DOC_TIPDOC,oDoc:DOC_CODIGO,oDoc:DOC_NUMERO,.F.,oDoc:DOC_DCTO,oDoc:DOC_RECARG,oDoc:DOC_OTROS,"V")
+ 
+    oDoc:nBruto:=oDp:nBruto
+    oDoc:nIva  :=oDp:nIva
+
+//    EJECUTAR("DPDOCCLIEDO",oDoc:DOC_CODSUC,oDoc:cTipDoc,oDoc:DOC_CODIGO,oDoc:DOC_NUMERO,;
+//                          oDoc:oEstado,oDoc:DOC_CXC,oDoc:DOC_NETO,oDoc)
+  ENDIF
+
+//  IF oDoc:nOption=3 .AND. oDoc:DOC_CODIGO=STRZERO(0,10)
+//
+//      EJECUTAR("DPCLICEROLEER",oDoc)
+//
+//  ENDIF
+
+  oDoc:DOC_CODIGO_:=oDoc:DOC_CODIGO // Cliente Validad
+  
+  COMBOINI(oDocCli:oDOC_CODMON)
+  oDoc:oEstado:Refresh(.T.)
+  oDoc:oCliNombre:Refresh(.T.)
+  oDoc:oVenNombre:Refresh(.T.)
+  oDoc:oNeto:Refresh(.T.)
+ oDoc:oDi:Refresh(.T.)
+//  oDoc:oBruto:Refresh(.T.)
+  oDoc:oIva:Refresh(.T.)
+  oDocCli:cVeces:=0
+
+RETURN .T.
+
+// EOF
+

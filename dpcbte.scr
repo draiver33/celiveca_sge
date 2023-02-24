@@ -1,0 +1,634 @@
+// Programa   : DPCBTE
+// Fecha/Hora : 22/11/2004 23:10:42
+// Propósito  : Editar Comprobante Contable
+// Creado Por : Juan Navas
+// Llamado por: Contabilidad
+// Aplicación : Contabilidad
+// Tabla      : DPCBTE
+// 14/10/2019. DR. Filtra asientos por sucursal y centro de costos
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cActual,cNumero,dFecha,lView)
+ LOCAL I,aData:={},oFontG,oGrid,oCol,cSql,oFontB,cTitle:="Asientos Contables por Actualizar"
+ LOCAL oFont,cScope,oData
+
+ DEFAULT cActual:="N",oDp:lCenCos:=.T.,oDp:lNumCom:=.F.
+
+ cTitle:=IIF(cActual="S","Asientos Contables Actualizados",cTitle)
+ cTitle:=IIF(cActual="A","Asientos de Auditoría"  ,cTitle)
+
+ cScope:="CBT_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND CBT_ACTUAL"+GetWhere("=",cActual)+;
+         " AND "+GetWhereAnd("CBT_FECHA",oDp:dFchInicio,oDp:dFchCierre)
+
+ IF !Empty(cNumero)
+
+    cScope:="CBT_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND "+;
+            "CBT_ACTUAL"+GetWhere("=",cActual      )+" AND "+;
+            "CBT_NUMERO"+GetWhere("=",cNumero      )+" AND "+;
+            "CBT_FECHA "+GetWhere("=",dFecha )
+
+ ENDIF
+
+
+ // Font Para el Browse
+ IF Empty(oDp:cModeVideo)
+   DEFINE FONT oFontB NAME "Verdana"   SIZE 0, -11 BOLD
+   DEFINE FONT oFont  NAME "Verdana"   SIZE 0, -11
+ ELSE
+   DEFINE FONT oFontB NAME "Verdana"   SIZE 0, -14 BOLD
+   DEFINE FONT oFont  NAME "Verdana"   SIZE 0, -14
+ ENDIF
+
+ oCbte:=DOCENC(cTitle,"oCbte","DPCBTE"+oDp:cModeVideo+".EDT")
+
+ oData  :=DATASET("PRIV_CONTAB","USER",,,oDp:cUsuario)
+
+ oCbte:cNumero  :=oData:Get("Numero",STRZERO(1,8))
+
+ oCbte:lActCbte   :=oData:Get("lActCbte"  ,.T.)
+ oCbte:lRevCbte   :=oData:Get("lRevCbte"  ,.T.)
+ oCbte:lIncCbteAct:=oData:Get("lIncCbteAct",.T.)
+
+ oData:End()
+
+ IF !Empty(cNumero) .AND. lView
+   oCbte:lMod:=.F.
+   oCbte:lInc:=.F.
+   oCbte:lCon:=.F.
+   oCbte:lEli:=.F.
+ ENDIF
+
+ oCbte:Prepare()
+ oCbte:cPreSave :="PRESAVE"
+ oCbte:cCancel  :="CANCEL"
+ oCbte:lBar     :=.T.
+ oCbte:nBtnStyle:=1
+ oCbte:lCbteOk  :=.F.
+ oCbte:dFecha   :=CTOD("")
+ oCbte:cNumero  :=""
+ oCbte:SetScope(cScope)
+              
+ oCbte:SetTable("DPCBTE","CBT_CODSUC,CBT_ACTUAL,CBT_FECHA,CBT_NUMERO")
+ oCbte:Windows(0,0,410+IIF(Empty(oDp:cModeVideo),0,200),800+IIF(Empty(oDp:cModeVideo),0,220))
+ oCbte:Repeat("CBT_ACTUAL,CBT_FECHA")
+ oCbte:nDebe   :=0
+ oCbte:nHaber  :=0
+ oCbte:nTotal  :=0
+ oCbte:cActual :=cActual
+ oCbte:cList   :="DPCBTE_"+cActual+".BRW"
+ oCbte:lFind   :=.t.
+ oCbte:SetMemo("CBT_NUMMEM","Descripción Amplia para el Comprobante Contable")
+
+ IF DPVERSION()>4
+   oCbte:SetAdjuntos("CBT_FILMAI") // Vinculo con DPFILEEMP
+ ENDIF
+
+
+
+ // ag TJ
+ IF cActual="A"
+    oCbte:lActual:=IIF(cActual=="A",.F.,.T.)
+   ELSE
+    oCbte:lActual:=IIF(cActual=="N",.F.,.T.)
+ ENDIF
+ //
+
+ IF cActual="N" .AND. Empty(cNumero) .AND. oCbte:lActCbte
+   oCbte:AddBtn("ACTUALIZARCBTE.bmp","Actualizar","(oCbte:nOption=0)",;
+                "EJECUTAR('DPCBTEACT',oCbte:CBT_NUMERO,oCbte:CBT_FECHA,oCbte)","CLI")
+ ENDIF
+
+ IF cActual="S" .AND. Empty(cNumero) .AND. oCbte:lRevCbte
+   oCbte:AddBtn("REVERSARCBTE.bmp","Reversar","(oCbte:nOption=0)",;
+                "EJECUTAR('DPCBTEREV',oCbte:CBT_NUMERO,oCbte:CBT_FECHA,oCbte)","CLI")
+ ENDIF
+
+ @ 2,1 SAY "Número:" RIGHT
+
+ @ 2,5 GET oCbte:oCBT_NUMERO VAR oCbte:CBT_NUMERO;
+       WHEN oCbte:nOption<>0;
+       VALID CERO(oCbte:CBT_NUMERO)
+
+ @ 2,1 SAY "Fecha:" RIGHT
+ @ 3,5 BMPGET oCbte:oCBT_FECHA VAR oCbte:CBT_FECHA;
+       PICTURE oDp:cFormatoFecha;
+       WHEN oCbte:nOption<>0;
+       VALID oCbte:CBTFECHA();
+       NAME "BITMAPS\CALENDAR.BMP"; 
+       ACTION LbxDate(oCbte:oCBT_FECHA,oCbte:CBT_FECHA);
+       SIZE 49,NIL
+
+ @ 2,15 SAY "Comentarios:" RIGHT
+ @ 2,20 GET oCbte:oCBT_COMEN1 VAR oCbte:CBT_COMEN1;
+        WHEN oCbte:nOption<>0;
+
+ @ 3,20 GET oCbte:oCBT_COMEN2 VAR oCbte:CBT_COMEN2;
+        WHEN oCbte:nOption<>0;
+
+ // Totales
+ @ 2,44 SAY oCbte:oDebe  PROMPT TRAN(oCbte:nDebe ,"9,999,999,999,999,999.99") RIGHT
+ @ 3,44 SAY oCbte:oHaber PROMPT TRAN(oCbte:nHaber,"9,999,999,999,999,999.99") RIGHT
+
+ @ 1,10 SAY oCbte:oCta PROMPT GetFromVar("{oDp:xDPCTA}"   )+SPACE(40)+CHR(10)+;
+                              GetFromVar("{oDp:xDPCENCOS}")+SPACE(40)
+
+ @ 2,45 SAY "Debe:"  RIGHT
+ @ 2,45 SAY "Haber:" RIGHT
+
+ cSql :=" SELECT "+SELECTFROM("DPASIENTOS",.F.)+;
+        " ,DPCTA.CTA_CODIGO,DPCTA.CTA_DESCRI "+;
+        " ,DPCENCOS.CEN_DESCRI "+;
+        " FROM DPASIENTOS "+;
+        " INNER JOIN DPCTA ON MOC_CUENTA=CTA_CODIGO "+;
+        " LEFT  JOIN DPCENCOS ON MOC_CENCOS=CEN_CODIGO AND MOC_CODSUC=CEN_CODSUC "
+
+  cScope:="MOC_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND MOC_ACTUAL"+GetWhere("=",cActual)
+  oGrid :=oCbte:GridEdit( "DPASIENTOS" , "CBT_FECHA,CBT_NUMERO", "MOC_FECHA,MOC_NUMCBT" , cSql , cScope)
+
+  oGrid:cScript  :="DPCBTE"
+  oGrid:aSize    :={110-15,0,775+5+IIF(Empty(oDp:cModeVideo),0,220),200+08+IIF(Empty(oDp:cModeVideo),0,170)}
+  oGrid:oFontH   :=oFontB
+  oGrid:oFont    :=oFont
+  oGrid:bWhen    :="!EMPTY(oCbte:CBT_NUMERO)"
+  oGrid:bValid   :="!EMPTY(oGrid:MOC_CUENTA)"
+  oGrid:bChange  :='oCbte:oCta:SetText(GetFromVar("{oDp:xDPCTA}")+": "+oGrid:CTA_DESCRI)'
+
+  IF oDp:lCenCos
+     oGrid:bChange  :='oCbte:oCta:SetText(GetFromVar("{oDp:xDPCTA}")+": "+oGrid:CTA_DESCRI+CHR(10)+GetFromVar("{oDP:xDPCENCOS}")+": "+oGrid:CEN_DESCRI)'
+  ENDIF
+
+  oGrid:oSayOpc  :=oCbte:oCta
+  oGrid:cRegistro:="Asiento Contable"
+  oGrid:cPostSave:="GRIDPOSTSAVE"
+  oGrid:cLoad    :="GRIDLOAD"
+  oGrid:cTotal   :="GRIDTOTAL" 
+  oGrid:cPreSave :="GRIDPRESAVE"
+  oGrid:cItem    :="MOC_ITEM"
+  oGrid:oFontH   :=oFontB // Fuente para los Encabezados
+  oGrid:lTotal   :=.T.
+  oGrid:SetMemo("MOC_NUMMEM","Descripción Amplia",1,1,100,200)
+
+  oGrid:nClrPane1:=14087148
+  oGrid:nClrPane2:=11790521
+  oGrid:nClrPaneH:=14680021
+  oGrid:nClrTextH:=CLR_GREEN
+
+  IF cActual="N"
+    oGrid:nClrPane1:=16770764
+    oGrid:nClrPane2:=16566954
+    oGrid:nClrPaneH:=13216655
+    oGrid:nClrTextH:=CLR_YELLOW
+  ENDIF
+
+  IF cActual="A"
+    oGrid:nClrPane1:=14811135
+    oGrid:nClrPane2:=13367294
+    oGrid:nClrPaneH   := 11856126
+    oGrid:nClrTextH   := CLR_BLACK
+  ENDIF
+
+  oGrid:nClrPaneF:=oGrid:nClrPaneH
+  oGrid:nClrTextF:=oGrid:nClrTextH
+  oGrid:nRecSelColor:=oGrid:nClrPaneH
+
+
+  // oGrid:SetColorHead(CLR_BLUE,CLR_RED)
+
+  // Cuenta Contable
+  oCol:=oGrid:AddCol("MOC_CUENTA")
+  oCol:cTitle   :="Código"
+  oCol:bValid   :={||oGrid:VMOC_CUENTA(oGrid:MOC_CUENTA)}
+  oCol:cMsgValid:="Cuenta no Existe"
+  oCol:nWidth   :=130+IIF(Empty(oDp:cModeVideo),0,40)
+  oCol:cListBox :="DPCTA.BRW"
+  oCol:cListBox :="DPCTAACT.LBX"
+  oCol:bPostEdit:='oGrid:ColCalc("MOC_MONTO")'    // Obtiene el Nombre del Producto
+  oCol:lItems   :=.T.
+  oCol:cItems   :="Asientos : "
+  oCol:nEditType:=EDIT_GET_BUTTON
+
+  IF oDp:lCenCos
+      oCol:=oGrid:AddCol("MOC_CENCOS")
+      oCol:cTitle   :=GetFromVar("{oDp:xDPCENCOS}")
+      oCol:bValid   :={||oGrid:VMOC_CENCOS(oGrid:MOC_CENCOS)}
+      oCol:cMsgValid:=GetFromVar("{oDp:xDPCENCOS}")+" no Existe"
+      oCol:nWidth   :=80+IIF(Empty(oDp:cModeVideo),0,20)
+      oCol:cListBox :="DPCENCOSACT.LBX"
+//    oCol:bPostEdit:='oGrid:ColCalc("MOC_MONTO")'    // Obtiene el Nombre del Producto
+      oCol:nEditType:=EDIT_GET_BUTTON
+  ENDIF
+
+  // Documento Asociado
+  oCol:=oGrid:AddCol("MOC_DOCUME")
+  oCol:cTitle:="Doc/Asoc"
+  oCol:bWhen :="!Empty(oGrid:MOC_CUENTA)"
+  oCol:nWidth:=150+IIF(Empty(oDp:cModeVideo),0,40)
+  oCol:lRepeat:=.T.
+
+  // Tipo
+  oCol:=oGrid:AddCol("MOC_TIPO")
+  oCol:cTitle :="Tipo"
+  oCol:bWhen  :="!Empty(oGrid:MOC_CUENTA)"
+  oCol:nWidth :=15+IIF(Empty(oDp:cModeVideo),0,30)
+  oCol:lRepeat:=.T.
+
+  // Descripción
+  oCol:=oGrid:AddCol("MOC_DESCRI")
+  oCol:cTitle:="Descripción"
+  oCol:bWhen :="!Empty(oGrid:MOC_CUENTA)"
+  oCol:nWidth:=280+iif(oDp:lCenCos,-80,0)+IIF(Empty(oDp:cModeVideo),0,90)
+
+  oCol:lRepeat:=.F.  // cambio de F a T Ag TJ
+
+  // Monto
+  oCol:=oGrid:AddCol("MOC_MONTO")
+  oCol:cTitle :="Monto"
+  oCol:bWhen  :="!Empty(oGrid:MOC_CUENTA)"
+  oCol:cPicture:="999,999,999,999,999.99"
+  oCol:nWidth :=155+IIF(Empty(oDp:cModeVideo),0,10)
+
+  oCol:lTotal :=.T. // Genera Totales oCol:nTotal
+//oCol:bCalc  :={||IIF(oGrid:nOption=1,oCbte:nTotal*-1,oGrid:MOC_MONTO)}
+
+  oCbte:oFocus    :=oCbte:oCBT_NUMERO
+  oCbte:oFocusFind:=oCbte:oCBT_NUMERO
+  
+  oCbte:Activate({||oCbte:INICIO()})
+
+RETURN .T.
+
+FUNCTION INICIO()
+  Eval(oGrid:bChange)
+RETURN .T.
+
+/*
+// Carga los Datos
+*/
+FUNCTION LOAD()
+
+// juan  IF oCbte:nOption=1
+
+
+// ag TJ 3.02
+      IF oCbte:nOption=1.AND. !oCbte:lActual
+
+      oCbte:CBT_FECHA  :=oDp:dFecha
+
+// ag TJ 3.02
+      IF !oDp:lNumCom
+         oCbte:CBT_NUMERO :=SQLINCREMENTAL("DPCBTE","CBT_NUMERO","CBT_CODSUC"+GetWhere("=",oDp:cSucursal   )+" AND "+;
+                                                               "CBT_FECHA "+GetWhere("=",oCbte:CBT_FECHA))
+        ELSE
+        oCbte:CBT_NUMERO :=EJECUTAR("DPNUMCBTE","CONTAB",oDp:dFecha)
+      ENDIF
+
+
+/* Juan
+      oCbte:CBT_NUMERO :=SQLINCREMENTAL("DPCBTE","CBT_NUMERO","CBT_CODSUC"+GetWhere("=",oDp:cSucursal   )+" AND "+;
+                                                              "CBT_ACTUAL"+GetWhere("=",oCbte:CBT_ACTUAL)+" AND "+;
+                                                              "CBT_FECHA "+GetWhere("=",oCbte:CBT_FECHA))
+*/
+
+      oCbte:CBT_CODSUC :=oDp:cSucursal
+      oCbte:oCBT_NUMERO:Refresh(.T.)
+      oCbte:oCBT_FECHA :Refresh(.T.)
+
+      oCbte:CBT_ACTUAL:=oCbte:cActual
+      oGrid:CancelEdit()
+
+   ENDIF
+
+   oGrid:ShowTotal()
+
+   IF oCbte:nOption=0
+
+      oGrid:CancelEdit()
+      oCbte:dFecha   :=oCbte:CBT_FECHA
+      oCbte:cNumero  :=oCbte:CBT_NUMERO
+      oCbte:oCBT_FECHA:VarPut( oCbte:CBT_FECHA ,.T.)
+
+   ELSE
+
+      DpFocus(oCbte:oCBT_NUMERO)
+
+   ENDIF
+
+//   oCbte:oCBT_FECHA:oGet:buffer:=DTOC(oCbte:CBT_FECHA)
+//   oCbte:oCBT_FECHA:DispText()
+
+// ag TJ 3.02
+   IF oCbte:nOption=3.AND. oCbte:lActual
+      MensajeErr("Comprobantes Actualizados no pueden ser Modificados")
+      Return .f.
+   ENDIF
+
+   // Esto Requiere Permiso por parte del usuario
+
+   IF oCbte:nOption=1.AND. oCbte:lActual .And. oCbte:cNumero="" .AND. !oCbte:lIncCbteAct
+
+      MensajeErr("Para Incluir, primero debe crear el comprobante como diferido."+CRLF+;
+                 'Luego ejecute el proceso de "Actualizar".')
+
+      Return .F.
+
+   ENDIF
+
+
+RETURN .T.
+
+/*
+// Valida Cancelación
+*/
+FUNCTION CANCEL()
+
+  oCbte:GRIDTOTAL() // Calcula el Total  cScope:="MOC_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND MOC_ACTUAL"+GetWhere("=",cActual)
+  oCbte:nTotal:=oCbte:aGrids[1]:GetTotal("MOC_MONTO")
+
+  IF oCbte:aGrids[1]:nOption=1
+     oCbte:nTotal:=oCbte:nTotal-oCbte:aGrids[1]:MOC_MONTO
+  ENDIF
+
+  //En caso que el Total sea -0.00 pase a 0.00
+  oCbte:nTotal:=VAL(LSTR(oCbte:nTotal))
+
+  IF oCbte:cActual<>"N" .AND. oCbte:nTotal<>0
+     MensajeErr("Descuadre del Comprobante","No puede ser Cancelado")
+     RETURN .F.
+  ENDIF
+
+  oCbte:LOAD() 
+
+RETURN .T.
+/*
+// Ejecuta la Impresión del Documento
+*/
+FUNCTION PRINTER()
+   LOCAL cRep:="ASIENTOACT",oRep
+
+   IF oCbte:CBT_ACTUAL="N"
+      cRep:="ASIENTODIF"
+   ENDIF
+   
+   IF oCbte:CBT_ACTUAL="A"
+      cRep:="ASIENTOAUD"
+   ENDIF
+
+   oRep:=REPORTE(cRep)
+   oRep:SetRango(1,oCbte:CBT_NUMERO,oCbte:CBT_NUMERO)
+   oRep:SetRango(2,oCbte:CBT_FECHA ,oCbte:CBT_FECHA )
+
+RETURN .T.
+
+FUNCTION PRESAVE()
+ LOCAL aData:=oCbte:aGrids[1]:oBrw:aArrayData   // ag TJ 3.02
+
+  oCbte:CBT_NUMEJE:=EJECUTAR("FCH_EJERGET",oCbte:CBT_FECHA)
+  oCbte:Set("CBT_CODSUC",oDp:cSucursal)
+
+  IF !oCbte:CBTFECHA()
+     RETURN .F.
+  ENDIF
+
+// ag TJ 3.02
+  IF LEN(aData)=1 .AND. Empty(aData[1,1]) .AND. !MsgNoYes("Desea Grabar Comprobante Vacio")
+     RETURN .F.
+  ENDIF
+
+  IF !oCbte:lSaved
+     RETURN .T.
+  ENDIF
+
+  oCbte:GRIDTOTAL() // Calcula el Total  cScope:="MOC_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND MOC_ACTUAL"+GetWhere("=",cActual)
+  oCbte:nTotal:=oCbte:aGrids[1]:GetTotal("MOC_MONTO")
+
+  IF oCbte:aGrids[1]:nOption=1
+     oCbte:nTotal:=oCbte:nTotal-oCbte:aGrids[1]:MOC_MONTO
+  ENDIF
+
+  //En caso que el Total sea -0.00 pase a 0.00
+  oCbte:nTotal:=VAL(LSTR(oCbte:nTotal))
+
+  IF oCbte:cActual<>"N" .AND. oCbte:nTotal<>0
+     MensajeErr("Descuadre del Comprobante","No puede ser Finalizado")
+     RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+/*
+// Permiso para Borrar
+*/
+FUNCTION PREDELETE(cActual)
+
+ IF oCbte:cActual="S" .AND. !EJECUTAR("DPVALFECHA",oCbte:CBT_FECHA,.T.,.T.)
+
+     RETURN .F.
+
+ ENDIF
+ 
+ IF !MsgNoYes("Desea Eliminar el Comprobante: "+oCbte:CBT_NUMERO+;
+                CRLF+"Fecha: "+DTOC(oCbte:CBT_FECHA),"Eliminar Registro")
+
+     RETURN .F.
+
+ ENDIF
+
+ SQLDELETE("DPASIENTOS","MOC_ACTUAL"+GetWhere("=",oCbte:CBT_ACTUAL)+" AND "+;
+                        "MOC_FECHA" +GetWhere("=",oCbte:CBT_FECHA )+" AND "+;
+                        "MOC_NUMCBT"+GetWhere("=",oCbte:CBT_NUMERO))
+
+
+
+RETURN .T.
+
+/*
+// Después de Borrar
+*/
+FUNCTION POSTDELETE()
+
+ // 24-06-2012 Marlon Ramos (Marcar como no contabilizado el Activo) 
+   SQLUPDATE("DPDEPRECIAACT", {"DEP_COMPRO", "DEP_FCHCON", "DEP_ESTADO"}, {"", "0000-00-00", "A"}, "DEP_COMPRO" +GetWhere("=",  oCbte:CBT_NUMERO) + " AND DEP_FECHA" +GetWhere("=",  oCbte:CBT_FECHA))
+ // Fin 24-06-2012 Marlon Ramos (Marcar como no contabilizado el Activo) 
+
+
+ // no hay mas Comprobante
+ IF COUNT("DPCBTE",oCbte:cScope)=0
+   oCbte:LoadData(1)
+ ENDIF
+
+RETURN .T.
+
+FUNCTION VMOC_CUENTA(cCodCta)
+
+  IF EMPTY(oGrid:MOC_CUENTA)
+     RETURN .F.
+  ENDIF
+
+  IF !ISSQLGET("DPCTA","CTA_CODIGO",oGrid:MOC_CUENTA)
+     RETURN .F.
+  ENDIF
+
+//  oCbte:oCta:SetText("Cuenta: "+SQLGET("DPCTA","CTA_DESCRI","CTA_CODIGO"+GetWhere("=",oGrid:MOC_CUENTA)))
+//
+
+  IF Empty(oGrid:MOC_CENCOS)
+     oGrid:MOC_CENCOS:=oDp:cCenCos
+     oGrid:SET("MOC_CENCOS",oDp:cCenCos , oDp:lCenCos )
+  ENDIF
+
+  oCbte:oCta:SetText(GetFromVar("{oDp:xDPCTA}"   )+": "+MYSQLGET("DPCTA"   ,"CTA_DESCRI","CTA_CODIGO"+GetWhere("=",oGrid:MOC_CUENTA))+CHR(10)+;
+                     GetFromVar("{oDp:xDPCENCOS}")+": "+MYSQLGET("DPCENCOS","CEN_DESCRI","CEN_CODIGO"+GetWhere("=",oGrid:MOC_CENCOS)))
+
+  IF !EJECUTAR("ISCTADET",cCodCta,.T.)
+     RETURN .F.
+  ENDIF
+
+  oGrid:SET("MOC_CODSUC",oDp:cSucursal  )
+  oGrid:SET("MOC_ACTUAL",oCbte:CBT_ACTUAL)
+
+
+RETURN .T.
+
+/*
+// Validar Centro de Costo
+*/
+
+FUNCTION VMOC_CENCOS(cCodCen)
+
+  IF EMPTY(oGrid:MOC_CENCOS)
+     RETURN .F.
+  ENDIF
+
+  IF !ISMYSQLGET("DPCENCOS","CEN_CODIGO",oGrid:MOC_CENCOS)
+     RETURN .F.
+  ENDIF
+
+  oCbte:oCta:SetText(GetFromVar("{oDp:xDPCTA}"   )+": "+MYSQLGET("DPCTA"   ,"CTA_DESCRI","CTA_CODIGO"+GetWhere("=",oGrid:MOC_CUENTA))+CHR(10)+;
+                     GetFromVar("{oDp:xDPCENCOS}")+": "+MYSQLGET("DPCENCOS","CEN_DESCRI","CEN_CODIGO"+GetWhere("=",oGrid:MOC_CENCOS)))
+
+  IF !EJECUTAR("ISCENDET",cCodCen,.T.)
+     RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+
+/*
+// Carga para Incluir o Modificar en el Grid
+*/
+FUNCTION GRIDLOAD()
+   LOCAL nTotal:=0
+
+// jn   IF oGrid:nOption=1
+
+ IF oGrid:nOption=1 .AND. !oCbte:lActual
+    nTotal:=oGrid:GetTotal("MOC_MONTO")
+    nTotal:=nTotal*IIF(nTotal=0,1,-1)
+    oGrid:oBrw:GoBottom()
+    oGrid:Set("MOC_MONTO",nTotal,.T.)
+  ENDIF
+
+/*
+// ag TJ 3.02
+  IF oGrid:nOption=1.AND.!oCbte:lActual
+
+     nTotal:=oGrid:GetTotal("MOC_MONTO")
+     nTotal:=nTotal*IIF(nTotal=0,1,-1)
+     oGrid:Set("MOC_MONTO",nTotal,.T.)
+
+   ENDIF
+*/
+
+
+
+RETURN NIL
+
+/*
+// Ejecución despues de Grabar el Item
+*/
+FUNCTION GRIDPOSTSAVE()
+
+  IF COUNT("DPPLACOS","PLA_CODCTA"+GetWhere("=",oGrid:MOC_CUENTA))>0
+
+     EJECUTAR("DPCENCOSDIST",oGrid:MOC_CODSUC ,;
+                             oGrid:MOC_ACTUAL ,;
+                             oGrid:MOC_FECHA  ,;
+                             oGrid:MOC_NUMCBT ,;
+                             oGrid:MOC_ITEM   ,;
+                             oGrid:MOC_CUENTA,;
+                             oGrid:MOC_MONTO)
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Genera los Totales por Grid
+*/
+FUNCTION GRIDTOTAL()
+   LOCAL nDebe:=0,nHaber:=0
+   LOCAL oCol:=oGrid:GetCol("MOC_MONTO")
+
+   oCbte:nDebe :=oCol:CalCuleRow("IIF(oGrid:MOC_MONTO>0,oGrid:MOC_MONTO,0)")
+   oCbte:nHaber:=oCol:CalCuleRow("IIF(oGrid:MOC_MONTO<0,oGrid:MOC_MONTO,0)")*-1
+   oCbte:nTotal:=oCbte:nDebe-oCbte:nHaber
+
+   oCbte:oDebe :Refresh(.T.)
+   oCbte:oHaber:Refresh(.T.)
+
+RETURN .F.
+
+FUNCTION CBTFECHA()
+  LOCAL lResp:=.T.
+
+  lResp:=EJECUTAR("VALFCHEJER",oCbte:CBT_FECHA,"Comprobante Contable") .AND.;
+        oCbte:ValUnique(NIL,NIL,NIL,"Comprobante Contable ya Existe")
+
+RETURN lResp
+
+FUNCTION GRIDPRESAVE()
+    LOCAL cWhere
+
+    IF !oCbte:CBTFECHA()
+        RETURN .F.
+    ENDIF
+
+
+// ag TJ 3.02
+    //[1]
+    IF Empty(oGrid:MOC_CUENTA) .OR. Empty(oGrid:MOC_MONTO)
+       Return .F.
+    ENDIF
+//
+
+    IF oCbte:nOption=3 .AND.  ( oCbte:dFecha<>oCbte:CBT_FECHA  .OR. oCbte:cNumero<>oCbte:CBT_NUMERO)
+
+       cWhere:="CBT_CODSUC"+GetWhere("=", oCbte:CBT_CODSUC)+" AND "+;
+               "CBT_FECHA" +GetWhere("=", oCbte:dFecha    )+" AND "+;
+               "CBT_NUMERO"+GetWhere("=", oCbte:cNumero   )+" AND "+;
+               "CBT_ACTUAL"+GetWhere("=", oCbte:cActual   )
+
+       SQLUPDATE("DPCBTE" , {"CBT_FECHA","CBT_NUMERO"},{oCbte:CBT_FECHA,oCbte:CBT_NUMERO} , cWhere)
+
+       oCbte:cWhereOpen:=oCbte:GetWhere(NIL,.T.) // Necesario para Validar VALUNIQUE()
+
+    ENDIF
+
+    IF oGrid:nOption=1
+
+       oGrid:MOC_ITEM:=SQLINCREMENTAL("DPASIENTOS","MOC_ITEM","MOC_CODSUC"+GetWhere("=",oDp:cSucursal   )+" AND "+;
+                                                              "MOC_NUMCBT"+GetWhere("=",oCbte:CBT_NUMERO)+" AND "+;
+                                                              "MOC_FECHA "+GetWhere("=",oCbte:CBT_FECHA ))
+//? oGrid:MOC_ITEM
+
+    ENDIF
+
+    oCbte:dFecha :=oCbte:CBT_FECHA 
+    oCbte:cNumero:=oCbte:CBT_NUMERO
+
+    oGrid:Set("MOC_CODSUC",oDp:cSucursal)
+
+RETURN .T.
+
+// EOF

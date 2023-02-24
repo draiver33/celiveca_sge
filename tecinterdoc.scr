@@ -1,0 +1,266 @@
+// Programa   : TECINTERDOC
+// Fecha/Hora : 05/08/2010 15:29:43
+// Propósito  : Genera los Documentos en Empresa Destino  
+//              destino
+// Aplicación : Ventas y Cuentas por Cobrar
+// Creado Por : DR
+
+
+#include "dpxbase.ch"
+
+PROCE MAIN(cCodSuc,cTipDoc,cCodigo,cNumero)
+LOCAL oTableC,cWhere,oTable,nI,oTable2,oTable3
+LOCAL nMontoPg:=0,cNumCom,nItem,lOkDoc:=.T.
+LOCAL cCtaInt,cCtaEgr 
+LOCAL oOdbcInt
+LOCAL cIva,cWhere2,nIva:=0,cWhereDoc,cTipDocDes
+
+
+   oTableC:=OPENTABLE("SELECT * FROM TECINTERCOM WHERE INT_ORIGEN=1 AND INT_CODCLI"+GetWhere("=",cCodigo)+;
+                      " AND INT_SUCORG"+GetWhere("=",oDp:cSucursal),.T.)
+
+
+   IF oTableC:RecCount()>0 
+      // Busca el Documento Equivalente en Empresa Destino
+      
+      IF EJECUTAR("TECPUTDSN",{"DPDOCPRO","DPDOCPROCTA","DPCODINTEGRA","DPPROVEEDOR","DPCTAEGRESO"},oTableC:INT_DSN,.T.)
+         oOdbcInt  :=OPENODBC(oTableC:INT_DSN) 
+         
+         cCtaInt:=""
+         cCtaEgr:=""
+         cTipDocDes:=IIF(cTipDoc="FAV","FAC",cTipDoc)
+         IF cTipDocDes="FAC" .OR. cTipDocDes="CRE"
+            cCtaInt:=SQLGET("DPCODINTEGRA","CIN_CODCTA","CIN_CODIGO"+GetWhere("=",IIF(cTipDocDes="FAC","INTCOM","INTDEC")),,oOdbcInt)
+         ELSE
+            cCtaInt:=SQLGET("DPCODINTEGRA","CIN_CODCTA","CIN_CODIGO"+GetWhere("=","INT"+cTipDocDes),,oOdbcInt)
+          ENDIF
+          IF EMPTY(cCtaInt)
+             cCtaInt:=oDp:cCtaIndef
+          ELSE
+             cCtaEgr:=SQLGET("DPCTAEGRESO","CEG_CODIGO","CEG_CUENTA"+GetWhere("=",cCtaInt),,oOdbcInt)
+          ENDIF
+          IF EMPTY(cCtaEgr)
+             cCtaEgr:="Indefinida"
+          ENDIF
+
+          cWhereDoc:="DOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                  "DOC_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+                  "DOC_CODIGO"+GetWhere("=",cCodigo)+"AND "+;
+                  "DOC_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+                  "DOC_TIPTRA='D'"
+
+          oTable2:=OPENTABLE("SELECT * FROM DPDOCCLI WHERE "+cWhereDoc,.T.)
+         // ?clpcopy(odp:csql)
+
+          //////////CABECERA EN DPDOCPRO
+          cWhere:="DOC_CODSUC"+GetWhere("=",oTableC:INT_CODSUC)+" AND "+;
+                  "DOC_TIPDOC"+GetWhere("=",cTipDocDes)+" AND "+;
+                  "DOC_CODIGO"+GetWhere("=",oTableC:INT_CODPRO)+"AND "+;
+                  "DOC_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+                  "DOC_TIPTRA='D'"
+
+          IF EMPTY(SQLGET("DPDOCPRO","DOC_NUMERO",cWhere))
+             cWhere:=""
+             oTable:=OPENTABLE("SELECT * FROM DPDOCPRO",.F.,oOdbcInt)
+             oTable:Append()
+
+             AEVAL(oTable2:aFields,{|a,n,uValue|uValue:=oTable2:FieldGet(n),;
+                                      uValue:=IIF(ValType(uValue)="C",OEMTOANSI(uValue),uValue),;
+                                      IIF(oTable:FieldPos(oTable2:FIELDNAME(n))>0,;
+                                      oTable:Replace(oTable2:FIELDNAME(n),uValue),NIL)})
+          ELSE
+             // El Documento existe. Hay que verificar si está cancelado o contabilizado.
+             nMontoPg:=SQLGET("DPDOCPRO","DOC_NETO",STRTRAN(cWhere,"DOC_TIPTRA='D'","DOC_TIPTRA='P'")+" AND DOC_ACT=1",,oOdbcInt)
+
+             IF nMontoPg>0
+                oTable2:End()
+                oTable2:=NIL
+                Alert("Intercompañia. La Factura tiene pagos en la Empresa Destino")
+                lOkDoc:=.F.
+             ENDIF
+
+
+
+             IF lOkDoc
+                oTable:=OPENTABLE("SELECT * FROM DPDOCPRO WHERE "+cWhere,.T.,oOdbcInt)
+             ENDIF
+
+             IF lOkDoc .AND. oTable:RecCount()=0
+                oTable2:End()
+                oTable2:=NIL
+                oTable:End()
+                oTable:=NIL
+                Alert("Intercompañia. No Hay Documentos en la Empresa Destino")
+                lOkDoc:=.F.
+             ENDIF
+
+             IF lOkDoc .AND. !EMPTY(oTable:DOC_CBTNUM) .AND. !EMPTY(SQLGET("DPASIENTOS","MOC_NUMCBT","MOC_CODSUC"+GetWhere("=",oTableC:INT_CODSUC)+" AND "+;
+                                                                                        "MOC_NUMCBT"+GetWhere("=",oTable:DOC_CBTNUM)+" AND "+;
+                                                                                        "MOC_DOCUME"+GetWhere("=",cNumero)+" AND "+;
+                                                                                        "MOC_CODAUX"+GetWhere("=",oTableC:INT_CODPRO)))
+            
+                oTable2:End()
+                oTable2:=NIL
+                oTable:End()
+                oTable:=NIL
+                Alert("Intercompañía. La factura está contabilizada en la Empresa Destino")
+                lOkDoc:=.F.
+             ENDIF
+
+             IF lOkDoc
+
+                AEVAL(oTable2:aFields,{|a,n,uValue|uValue:=oTable2:FieldGet(n),;
+                                        uValue:=IIF(ValType(uValue)="C",OEMTOANSI(uValue),uValue),;
+                                        IIF(oTable:FieldPos(oTable2:FIELDNAME(n))>0,;
+                                        oTable:Replace(oTable2:FIELDNAME(n),uValue),NIL)})
+            ENDIF
+
+         ENDIF
+         IF lOkDoc
+            oTable:Replace("DOC_FCHDEC",oTable2:DOC_FECHA)
+            oTable:Replace("DOC_CODIGO",oTableC:INT_CODPRO)
+            oTable:Replace("DOC_TIPDOC",cTipDocDes)
+            oTable:Replace("DOC_DOCORG","D")
+            oTable:Replace("DOC_CXP",oTable2:DOC_CXC)
+            oTable:Replace("DOC_CBTNUM","")
+            oTable:Replace("DOC_ESTADO","AC")
+            oTable:Replace("DOC_INTERC",.T.)
+            oTable:Replace("DOC_CODSUC",oTableC:INT_CODSUC)
+            oTable:Replace("DOC_CREFIS",1)
+            oTable:Replace("DOC_ORIGEN",IIF(LEFT(oTable2:DOC_DESTIN,1)<>"E","N","I"))
+            oTable:Commit(cWhere)
+            oTable:End()
+            oTable:=NIL
+   ////////////DETALLE EN DPDOCPROCTA
+
+            cWhere:="CCD_CODSUC"+GetWhere("=",oTableC:INT_CODSUC)+" AND "+;
+                    "CCD_TIPDOC"+GetWhere("=",cTipDocDes)+" AND "+;
+                    "CCD_CODIGO"+GetWhere("=",oTableC:INT_CODPRO)+" AND "+;
+                    "CCD_NUMERO"+GetWhere("=",cNumero)+" AND CCD_TIPTRA='D'"
+
+            IF !EMPTY(SQLGET("DPDOCPROCTA","CCD_NUMERO",cWhere,,oOdbcInt))
+                oOdbcInt:Execute("DELETE FROM DPDOCPROCTA WHERE "+cWhere) 
+                SQLDELETE("DPDOCPROCTA",cWhere)
+            ENDIF
+
+            cWhere:=""
+            oTable:=OPENTABLE("SELECT * FROM DPDOCPROCTA",.F.,oOdbcInt)
+
+            IF oTable2:DOC_DOCORG="V"
+               IF oTable2:DOC_MTOIVA>0
+                  cIva:="GN"
+                  nIva:=EJECUTAR("IVACAL","GN",2)
+               ELSE
+                  cIva:="EX"
+                  nIva:=0
+               ENDIF
+   
+               cWhere2:="MOV_CODCTA='"+oTable2:DOC_CODIGO+"' AND "+;
+                        "MOV_TIPDOC='"+oTable2:DOC_TIPDOC+"' AND "+;
+                        "MOV_DOCUME='"+oTable2:DOC_NUMERO+"' AND "+;
+                        "MOV_CODSUC='"+oTableC:INT_CODSUC+"' AND "+;
+                        "MOV_INVACT=1"
+
+               oTable:Append()
+
+               oTable:Replace("CCD_FCHDEC",CTOD(""))
+               oTable:Replace("CCD_NUMFIS",oTable2:DOC_NUMFIS)
+              // oTable:Replace("CCD_PROYEC",SPACE(8))
+               oTable:Replace("CCD_DOCREF",SPACE(12))
+               oTable:Replace("CCD_NUMERO",oTable2:DOC_NUMERO)
+               //oTable:Replace("CCD_CODSUC",oTable2:DOC_CODSUC)
+               oTable:Replace("CCD_CODSUC",oTableC:INT_CODSUC)
+               oTable:Replace("CCD_TIPTRA",oTable2:DOC_TIPTRA)
+               oTable:Replace("CCD_CODCAJ",SPACE(8))
+               oTable:Replace("CCD_CODCTA",cCtaInt) 
+               oTable:Replace("CCD_PORIVA",nIva)
+               oTable:Replace("CCD_CENCOS",STRZERO(1,8)) // Lo lleva al Indefinido por ahora
+               oTable:Replace("CCD_REFERE",SPACE(20))
+               oTable:Replace("CCD_ACT",1)
+               oTable:Replace("CCD_CODIGO",oTableC:INT_CODPRO)
+               oTable:Replace("CCD_CTAEGR",cCtaEgr) // "Indefinida")
+               oTable:Replace("CCD_TIPDOC",cTipDocDes) // "FAC")
+               oTable:Replace("CCD_LIBCOM",0)
+               oTable:Replace("CCD_DESCRI",cTipDocDes+" Intercomp. "+SQLGET("DPPROVEEDOR","PRO_NOMBRE","PRO_CODIGO"+GetWhere("=",oTableC:INT_CODPRO)))
+               oTable:Replace("CCD_MONTO",SQLGET("DPMOVINV","SUM(MOV_TOTAL)",cWhere2))
+               oTable:Replace("CCD_TIPIVA",cIva)
+               oTable:Replace("CCD_INSCAJ",SPACE(4))
+               oTable:Replace("CCD_FACTUR",SPACE(10))
+               oTable:Replace("CCD_RIF",SPACE(15))
+               oTable:Replace("CCD_DOCTIP",SPACE(3))   
+               oTable:Replace("CCD_ITEM","0001")
+               oTable:Replace("CCD_FECHA",CTOD(""))
+               oTable:Replace("CCD_NUMMEM",0)
+
+               oTable:Commit(cWhere)
+               oTable:End()
+               oTable:=NIL
+            ELSE
+
+               cWhere:="CCD_CODSUC"+GetWhere("=",oTableC:INT_CODSUC)+" AND "+;
+                       "CCD_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+                       "CCD_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+                       "CCD_TIPTRA='D'"
+
+               oTable3:=OpenTable("SELECT * FROM DPDOCCLICTA WHERE "+cWhere)
+               oTable3:GoTop()
+               nItem:=1
+               WHILE !oTable3:Eof()
+                  oTable:Append()
+                  oTable:Replace("CCD_FCHDEC",CTOD(""))
+                  oTable:Replace("CCD_NUMFIS",oTable2:DOC_NUMFIS)
+                 // oTable:Replace("CCD_PROYEC",SPACE(8))
+                  oTable:Replace("CCD_DOCREF",SPACE(12))
+                  oTable:Replace("CCD_NUMERO",oTable2:DOC_NUMERO)
+                  //oTable:Replace("CCD_CODSUC",oTable2:DOC_CODSUC)
+                  oTable:Replace("CCD_CODSUC",oTableC:INT_CODSUC)
+                  oTable:Replace("CCD_TIPTRA",oTable2:DOC_TIPTRA)
+                  oTable:Replace("CCD_CODCAJ",SPACE(8))
+                  oTable:Replace("CCD_CODCTA",cCtaInt) // DR20110318a "Indefinida")
+                  oTable:Replace("CCD_PORIVA",oTable3:CCD_PORIVA)
+                  oTable:Replace("CCD_CENCOS",STRZERO(1,8)) // Lo lleva al Indefinido por ahora
+                  oTable:Replace("CCD_REFERE",SPACE(20))
+                  oTable:Replace("CCD_ACT",1)
+                  oTable:Replace("CCD_CODIGO",oTableC:INT_CODPRO)
+                  oTable:Replace("CCD_CTAEGR",cCtaEgr) // DR20110318a "Indefinida")
+                  oTable:Replace("CCD_TIPDOC",cTipDocDes)
+                  oTable:Replace("CCD_LIBCOM",0)
+                  oTable:Replace("CCD_DESCRI",oTable3:CCD_DESCRI)
+                  oTable:Replace("CCD_MONTO" ,oTable3:CCD_MONTO)
+                  oTable:Replace("CCD_TIPIVA",oTable3:CCD_TIPIVA)
+                  oTable:Replace("CCD_INSCAJ",SPACE(4))
+                  oTable:Replace("CCD_FACTUR",SPACE(10))
+                  oTable:Replace("CCD_RIF",SPACE(15))
+                  oTable:Replace("CCD_DOCTIP",SPACE(3))
+                  oTable:Replace("CCD_ITEM",STRZERO(nItem,4))
+                  oTable:Replace("CCD_FECHA",CTOD(""))
+                  oTable:Replace("CCD_NUMMEM",0)
+                  oTable:Commit(cWhere)
+                  nItem++
+                  oTable3:Skip()
+               ENDDO
+               oTable3:End()
+               oTable3:=NIL
+               oTable:End()
+               oTable:=NIL
+
+            ENDIF
+      
+            MSGINFO("Documento Intercompañia: "+cTipDocDes+"-"+oTable2:DOC_NUMERO+CRLF+" Finalizado Satisfactoriamente","Información")
+         ENDIF
+      ENDIF
+      oOdbcInt:End() 
+      oOdbcInt:=NIL 
+   ENDIF
+
+   oTableC:End()
+   oTableC:=NIL
+
+   PUTDSN("DPDOCPRO","DPDOCPRO",oDp:cDsnData)
+   PUTDSN("DPDOCPROCTA","DPDOCPROCTA",oDp:cDsnData)
+   PUTDSN("DPCODINTEGRA","DPCODINTEGRA",oDp:cDsnData) 
+   PUTDSN("DPPROVEEDOR","DPPROVEEDOR",oDp:cDsnData) 
+   PUTDSN("DPCTAEGRESO","DPCTAEGRESO",oDp:cDsnData) 
+
+RETURN
+

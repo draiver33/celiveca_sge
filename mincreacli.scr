@@ -1,0 +1,475 @@
+// Programa   : DPCREACLI
+// Fecha/Hora : 13/05/2011 01:28:31
+// Propósito  : Creación Rápida del Cliente (Herramienta para Contadores)
+// Creado Por : Juan Navas
+// Llamado por:
+// Aplicación :
+// Tabla      :
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(_oGet,_cRif,_lAuto)
+  LOCAL oDlg,oFont,oFontB,oGroup,oBtn,aSay:={},I,oSay,nLine,cRif
+  LOCAL lOk:=.F.
+  LOCAL nWidth   :=390, nHeight:=310+70
+  LOCAL aPoint   :=IF(_oGet=NIL , NIL , AdjustWnd( _oGet, nWidth, nHeight ))
+
+  LOCAL oGet:=_oGet,lAuto:=_lAuto
+  LOCAL oDir1,oDir2,oDir3,oTel1,oEmail,oRepres,oCI
+
+  LOCAL lExiste:=.F.
+  LOCAL lValRif:=.F
+
+  LOCAL oRif,oNombre,oRetIva
+  LOCAL cNombre:=SPACE(80)
+  LOCAL cDir1  :=SPACE(40)
+  LOCAL cDir2  :=SPACE(40)
+  LOCAL cDir3  :=SPACE(40)
+  LOCAL cTel1  :=SPACE(20)
+  LOCAL cEmail :=SPACE(80)
+  LOCAL cRepres:=SPACE(120)
+  LOCAL cCI    :=SPACE(10)
+  LOCAL nRetIva:=0
+  LOCAL cRif_
+
+  IF Empty(_cRif)
+     _cRif:=SPACE(12)
+  ENDIF
+
+  DEFAULT _cRif  :=SPACE(12),;
+          _lAuto :=.F.      ,;
+          cRif   :=_cRif
+
+  IF Empty(cRif)
+     cRif:=SPACE(12)
+  ENDIF
+
+  AADD(aSay,{"R.I.F:"      ,NIL})
+  AADD(aSay,{"Nombre:"     ,NIL})
+  AADD(aSay,{"% Retencion:",NIL})
+  AADD(aSay,{"Direccion 1:",NIL})
+  AADD(aSay,{"          2:",NIL})
+  AADD(aSay,{"          3:",NIL})
+  AADD(aSay,{"Teléfono:"   ,NIL})
+  AADD(aSay,{"Correo:"     ,NIL})
+  AADD(aSay,{"Rep. Legal:"  ,NIL})
+  AADD(aSay,{"Cédula:"  ,NIL})
+
+
+  DEFINE FONT oFont  NAME "Arial"   SIZE 0,-10
+  DEFINE FONT oFontB NAME "Arial"   SIZE 0,-12 BOLD
+
+
+  IF aPoint=NIL
+
+     DEFINE DIALOG oDlg;
+            TITLE "Creación Rápida de "+oDp:xDPCLIENTES;
+            FROM 0,0 TO 18+06,47;
+            COLOR NIL,oDp:nGris
+  ELSE
+
+     DEFINE DIALOG oDlg;
+            TITLE "Creación Rápida de "+oDp:xDPCLIENTES;
+            PIXEL OF oGet:oWnd;
+            STYLE nOr( DS_SYSMODAL, DS_MODALFRAME );
+            COLOR NIL,oDp:nGris
+
+
+  ENDIF
+
+  oDlg:lHelpIcon:=.F.
+
+  FOR I=1 TO LEN(aSay)
+
+    nLine:=(I*.8)
+
+    @ nLine,1 SAY oSay PROMPT aSay[I,1] SIZE 40,10;
+              COLOR NIL,oDp:nGris RIGHT FONT oFontB OF oDlg
+
+    aSay[I,2]:=oSay:nTop
+
+  NEXT I
+
+
+  @ aSay[1,2],50 GET oRif VAR cRif PICTURE "@!";
+                 SIZE 42,10;
+                 VALID VALRIFCLI(cRif,oRif);
+                 COLOR NIL,CLR_WHITE PIXEL FONT oFontB OF oDlg
+
+  oRif:bkeyDown:={|nKey| IIF( nKey=13 .AND. VALRIFCLI(cRif,oRif), IF(!lExiste,VALRIF(cRif,oRif),NIL) , NIL )}
+
+
+  @ aSay[1,2],91 BUTTON oBtn PROMPT ">" SIZE 10,10 ACTION VALRIF(cRif,oRif);
+                 FONT oFontB;
+                 WHEN !Empty(cRif) PIXEL FONT oFontB
+
+
+  @ aSay[2,2],50 GET oNombre VAR cNombre;
+                 VALID !Empty(cNombre);
+                 SIZE 120,10;
+                 COLOR NIL,CLR_WHITE PIXEL FONT oFontB
+
+
+
+  @ aSay[3,2],50 GET oRetIva VAR nRetIva;
+                 COLOR NIL,CLR_WHITE;
+                 PICTURE "999" RIGHT;
+                 SIZE 20,10 PIXEL FONT oFontB
+
+  @ aSay[4,2],50 GET oDir1 VAR cDir1;
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 120,10 PIXEL FONT oFontB
+
+  @ aSay[5,2],50 GET oDir2 VAR cDir2;
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 120,10 PIXEL FONT oFontB
+
+  @ aSay[6,2],50 GET oDir3 VAR cDir3;
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 120,10 PIXEL FONT oFontB
+
+  @ aSay[7,2],50 GET oTel1 VAR cTel1;
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 80,10 PIXEL FONT oFontB
+
+  @ aSay[8,2],50 GET oEmail VAR cEmail;
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 120,10 PIXEL FONT oFontB
+
+  @ aSay[9,2],50 GET oRepres VAR cRepres;
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 120,10 PIXEL FONT oFontB
+
+  @ aSay[10,2],50 GET oCI VAR cCI PICTURE "999999999";
+                 COLOR NIL,CLR_WHITE;
+                 SIZE 80,10 PIXEL FONT oFontB
+
+  @ 6.5+2,17 BUTTON " Aceptar ";
+         SIZE 32,12;
+         FONT oFontB;
+         ACTION (lOk:=CLIGRABAR(cRif) ,;
+                 IF(lOk,oDlg:End(),NIL))
+
+  @ 6.5+2,23 BUTTON " Salir   ";
+         SIZE 32,12;
+         FONT oFontB;
+         ACTION (lOk:=.F.,oDlg:End()) CANCEL
+
+
+  IF aPoint=NIL
+
+    ACTIVATE DIALOG oDlg CENTERED
+
+  ELSE
+
+    ACTIVATE DIALOG oDlg ON INIT (oDlg:Move(aPoint[1], aPoint[2],NIL,NIL,.T.),;
+                                  oDlg:SetSize(nWidth,nHeight),;
+                                  IIF(_lAuto,oRif:KeyBoard(13),NIL))
+
+
+  ENDIF
+
+  IF lOk .AND. ValType(_oGet)="O" .AND. !Empty(cRif)
+     _oGet:VarPut(cRif,.T.)
+     _oGet:KeyBoard(13)
+  ENDIF
+
+RETURN .T.
+
+FUNCTION CLIGRABAR(cRif)
+   LOCAL cCodPro,cCodCla,cCodAct,oTable,cCodVen,lNew:=.F.
+   LOCAL cTipDoc:="REG"
+   LOCAL cCodigo:=""
+
+   CursorWait()
+
+// Quitamos los guiones
+   cRif   :=STRTRAN(cRif,"-","")
+
+//? Empty(cRif),"cRif",cRif
+
+   IF Empty(cRif)
+      MsgMemo("Es necesario Indicar el RIF")
+      RETURN .F.
+   ENDIF
+
+   IF !lExiste .AND. !VALRIFCLI(cRif)
+      DPFOCUS(oRif)
+      RETURN .F.
+   ENDIF
+
+   IF !EJECUTAR("EMAILVALID",cEmail)
+     oEmail:MsgErr("Correo Incorrecto")
+     RETURN .F.
+   ENDIF
+
+   IF Empty(cNombre)
+      oNombre:MsgErr("Es necesario el Nombre")
+      RETURN .F.
+   ENDIF
+
+   cCodCla:=SQLGET("DPCLICLA"     ,"CLC_CODIGO",NIL,NIL,oDp:oDbLic)
+   cCodAct:=SQLGET("DPACTIVIDAD_E","ACT_CODIGO",NIL,NIL,oDp:oDbLic)
+   cCodVen:=SQLGET("DPVENDEDOR"   ,"VEN_CODIGO",NIL,NIL,oDp:oDbLic)
+
+   cCodigo:=SQLGET("DPCLIENTES","CLI_CODIGO","CLI_RIF"+GetWhere("=",cRif),NIL,oDp:oDbLic)
+
+   IF Empty(cCodigo) .AND. !Empty(cRif)
+      cCodigo:=cRif
+   ENDIF
+
+   // Agregamos Ceros 
+   IF ISALLDIGIT(cCodigo)
+      cCodigo:=REPLI("0",10-LEN(ALLTRIM(cCodigo)))+cCodigo
+   ENDIF
+
+   oTable:=OpenTable("SELECT * FROM DPCLIENTES WHERE CLI_CODIGO"+GetWhere("=",cCodigo),.T.,oDp:oDbLic)
+
+   IF oTable:RecCount()=0
+      oTable:AppendBlank()
+      oTable:cWhere:=""
+      lNew  :=.T.
+   ELSE
+      cCodVen:=oTable:CLI_CODVEN
+      cCodCla:=oTable:CLI_CODCLA
+      lNew  :=.F.
+   ENDIF
+
+   oTable:Replace("CLI_CODIGO" ,cCodigo       )
+   oTable:Replace("CLI_CODCLA" ,cCodCla       )
+   oTable:Replace("CLI_CUENTA" ,oDp:cCtaIndef )
+   oTable:Replace("CLI_ACTIVI" ,cCodAct       )
+   oTable:Replace("CLI_PAIS"   ,oDp:cPais     )
+   oTable:Replace("CLI_ESTADO" ,oDp:cEstado   )
+   oTable:Replace("CLI_MUNICI" ,oDp:cMunicipio)
+   oTable:Replace("CLI_PARROQ" ,oDp:cParroquia)
+   oTable:Replace("CLI_CODVEN",cCodVen      )
+   oTable:Replace("CLI_RIF"    ,cRif          )
+   oTable:Replace("CLI_NOMBRE" ,cNombre       )
+   oTable:Replace("CLI_DIR1"   ,cDir1         )
+   oTable:Replace("CLI_DIR2"   ,cDir2         )
+   oTable:Replace("CLI_DIR3"   ,cDir3         )
+   oTable:Replace("CLI_TEL1"   ,cTel1         )
+   oTable:Replace("CLI_SITUAC" ,"A"           )
+   oTable:Replace("CLI_TIPPER" ,IIF(LEFT(cRif,1)$"VE","N",LEFT(cRif,1))           )
+   oTable:Replace("CLI_RESIDE" ,"S"           )
+   oTable:Replace("CLI_ZONANL" ,"N"           )
+   oTable:Replace("CLI_CONTRI" ,"S"           )
+   oTable:Replace("CLI_CONESP" ,"N"           )
+   oTable:Replace("CLI_ENOTRA" ,"N"           )
+   oTable:Replace("CLI_CATEGO" ,"B"           )
+   oTable:Replace("CLI_PRECIO" ,"N"           )
+   oTable:Replace("CLI_LISTA"  ,"A"           )
+   oTable:Replace("CLI_TERCER" ,"N"           )
+   oTable:Replace("CLI_SITUAC" ,"A"           )
+   oTable:Replace("CLI_RETIVA" ,nRetIva       )
+   oTable:Replace("CLI_EMAIL"  ,cEmail        )
+   oTable:Replace("CLI_CODRUT"  ,"1"        )
+
+   oTable:Commit(oTable:cWhere)
+
+   // Aqui asigna el Cliente por Sucursal
+
+   EJECUTAR("DPTABSETSUC",oTable:CLI_CODIGO,oDp:cSucursal,"DPCLIENTES")
+
+   IF Empty(cTipDoc)
+      RETURN .T.
+   ENDIF
+
+   //IF COUNT("dpdoccli","DOC_CODSUC"+GetWhere("=",oDpLic:cCodSuc)+" AND DOC_CODIGO"+GetWhere("=",cRif)+" AND DOC_TIPDOC"+GetWhere("=",cTipDoc),oDp:oDbLic)>0
+   //   RETURN .T.
+   // ENDIF
+
+   /*
+   // Solo se Puede AutoAsignar Clientes Nuevos
+   */
+
+   // Representante Legal
+
+   IF !Empty(cRepres)
+
+     oTable:=Opentable("SELECT * FROM DPCLIENTESPER WHERE PDC_CODIGO"+GetWhere("=",cCodigo)+" AND "+;
+                                                         "PDC_COMENT"+GetWhere("=",cCI    ),.T.,oDp:oDbLic)
+
+     IF oTable:RecCount()=0
+       oTable:AppendBlank()
+       oTable:cWhere:=""
+     ENDIF
+
+     oTable:Replace("PDC_CODIGO" ,cCodigo              )
+     oTable:Replace("PDC_CARGO"  ,"Representante Legal")
+     oTable:Replace("PDC_PERSON" ,cRepres              )
+     oTable:Replace("PDC_COMENT" ,cCI                  )
+     oTable:Replace("PDC_TIPO"   ,"Representante"      )
+     oTable:Commit(oTable:cWhere)
+     oTable:End()
+
+  ENDIF
+
+RETURN .T.
+
+FUNCTION VALRIFCLI(cRif2,oGet)
+  LOCAL cRif3:="",oTable,cCodigo
+  LOCAL lResp
+
+  lExiste:=.F.
+
+  IF Empty(cRif2)
+     RETURN .F.
+  ENDIF
+
+  oDp:aRow:={}
+
+  //cRif3:=EJECUTAR("FINDCLIXCED",cRif2)
+  cRif3:=cRif2
+  
+  IF !Empty(cRif3)
+     cRif3:=SQLGET("DPCLIENTES","CLI_RIF,CLI_NOMBRE,CLI_DIR1,CLI_DIR2,CLI_DIR3,CLI_TEL1,CLI_RETIVA,CLI_EMAIL","CLI_RIF"+GetWhere("=",cRif3),NIL,oDp:oDbLic)
+  ENDIF
+
+  IF !Empty(oDp:aRow)
+
+    oRif:VarPut(oDp:aRow[1]   ,.T.)
+    cRif:=oDp:aRow[1]
+    oNombre:VarPut(oDp:aRow[2],.T.)
+    oDir1:VarPut(oDp:aRow[3],.T.)
+    oDir2:VarPut(oDp:aRow[4],.T.)
+    oDir3:VarPut(oDp:aRow[5],.T.)
+    oTel1:VarPut(oDp:aRow[6],.T.)
+    oRetIva:VarPut(oDp:aRow[7],.T.)
+    oEmail:VarPut(oDp:aRow[8],.T.)
+
+    DPFOCUS(oDir1)
+
+    cCodigo:=SQLGET("DPCLIENTES","CLI_CODIGO","CLI_RIF"+GetWhere("=",cRif3),NIL,oDp:oDbLic)
+
+
+    oTable:=Opentable("SELECT * FROM DPCLIENTESPER WHERE PDC_CODIGO"+GetWhere("=",cCodigo        )+" AND "+;
+                                                        "PDC_TIPO"  +GetWhere("=","Representante")+" AND "+;
+                                                        "PDC_CARGO" +GetWhere("=","Representante Legal"),.T.,oDp:oDbLic)
+
+    IF oTable:RecCount()>0
+       oRepres:VarPut(oTable:PDC_PERSON,.T.)
+       oCI:VarPut(oTable:PDC_COMENT    ,.T.)
+    ENDIF
+
+    oTable:End()
+
+    lExiste:=.T.
+
+  ENDIF
+
+
+  IF !lExiste
+
+   // lResp:=EJECUTAR("GETVALRIF",cRif2,oGet)
+
+   // IF lResp .AND. !Empty(oDp:aRif)
+
+      //oGet:VarPut(oDp:cRifGet,.T.)
+      oGet:VarPut(cRif2,.T.)
+
+      //cRif:=oDp:cRifGet
+      cRif:=cRif2
+   
+      oGet:VarPut(cRif,.T.)
+
+      lValRif:=.T.
+
+      //cRif:=oDp:aRif[6]
+      oRif:VARPUT(cRif,.T.)
+      oRif:Refresh(.T.)
+
+      //oNombre:VARPUT(oDp:aRif[1],.T.)
+     // oRetiva:VARPUT(oDp:aRif[2],.T.)
+
+      //DPFOCUS(oDir1)
+      DPFOCUS(oNombre)
+   // ELSE
+
+        // cRif:=cRif_
+  
+   //     MensajeErr(oDp:cRifErr,"RIF no fué Validado")
+
+  //  ENDIF
+
+  ENDIF
+
+
+RETURN .T.
+
+/*
+// Function Innecesaria
+*/
+FUNCTION VALRIF(cRif,oRif)
+RETURN .T.
+/*
+
+  //LOCAL oDp:aRif:={},lOk:=.T.,cRif_:=cRif,lView:=.F.
+  LOCAL lOK,lView:=.F.
+
+  IF !VALRIFCLI(cRif)
+      RETURN .F.
+  ENDIF
+
+  IF ISDIGIT(cRif)
+    cRif:=STRZERO(VAL(cRif),8)
+    oRif:VarPut(cRif,.T.)
+  ENDIF
+
+  // QUITAR ESPACIOS
+  cRif:=PADR(STRTRAN(cRif," ",""),LEN(cRif))
+  cRif:=UPPER(cRif)
+
+  oRif:VarPut(cRif,.T.)
+
+  oDp:cSeniatErr:=""
+
+/////////////////////////
+
+  MsgRun("Verificando RIF "+cRif,"Por Favor, Espere",;
+         {|| lOk:=RUNLIC("VALRIFSENIAT",cRif,NIL,!ISDIGIT(cRif),lView)})
+
+
+  oDp:lChkIpSeniat:=.F. // No revisar la Web
+
+  IF !lOk .AND. ISDIGIT(cRif)
+
+    MsgRun("Autodectando RIF "+cRif+" no Encontrado","Por favor espere..",;
+           {||lOk:=RUNLIC("RIFVAUTODET",cRif,oRif) })
+
+  ENDIF
+
+  oDp:lChkIpSeniat:=.F. // No revisar la Web
+
+  IF lOk
+
+     lValRif:=.T.
+
+     IF !Empty(oDp:aRif)
+
+       cRif:=oDp:aRif[6]
+       oRif:VARPUT(cRif,.T.)
+       oRif:Refresh(.T.)
+
+       oNombre:VARPUT(oDp:aRif[1],.T.)
+       oRetiva:VARPUT(oDp:aRif[2],.T.)
+
+       DPFOCUS(oDir1)
+
+     ENDIF
+
+  ELSE
+
+     //lRifVal:=.F.
+
+     cRif:=cRif_
+     //oRif:VarPut(cRif_,.T.)
+
+     MensajeErr(oDp:cRifErr,"RIF no fué Validado")
+
+  ENDIF
+
+RETURN .T.
+*/
+

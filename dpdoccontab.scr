@@ -1,0 +1,1065 @@
+// Programa    : DPDOCCONTAB
+// Fecha/Hora  : 20/12/2005 19:24:52
+// Propósito   : Contabilizar Documento 
+// Creado Por  : Juan Navas
+// Llamado por : DPDOCCLI
+// Aplicación  : Ventas
+// Tabla       : DPDOCCLI
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cNumCom,cCodSuc,cTipDoc,cCodigo,cNumero,lVenta,lAsk,cNumPag,cTipTra,cOrg)
+  LOCAL oFontG,cTableTip:="DPTIPDOCCLI",lView:=.T.,lClose:=.F.,oData
+
+  DEFAULT cCodSuc:=oDp:cSucursal,;
+          cTipDoc:="FAV"        ,;
+          cCodigo:=STRZERO(1,10),;
+          cNumero:=STRZERO(1,10),;
+          cNumCom:=STRZERO(1,08),;
+          lAsk   :=.T.          ,;
+          lVenta :=.T.          ,;
+          cNumPag:=""           ,;
+          cTipTra:="D"          ,;
+          cOrg   :=IIF(lVenta,"VTA","COM"),;
+          oDp:lNumCom:=.F.
+
+  // oDp:cNumCom:=cTipDoc+STRZERO(1,5)
+IF oDp:lNumCom
+   IF cTipDoc = "OPA"
+      cNumCom:=EJECUTAR("DPNUMCBTE","TESORE")
+     ELSE
+      IF lVenta
+         cNumCom:=EJECUTAR("DPNUMCBTE","CXCOBR")
+        ELSE
+         cNumCom:=EJECUTAR("DPNUMCBTE","CXPAGA")
+      ENDIF
+   ENDIF
+ENDIF
+ 
+  IF !lAsk
+    RUNASIENTO(cNumCom,cCodSuc,cTipDoc,cCodigo,cNumero,lVenta,lAsk,cNumPag,cTipTra,cOrg)
+  ELSE
+    oData:=DATASET(IIF(lVenta,"VTA","COM")+"CONTAB","ALL")
+
+    lClose:=oData:Get("CLOSE",.T.)
+    lView :=oData:Get("VIEW" ,.T.)
+
+    oData:End()
+
+    DPEDIT():New("Contabilizar Documento de "+IIF(lVenta,"Venta","Compra"),"DPRUNCBTE.EDT","oRunCbte",.T.)
+
+    oRunCbte:cTableTip:=IIF(lVenta,"DPTIPDOCCLI","DPTIPDOCPRO")
+    oRunCbte:cNumCom  :=cNumCom
+    oRunCbte:cCodSuc  :=cCodSuc
+    oRunCbte:cTipDoc  :=cTipDoc      
+    oRunCbte:cCodigo  :=cCodigo
+    oRunCbte:cNumero  :=cNumero
+    oRunCbte:lVenta   :=lVenta
+    oRunCbte:lView    :=lView
+    oRunCbte:lClose   :=lClose
+    oRunCbte:cResp    :="Documento sin Contabilizar"
+    oRunCbte:cTipTra  :=cTipTra
+    oRunCbte:lMsgBar  :=.F.
+    oRunCbte:cOrg     :=cOrg
+    oRunCbte:dFecha   :=oDp:dFecha
+
+    @ 1, 1.0 GROUP oRunCbte:oGroup TO 11.4,6 PROMPT " Documento ";
+             FONT oFontG
+
+    @ 1, 1.0 GROUP oRunCbte:oGroup TO 11.4,6 PROMPT " Comprobante ";
+             FONT oFontG
+
+    @ 1, 1.0 GROUP oRunCbte:oGroup TO 11.4,6 PROMPT " Proceso ";
+             FONT oFontG
+
+    @ 0,0 SAY "Número:" RIGHT
+
+    @ 1,1 SAY "Tipo:"   RIGHT
+    @ 2,1 SAY "Código:" RIGHT
+    @ 3,1 SAY "Número:" RIGHT
+
+    @ 1,10 SAY oRunCbte:cTipDoc+" "+SQLGET(oRunCbte:cTableTip,"TDC_DESCRI","TDC_TIPO"+GetWhere("=",oRunCbte:cTipDoc)) 
+    @ 2,10 SAY oRunCbte:cCodigo+" "+SQLGET("DPPROVEEDOR","PRO_NOMBRE","PRO_CODIGO"+GetWhere("=",oRunCbte:cCodigo)) 
+    @ 3,10 SAY oRunCbte:cNumero RIGHT
+
+    @ 4,10 GET oRunCbte:oResp;
+               VAR oRunCbte:cResp MULTI READONLY
+
+    @ 1,1 GET oRunCbte:oNumero VAR oRunCbte:cNumCom;
+              RIGHT;
+              VALID CERO(oRunCbte:cNumCom)
+
+    @ 6.4, 1.0 CHECKBOX oRunCbte:oView;
+                        VAR oRunCbte:lView;
+                        PROMPT ANSITOOEM("Visualizar")
+
+    @ 6.4, 1.0 CHECKBOX oRunCbte:oClose;
+                        VAR oRunCbte:lClose;
+                        PROMPT ANSITOOEM("Cerrar al Finalizar")
+
+/*
+    @05, 13  SBUTTON oRunCbte:oRun ;
+             SIZE 42, 23 FONT oFontG;
+             FILE "BITMAPS\RUN.BMP" ;
+             LEFT PROMPT "Ejecutar";
+             NOBORDER;
+             COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+             ACTION (oRunCbte:RUNASIENTO(oRunCbte:cNumCom,oRunCbte:cCodSuc,oRunCbte:cTipDoc,oRunCbte:cCodigo,oRunCbte:cNumero,oRunCbte:lVenta,oRunCbte),;
+                     oRunCbte:RUNSAVE())
+
+    @05, 13  SBUTTON oRunCbte:oClose ;
+             SIZE 42, 23 FONT oFontG;
+             FILE "BITMAPS\XSALIR.BMP" ;
+             LEFT PROMPT "Cerrar";
+             NOBORDER;
+             COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+             ACTION oRunCbte:Close() CANCEL
+*/
+
+    oRunCbte:Activate({||oRunCbte:INIBAR()})
+
+  ENDIF
+
+RETURN .T.
+
+FUNCTION INIBAR()
+   LOCAL oCursor,oBar,oBtn,oFont,oCol
+   LOCAL oDlg:=oRunCbte:oDlg
+   LOCAL nLin:=0
+
+   DEFINE CURSOR oCursor HAND
+   DEFINE BUTTONBAR oBar SIZE 52-15,60-15 OF oDlg 3D CURSOR oCursor
+   DEFINE FONT oFont  NAME "Arial"   SIZE 0, -10 BOLD
+
+   DEFINE BUTTON oRunCbte:oRun;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\RUN.BMP";
+          ACTION (oRunCbte:RUNASIENTO(oRunCbte:cNumCom,oRunCbte:cCodSuc,oRunCbte:cTipDoc,oRunCbte:cCodigo,oRunCbte:cNumero,oRunCbte:lVenta,NIL,NIL,NIL,NIL,oRunCbte),;
+                  oRunCbte:RUNSAVE())
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\XSALIR.BMP";
+          ACTION oRunCbte:Close()
+
+   DEFAULT oDp:cInvContab:=""
+
+   IF !Empty(oDp:cInvContab)
+     @ 01,90  SAY " Contabilizar Productos "       OF oBar PIXEL BORDER SIZE 160,20
+     @ 01,252 SAY " "+ALLTRIM(oDp:cInvContab)+" "  OF oBar PIXEL BORDER SIZE 110,20 COLOR CLR_WHITE,16751415
+   ENDIF
+
+   oBtn:cToolTip:="Listar Tablas"
+
+
+RETURN .T.
+
+FUNCTION RUNASIENTO(cNumCom,cCodSuc,cTipDoc,cCodigo,cNumero,lVenta,lAsk, cNumPag , cTipTra , cOrg,oRunCbte )
+  LOCAL cWhere,oTable,cSql,cCodCta,cDescri,cCtaCod:="",cCxCNac,cNombre,nRata,nIva,nVta:=-1,I,lDoc:=.F.,lInv:=.F.,lInvCon:=.F.
+  LOCAL cSqlLic   :="",oImpLic,cCodCtaEgr,cWhereDoc,nInvAct:=0
+  LOCAL nCxC      :=1,nMtoCta:=0,nBruto:=0,cNomDoc:="",cCodCta,cCtaTip,lUpdate:=.F.,nCosto:=0,lCostInv:=.F.
+  LOCAL nMonto    :=0,cCtaDoc:="",cCtaCxC:="",cDebCre:=""
+  LOCAL cDpDocCli :=IIF(lVenta,"DPDOCCLI"   ,"DPDOCPRO"   )
+  LOCAL cDpCliCta :=IIF(lVenta,"DPDOCCLICTA","DPDOCPROCTA")
+  LOCAL cDpTipDoc :=IIF(lVenta,"DPTIPDOCCLI","DPTIPDOCPRO")
+  LOCAL cConFchDec:=IIF(oDp:lConFchDec,IIF(lVenta,"DOC_FECHA","DOC_FCHDEC AS DOC_FECHA") ,"DOC_FECHA")
+  LOCAL cFchDec:=IIF(oDp:lConFchDec,"DOC_FCHDEC","DOC_FECHA")
+  LOCAL cCodInt,lCodInt,nMtoInt:=0
+  LOCAL cCodCtaBco,cCtaCtbBco
+  LOCAL cCosta:="" // Costo de Venta (Metodo Continuo)
+  LOCAL cJoinGru:="",oMemo // Relacion con Grupo para Contabilizar Inventario
+  LOCAL cDpGrupo:="DPGRU"
+  LOCAL nIvaReb :=0
+
+  DEFAULT cOrg   :=IIF(lVenta,"VTA","COM")
+
+
+  IF ValType(oRunCbte)="O"
+     oMemo:=oRunCbte:oResp
+  ENDIF
+
+  // Compras
+  IF !lVenta
+
+/*
+     oDp:cCtaVtaExt:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMEXT'"    )
+     oDp:cCtaVtaNac:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMNAC'"    )
+     // CXC
+     oDp:cCtaCxCExt:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='CXPEXT'"    )
+     oDp:cCtaCxCNac:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='CXPNAC'"    )
+*/
+
+    oDp:cCtaComExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMEXT'"    )
+    oDp:cAbrComExt:=IIF(Empty(oDp:aRow),"Compra Exterior" , ALLTRIM(oDp:aRow[2]))+" "
+
+    oDp:cCtaComNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMNAC'"    )
+    oDp:cAbrComExt:=IIF(Empty(oDp:aRow),"Compra Nacional" , ALLTRIM(oDp:aRow[2]))+" "
+
+    oDp:cCtaCxPExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='CXPEXT'"    )
+    oDp:cAbrCxPExt:=IIF(Empty(oDp:aRow),"CxP Exterior" , ALLTRIM(oDp:aRow[2]))+" "
+
+    oDp:cCtaCxPNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='CXPNAC'"    )
+    oDp:cAbrCxPNac:=IIF(Empty(oDp:aRow),"CxP Nacional" , ALLTRIM(oDp:aRow[2]))+" "
+
+    // RECARGO COMPRAS NACIONALES
+    oDp:cCtaRecNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMRECNAC'" )
+    oDp:cAbrRecNac:=IIF(Empty(oDp:aRow),"Recargo" , ALLTRIM(oDp:aRow[2]))+" "
+
+    // RECARGO COMPRAS EXTERIOR
+    oDp:cCtaRecExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMRECEXT'" )
+    oDp:cAbrRecExt:=IIF(Empty(oDp:aRow),"Recargo" , ALLTRIM(oDp:aRow[2]))+" "
+
+    // Descuentos NACIONALES
+    oDp:cCtaDesNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMDESNAC'")
+    oDp:cAbrDesNac:=IIF(Empty(oDp:aRow),"Descuento", ALLTRIM(oDp:aRow[2]))+" "
+
+    // Descuentos EXTERIOR
+    oDp:cCtaDesExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='COMDESEXT'")
+    oDp:cAbrDesExt:=IIF(Empty(oDp:aRow),"Descuento", ALLTRIM(oDp:aRow[2]))+" "
+
+    nCxC:=-1
+    cDebCre:=MYSQLGET("DPTIPDOCPRO","TDC_CXP","TDC_TIPO"+GetWhere("=",cTipDoc))
+    nCxC   :=IIF(cDebCre="C", 1,nCxC)
+    nCxC   :=IIF(cDebCre="D",-1,nCxC)
+    nCxC   :=IIF(cDebCre="N", 0,nCxC)
+
+  ELSE
+
+    oDp:cCtaVtaExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTAEXT'"    )
+    oDp:cAbrVtaExt:=IIF(Empty(oDp:aRow),"Venta Exterior" , ALLTRIM(oDp:aRow[2]))+" "
+
+    oDp:cCtaVtaNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTANAC'"    )
+    oDp:cAbrVtaExt:=IIF(Empty(oDp:aRow),"Venta Nacional" , ALLTRIM(oDp:aRow[2]))+" "
+
+    oDp:cCtaCxCExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='CXCEXT'"    )
+    oDp:cAbrCxCExt:=IIF(Empty(oDp:aRow),"CxC Exterior SSS" , ALLTRIM(oDp:aRow[2]))+" "
+
+    oDp:cCtaCxCNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='CXCNAC'"    )
+
+    oDp:cAbrCxCNac:=IIF(Empty(oDp:aRow),"CxC Nacional" , ALLTRIM(oDp:aRow[2]))+" "
+
+//    oDp:cCtaRecNac:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTARECARG'" )
+//    oDp:cAbrVtaRec:=IIF(Empty(oDp:aRow),"Recargo",oDp:aRow[2])
+//    oDp:cCtaDesNac:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTADESCUEN'")
+//    oDp:cCtaImpLic:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPNACLIC '")
+
+    // RECARGO VENTAS NACIONALES
+    oDp:cCtaRecNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTARECNAC'" )
+    oDp:cAbrRecNac:=IIF(Empty(oDp:aRow),"Recargo" , ALLTRIM(oDp:aRow[2]))+" "
+
+    // RECARGO VENTAS EXTERIOR
+    oDp:cCtaRecExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTARECEXT'" )
+    oDp:cAbrRecExt:=IIF(Empty(oDp:aRow),"Recargo" , ALLTRIM(oDp:aRow[2]))+" "
+
+    // DESCUENTOS NACIONALES
+    oDp:cCtaDesNac:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTADESNAC'")
+    oDp:cAbrDesNac:=IIF(Empty(oDp:aRow),"Descuento", ALLTRIM(oDp:aRow[2]))+" "
+
+    // DESCUENTOS EXTERIOR
+    oDp:cCtaDesExt:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='VTADESEXT'")
+    oDp:cAbrDesExt:=IIF(Empty(oDp:aRow),"Descuento", ALLTRIM(oDp:aRow[2]))+" "
+
+    nCxC:=1
+    cDebCre:=MYSQLGET("DPTIPDOCCLI","TDC_CXC","TDC_TIPO"+GetWhere("=",cTipDoc))
+    nCxC   :=IIF(cDebCre="C",-1,nCxC)
+    nCxC   :=IIF(cDebCre="D", 1,nCxC)
+    nCxC   :=IIF(cDebCre="N", 0,nCxC)
+
+  ENDIF
+
+  DEFAULT cNumPag:="",;
+          cTipTra:="D"
+  
+  IF cTipDoc="OPA"
+     cConFchDec:="DOC_FECHA"
+  ENDIF
+
+  IF lVenta
+
+    cCxCNac:=oDp:cCtaCxCNac
+
+    MYSQLGET("DPCLIENTECTA","CXC_CTADEB,CXC_CTACRE","CXC_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+                                                    "CXC_CODIGO"+GetWhere("=",cCodigo))
+  ELSE
+
+    cCxCNac:=oDp:cCtaCxPNac
+
+    MYSQLGET("DPPROVEEDORCTA","CXP_CTADEB,CXP_CTACRE","CXP_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+                                                    "CXP_CODIGO"+GetWhere("=",cCodigo))
+  ENDIF
+ 
+  IF oDp:lDebug
+     ?? "Cta"+IIF(lVenta,"xCobrar ","xPagar "),"en Integracion Contable. ",cCxCNac
+  ENDIF
+
+  // Cuentas propias del Proveedor en Cuentas por Proveedor y Tipo de Documento
+  IF !Empty(oDp:aRow)
+
+     IF oDp:lDebug
+        AEVAL(oDp:aRow,{|a,n|MsgInfo("Cta Del Proveedor/Cliente y Documento: "+CTOO(a,"C"))})
+     ENDIF
+
+     If !Empty(oDp:aRow[1])
+       cCtaDoc:=oDp:aRow[1]
+     EndIf
+
+     If !Empty(oDp:aRow[2])
+       cCtaCxC:=oDp:aRow[2]
+       cCxCNac:=cCtaCxC
+     EndIf
+
+  ENDIF
+
+  IF oDp:lDebug
+     ?? "Cta"+IIF(lVenta,"xCobrar ","xPagar "),"en Integracion Contable (Por Proveedor). ",cCxCNac
+  ENDIF
+
+  // Busca Directamente en la Ficha del Cliente
+//  IF Empty(cCtaCxC) .OR. ALLTRIM(cCtaCxC)=oDp:cCtaIndef
+
+     IF lVenta
+
+       cCtaCxC:=MYSQLGET("DPCLIENTES"  ,"CLI_CUENTA","CLI_CODIGO"+GetWhere("=",cCodigo))
+
+     ELSE
+
+       cCtaCxC:=MYSQLGET("DPPROVEEDOR" ,"PRO_CUENTA","PRO_CODIGO"+GetWhere("=",cCodigo))
+
+     ENDIF
+
+     IIF( (Empty(cCtaCxC) .OR. ALLTRIM(cCtaCxC)=oDp:cCtaIndef), cCxCNac:=cCtaCxC, NIL )
+
+//  ENDIF
+
+  IF oDp:lDebug
+     ?? "Cta"+IIF(lVenta,"xCobrar ","xPagar "),"en Integracion Contable (Por Proveedor). ",cCxCNac
+  ENDIF
+
+  // Si no Existe CxC por Cliente, se Utiliza el Codigo de Integración
+
+  IF lVenta  .AND.  (Empty(cCtaCxC) .OR. ALLTRIM(cCtaCxC)=oDp:cCtaIndef)
+
+    cCxCNac:=oDp:cCtaCxCNac
+
+  ENDIF
+
+  IF !lVenta  .AND.  (Empty(cCtaCxC) .OR. ALLTRIM(cCtaCxC)=oDp:cCtaIndef)
+
+    cCxCNac:=oDp:cCtaCxPNac
+
+  ENDIF
+
+  oDp:lExcluye:=.F.
+  cNomDoc:=ALLTRIM(MYSQLGET(cDpTipDoc,"TDC_DESCRI,TDC_CODCTA,TDC_INVACT,TDC_INVFIS,TDC_INVLOG,TDC_INVCON","TDC_TIPO"+GetWhere("=",cTipDoc)))
+  nInvAct:=DPSQLROW(3,0)
+//nInvAct:=oDp:aRow[3]
+
+//Verificar ya que en ocasiones la contabilizacion de recibos de ingreso
+// toma ctipdoc= vacio lo que da mensaje Ctipdoc=P no existe en dptipdoccli TJ 15-05-2017
+/*
+  IF Empty(cNomDoc)
+     MensajeErr(cTipDoc+" no existe en Tabla "+cDpTipDoc)
+     RETURN .F.
+  ENDIF
+*/
+
+  // Documento Que no Afectan Cuentas por Cobrar/Pagar
+  IF nCxC=0 .AND. nInvAct<>0
+    nCxC:=(nInvAct*-1)
+    // Si no es Documento Contable, Toma el Caso Contrario del Inventario
+  ENDIF
+  
+  // Si el Cliente/Proveedor no tiene Cuenta Busca la Cuenta del Tipo de Documento
+  //  -------------------- CORRECCION APLICADA MARZO 2007.
+  // IF !Empty(cCtaDoc)
+  IF Empty(cCtaDoc) .OR. ALLTRIM(cCtaCod)=oDp:cCtaIndef
+    cCtaDoc:=DPSQLROW(2,"") // JN 07/10/2016 oDp:aRow[2]
+  ENDIF
+
+  //? cCtaDoc,cCtaCxC,LEN(oDp:aRow),cCodigo
+
+  cWhere:="DOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+          "DOC_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+          "DOC_CODIGO"+GetWhere("=",cCodigo)+" AND "+;
+          "DOC_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+          "DOC_TIPTRA"+GetWhere("=","D")
+
+  cWhereDoc:=cWhere
+ 
+  cJoinGru:=" INNER JOIN DPGRU    ON INV_GRUPO =GRU_CODIGO "
+
+  // Compatible con release Anterior
+  DEFAULT oDp:cInvContab:=""
+
+  IF  LEFT(oDp:cInvContab,1)="G"
+     cJoinGru:=" LEFT JOIN VIEW_DPGRUCTA  ON INV_GRUPO =GRU_CODIGO "
+  ENDIF
+
+  IF  LEFT(oDp:cInvContab,1)="D"
+     cJoinGru:=" LEFT JOIN VIEW_DPDPTO_INV_CTA ON INV_GRUPO =GRU_CODIGO "
+  ENDIF
+
+  // Contabiliza los Productos
+  cSql  :="SELECT GRU_CODIGO,GRU_DESCRI,"+;
+          "DOC_NUMERO,DOC_CBTNUM,DOC_TIPDOC,"+cConFchDec+",DOC_DCTO,DOC_RECARG,DOC_OTROS,DOC_IVAREB,DOC_NETO,DOC_CODIGO,"+;
+          IF(lVenta,"DOC_DESTIN","DOC_ORIGEN AS DOC_DESTIN ")+;
+          ",TDG_CODCTA,GRU_CTAVTA,GRU_CTACOM,GRU_CTADVC,GRU_CTADVV,MOV_IVA,DOC_DOCORG,MOV_CENCOS,DOC_CENCOS,"+;
+          " DOC_CODMON,DOC_VALCAM,SUM(MOV_TOTAL) AS TOTAL,SUM(MOV_COSTO*MOV_CANTID) AS COSTO FROM "+cDpDocCli+" "+;
+          "LEFT  JOIN DPMOVINV ON MOV_TIPDOC=DOC_TIPDOC AND MOV_CODCTA=DOC_CODIGO AND MOV_DOCUME=DOC_NUMERO AND MOV_CODSUC=DOC_CODSUC "+;
+          "INNER JOIN DPINV    ON MOV_CODIGO=INV_CODIGO "+;
+          cJoinGru+;
+          "INNER JOIN DPIVATIP ON MOV_TIPIVA=TIP_CODIGO "+;
+          "INNER JOIN "+IIF(lVenta," DPCLIENTES ON CLI_CODIGO=MOV_CODCTA "," DPPROVEEDOR ON PRO_CODIGO=MOV_CODCTA ")+;
+          "LEFT  JOIN "+IIF(lVenta," DPTIPDOCCLIGRU","DPTIPDOCPROGRU")+ " ON TDG_TIPDOC=DOC_TIPDOC AND TDG_GRUPO=GRU_CODIGO "+;
+          " WHERE "+cWhere+;
+          "GROUP BY "+;
+          "DOC_NUMERO,DOC_CBTNUM,DOC_TIPDOC,DOC_FECHA,DOC_DCTO,DOC_RECARG,DOC_OTROS ,DOC_NETO,DOC_CODIGO,"+;
+          IF(lVenta,"DOC_DESTIN","DOC_ORIGEN")+","+;
+          "GRU_CODIGO,GRU_DESCRI,MOV_CENCOS,DOC_CENCOS,DOC_CODMON,DOC_VALCAM"
+//        "TDG_CODCTA,GRU_DESCRI,MOV_CENCOS,DOC_CENCOS,DOC_CODMON,DOC_VALCAM"
+
+
+? CLPCOPY(cSql)
+
+   oTable:=OpenTable(cSql,.T.)
+
+   cCodCta:="Registro: "+oTable:DOC_TIPDOC+"-"+oTable:DOC_NUMERO
+
+   IF oTable:RecCount()>0 .AND. Empty(SQLGET("DPCENCOS","CEN_CODIGO","CEN_CODIGO"+GetWhere("=",oTable:DOC_CENCOS)))
+      MensajeErr(oDp:DPCENCOS+" Código: "+oTable:DOC_CENCOS+" no Existe"+CRLF+"Registro:"+cCodCta)
+      RETURN .F.
+   ENDIF
+
+   cCodCta:=SQLGET(IF(lVenta,"DPTIPDOCCLIGRU","DPTIPDOCPROGRU"),"TDG_CODCTA",;
+            "TDG_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+            "TDG_GRUPO "+GetWhere("=",oTable:GRU_CODIGO))
+
+  IF !lVenta .AND. oTable:DOC_DESTIN="I"
+    cCxCNac:=oDp:cCtaCxPExt
+  ENDIF
+
+  IF lVenta .AND. oTable:DOC_DESTIN="E"
+// ? "AQUI"
+    cCxCNac:=oDp:cCtaCxCExt
+  ENDIF
+
+  lInv:=.T.
+
+
+  IF oTable:Recno()=0
+    // Busca las Cuentas Contables por Documento
+    lInv:=.F.
+    // lDoc:=.T.
+    oTable:End()
+
+    cSql  :=" SELECT CCD_ACT,CCD_TIPIVA,CCD_TIPCTA,CCD_ITEM,CCD_CTAEGR,CCD_CODCTA,CCD_MONTO AS TOTAL,CCD_PORIVA,CCD_DESCRI,TIP_CTADEB,TIP_CTACRE,TIP_DESCRI,"+;
+            " CCD_CENCOS,DOC_NUMERO,DOC_CBTNUM,DOC_TIPDOC,"+cConFchDec+",DOC_DCTO,DOC_RECARG,DOC_OTROS,DOC_NETO,DOC_CODIGO," + ;
+            " DOC_IMPOTR, "+;
+            IIF(lVenta,"DOC_DESTIN ","DOC_ORIGEN " )+" AS DOC_DESTIN "+;
+            " ,CCD_CODSUC,DOC_CENCOS,DOC_CODMON,DOC_VALCAM,DOC_IVAREB "+;
+            " FROM "+cDpDocCli+" "+;
+            " INNER JOIN "+cDpCliCta+" ON CCD_TIPDOC=DOC_TIPDOC AND CCD_NUMERO=CCD_NUMERO AND CCD_CODSUC=DOC_CODSUC"+;
+            " LEFT JOIN DPIVATIP      ON CCD_TIPIVA=TIP_CODIGO "+;
+            " WHERE CCD_ACT=1 AND "+cWhere+" AND CCD_NUMERO "+GetWhere("=",cNumero)+;
+            IIF(lVenta,"", " AND CCD_CODIGO"+GetWhere("=",cCodigo))
+
+    oTable:=OpenTable(cSql,.T.)
+    lDoc  :=oTable:Recno()>0
+
+  ENDIF
+
+  nBruto:=0
+  WHILE !oTable:Eof()
+    nBruto:=nBruto+oTable:TOTAL
+    oTable:DbSkip()
+  ENDDO
+
+  oTable:Gotop()
+
+  // No tiene Productos ni Cuentas, puede ser ANTICIPO,CHEQUE DEV
+  IF (oTable:RecCount()=0 .AND. lDoc) .OR. (!lDoc .AND. !lInv)
+    oTable:End()
+
+    cSql  :="SELECT DOC_NUMERO,DOC_CBTNUM,DOC_TIPDOC,DOC_FECHA,DOC_DCTO,DOC_RECARG,DOC_OTROS,DOC_NETO,DOC_CODIGO,"+;
+            IF(lVenta,"DOC_DESTIN","DOC_ORIGEN AS DOC_DESTIN ")+;
+            ", DOC_NETO AS TOTAL,DOC_DOCORG,DOC_CENCOS,DOC_CODMON,DOC_VALCAM,DOC_IVAREB FROM "+cDpDocCli+" "+;
+            " WHERE "+cWhere
+
+    oTable:=OpenTable(cSql,.T.)
+    nBruto:=oTable:DOC_NETO
+
+  ENDIF
+  
+  nIvaReb:=oTable:DOC_IVAREB
+
+// ? nIvaReb,"nIvaReb",ValType(oTable:DOC_IVAREB),"oTable:DOC_IVAREB"
+
+  IF !Empty(oTable:DOC_CBTNUM) // Borra el Asiento Anterior
+
+    IF MYSQLGET("DPASIENTOS","MOC_ACTUAL","MOC_NUMCBT"+GetWhere("=",oTable:DOC_CBTNUM)+" AND "+;
+                             "MOC_FECHA "+GetWhere("=",oTable:DOC_FECHA )+" AND "+;
+                             "MOC_TIPO  "+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+                             "MOC_DOCUME"+GetWhere("=",oTable:DOC_NUMERO)+" AND "+;
+                             "MOC_CODAUX"+GetWhere("=",oTable:DOC_CODIGO)+" AND "+;
+                             "MOC_CODSUC"+GetWhere("=",cCodSuc          )+" AND "+;
+                             "MOC_ACTUAL"+GetWhere("=","S"              )+" AND "+;       
+                             "MOC_TIPTRA"+GetWhere("=","D"              )+" AND "+;
+                             "MOC_ORIGEN"+GetWhere("=",cOrg             ))="S"
+      oTable:End()
+
+      RETURN .F.
+
+    ENDIF            
+
+    SQLDELETE("DPASIENTOS","MOC_NUMCBT"+GetWhere("=",oTable:DOC_CBTNUM)+" AND "+;
+                           "MOC_FECHA "+GetWhere("=",oTable:DOC_FECHA )+" AND "+;
+                           "MOC_TIPO  "+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+                           "MOC_DOCUME"+GetWhere("=",oTable:DOC_NUMERO)+" AND "+;
+                           "MOC_CODAUX"+GetWhere("=",oTable:DOC_CODIGO)+" AND "+;
+                           "MOC_CODSUC"+GetWhere("=",cCodSuc          )+" AND "+;
+                           "MOC_ACTUAL"+GetWhere("=","N"              )+" AND "+;       
+                           "MOC_TIPTRA"+GetWhere("=","D"              )+" AND "+;
+                           "MOC_ORIGEN"+GetWhere("=",cOrg             ))            
+  ENDIF
+
+  oTable:GoTop()
+  
+  EJECUTAR("DPDELCBTEV")
+
+//? oTable:DOC_ESTADO,"oTable:DOC_ESTADO"
+
+/*
+  IF oTable:DOC_ESTADO="NU"
+     oTable:End()
+     RETURN .F.
+  ENDIF
+*/
+
+
+ // ? CLPCOPY(oTable:cSql)
+ // oTable:Browse()
+
+  IF lVenta  // CXC
+    cNombre:=MYSQLGET("DPCLIENTES","CLI_NOMBRE","CLI_CODIGO"+GetWhere("=",oTable:DOC_CODIGO))
+    cDescri:=IIF(oTable:DOC_DESTIN="N" , oDp:cAbrCxCNac , oDp:cAbrCxCExt ) + cNombre
+  ELSE       // CXP
+    cNombre:=MYSQLGET("DPPROVEEDOR","PRO_NOMBRE","PRO_CODIGO"+GetWhere("=",oTable:DOC_CODIGO))
+    cDescri:=IIF(oTable:DOC_DESTIN="N" , oDp:cAbrCxPNac , oDp:cAbrCxPExt ) + cNombre
+  ENDIF
+
+  cTipDoc:=oTable:DOC_TIPDOC
+  
+  IF cTipDoc<>"OPA"
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCxCNac,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,oTable:DOC_NETO*nCxC,cCodigo,"D",cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // Recargo OTROS (Nacional)
+  IF oTable:DOC_OTROS>0 .AND. oTable:DOC_DESTIN="N"
+    cDescri:=oDp:cAbrRecNac
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaRecNac,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,oTable:DOC_OTROS*-1*nCxC,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // Recargo OTROS (Exterior)
+  IF oTable:DOC_OTROS>0 .AND. oTable:DOC_DESTIN<>"N"
+    cDescri:=oDp:cAbrRecExt
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaRecExt,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,oTable:DOC_OTROS*-1*nCxC,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // % Recargo Nacionales
+  IF oTable:DOC_RECARG>0 .AND. oTable:DOC_DESTIN="N"
+    cDescri:=oDp:cAbrRecNac+LSTR(oTable:DOC_RECARG)+"%  Sobre: "+ALLTRIM(TRAN(nBruto,"999,999,999,999,999.99"))
+    nMonto :=ROUND(PORCEN(nBruto,oTable:DOC_RECARG),2)*-1*nCxC
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaRecNac,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // % Recargo Exterior
+  IF oTable:DOC_RECARG>0 .AND. oTable:DOC_DESTIN<>"N"
+    cDescri:=oDp:cAbrRecExt+LSTR(oTable:DOC_RECARG)+"%  Sobre: "+ALLTRIM(TRAN(nBruto,"999,999,999,999,999.99"))
+    nMonto :=ROUND(PORCEN(nBruto,oTable:DOC_RECARG),2)*-1*nCxC
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaRecExt,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // Descuento (OTROS) Nacional
+  IF oTable:DOC_OTROS<0 .AND. oTable:DOC_DESTIN="N"
+    cDescri:=oDp:cAbrDesNac
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaDesNac,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,oTable:DOC_OTROS*-1*nCxC,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // Descuento (OTROS) Exterior
+  IF oTable:DOC_OTROS<0 .AND. oTable:DOC_DESTIN<>"N"
+    cDescri:=oDp:cAbrDesExt
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaDesExt,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,oTable:DOC_OTROS*-1*nCxC,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // Descuento % Nacional
+  IF oTable:DOC_DCTO>0 .AND. oTable:DOC_DESTIN="N" .AND. !(oTable:DOC_TIPDOC$"RMU,RET,RTI")
+    cDescri:=oDp:cAbrDesNac+LSTR(oTable:DOC_DCTO)+"%  Sobre: "+ALLTRIM(TRAN(nBruto,"999,999,999,999,999.99"))
+    nMonto :=ROUND(PORCEN(nBruto,oTable:DOC_DCTO),2)*nCxC
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaDesNac,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  // Descuento % Nacional
+  IF oTable:DOC_DCTO>0 .AND. oTable:DOC_DESTIN<>"N" .AND. !(oTable:DOC_TIPDOC$"RMU,RET,RTI")
+    cDescri:=oDp:cAbrDesExt+LSTR(oTable:DOC_DCTO)+"%  Sobre: "+ALLTRIM(TRAN(nBruto,"999,999,999,999,999.99"))
+    nMonto :=ROUND(PORCEN(nBruto,oTable:DOC_DCTO),2)*nCxC
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,oDp:cCtaDesExt,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  nMonto:=0
+  //
+  // Cuerpo (PRODUCTOS) del Documento
+  //
+
+  nBruto :=0
+  nMtoInt:=0
+  nCosto :=0
+  cCodInt:=""
+  lCodInt:=.F.
+  cCosVta:="" // Cuenta de Costo de Venta
+
+  WHILE !oTable:Eof() .AND. lInv
+
+//  cCodCta:= IIF( lVenta , oTable:GRU_CTAVTA, oTable:GRU_CTACOM ) // Cuenta de Venta-Compra del Grupo
+//
+//? cCodCta,"cCodCta"
+
+    IF Empty(cCodCta) .OR. "Indef"$cCodCta
+
+      // Cuentas Contables por Tipo de Documento
+
+      cCodCta:=SQLGET(IF(lVenta,"DPTIPDOCCLIGRU","DPTIPDOCPROGRU"),"TDG_CODCTA",;
+               "TDG_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+               "TDG_GRUPO "+GetWhere("=",oTable:GRU_CODIGO))
+
+    ENDIF
+
+    cDescri:= ALLTRIM(oTable:GRU_DESCRI)+" ["+ALLTRIM(oTable:GRU_CODIGO)+"] "+cNomDoc 
+
+    // Producto no Tiene Cuenta Contable
+    // Asume la Cuenta del en Tipos de Documento
+
+    IF Empty(cCodCta) .OR. UPPE(cCodCta)=UPPE(oDp:cCtaIndef)
+
+       // aqui, buscamos la cuenta general del grupo.
+
+       cDpGrupo:="DPGRU"
+
+       IF  LEFT(oDp:cInvContab,1)="G"
+             // cCodCta:=SQLGET("DPGRU","GRU_CTAVTA","GRU_CODIGO"+GetWhere("=",oTable:GRU_CODIGO))
+          cDpGrupo:="VIEW_DPGRUCTA"
+       ENDIF
+
+       IF  LEFT(oDp:cInvContab,1)="D"
+          cDpGrupo:="VIEW_DPDPTO_INV_CTA"
+       ENDIF
+
+       IF lVenta
+
+          cCodCta:=SQLGET(cDpGrupo,"GRU_CTAVTA","GRU_CODIGO"+GetWhere("=",oTable:GRU_CODIGO))
+
+          // Método Contínuo, Utiliza Cuenta de Activos
+          IF LEFT(oDp:cMetodoCos,1)="C" 
+            cCodCta:=SQLGET(cDpGrupo,"GRU_CTAACT,GRU_CTACOS","GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+            cCosVta:=DPSQLROW(2)
+          ENDIF
+
+       ELSE
+
+          // cCodCta:=SQLGET("DPGRU","GRU_CTACOM","GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+
+          cCodCta:=SQLGET(cDpGrupo,"GRU_CTACOM","GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+
+          // Método Contínuo, Utiliza Cuenta de Activos
+          IF LEFT(oDp:cMetodoCos,1)="C" 
+            // cCodCta:=SQLGET(cDpGrupo,"GRU_CTAACT","GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+            cCodCta:=SQLGET(cDpGrupo,"GRU_CTAACT","GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+
+          ENDIF
+
+       ENDIF
+
+       // busca la Cuenta de Cliente/Proveedor
+       IF Empty(cCodCta) .OR. UPPE(cCodCta)=UPPE(oDp:cCtaIndef)
+          cCodCta:=cCtaDoc
+       ENDIF
+
+    ENDIF
+
+    // Asume Cuenta Definida en Integración
+    lCodInt:=.F.
+
+/*
+// ? cCodCta,"cGrupo",oTable:GRU_CODIGO
+    IF Empty(cCodCta) .OR. UPPE(cCodCta)=UPPE(oDp:cCtaIndef)
+      cCodCta:=IIF(oTable:DOC_DESTIN="N",oDp:cCtaVtaNac,oDp:cCtaVtaExp)
+// ? cCodCta,"Integración"
+      cCodInt:=cCodCta
+      lCodInt:=.T.
+    ENDIF
+*/
+      // se agrego IF lVenta para que traiga la cuenta de integracion tanto de CxP
+      // como CxC
+  IF lVenta
+    IF Empty(cCodCta) .OR. UPPE(cCodCta)=UPPE(oDp:cCtaIndef)
+      cCodCta:=IIF(oTable:DOC_DESTIN="N",oDp:cCtaVtaNac,oDp:cCtaVtaExp)
+     // ? cCodCta,"Integración"
+      cCodInt:=cCodCta
+      lCodInt:=.T.
+    ENDIF
+  ELSE
+    IF Empty(cCodCta) .OR. UPPE(cCodCta)=UPPE(oDp:cCtaIndef)
+      cCodCta:=IIF(oTable:DOC_DESTIN="N",oDp:cCtaComNac,oDp:cCtaComExp)
+ // ? cCodCta,"Integración"
+      cCodInt:=cCodCta
+      lCodInt:=.T.
+    ENDIF
+
+  ENDIF
+
+    nMonto :=ROUND(oTable:TOTAL*nVta*nCxC,2)
+    nBruto :=ROUND(nBruto+nMonto,2)
+    nCosto :=nCosto + ROUND(oTable:COSTO*nCxC,2)
+
+    lCostInv :=SQLGET("DPGRU","GRU_COSINV","GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+
+//?  lCostInv,"lCostInv"
+
+    IF !lCodInt
+
+      EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:MOV_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+
+      // Gasto de Ventas
+
+      IF lVenta .AND. lCostInv
+
+       cCodCta:=SQLGET("DPGRU","GRU_CTACOS",;
+                "GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+       cDescri :="Costo de Ventas"+" ["+ALLTRIM(oTable:GRU_CODIGO)+"] "+cNomDoc 
+       nMonto := nCosto
+       EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+       cCodCta:=SQLGET("DPGRU","GRU_CTAINI",;
+                "GRU_CODIGO "+GetWhere("=",oTable:GRU_CODIGO))
+       nMonto := nMonto *-1
+       cDescri :="Inventario"+" ["+ALLTRIM(oTable:GRU_CODIGO)+"] "+cNomDoc
+       EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+       nCosto  := 0
+       lCostInv:=.F.
+
+      ENDIF
+
+    ELSE
+
+      nMtoInt:=ROUND(nMtoInt+nMonto,2)
+
+    ENDIF
+
+    oTable:DbSkip()
+
+  ENDDO
+
+  // Ventas Acumuladas Según Integración, Asi no se Hacen tantos Asientos
+  IF !Empty(cCodInt)
+    oTable:GoTop()
+    nMonto:=ROUND(nMtoInt,2)
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:MOV_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+  ENDIF
+
+  nMonto:=nBruto
+
+  // Ventas Según Documentos
+  oTable:GoTop()
+  // oTable:Browse()
+  // Cuentas de Egreso
+  // No puede ser generado en PAGOS
+  //
+
+  WHILE !oTable:Eof() .AND. lDoc  // .AND. oTable:DOC_DOCORG<>"P"
+
+     cDescri:=MYSQLGET(cDpTipDoc,"TDC_DESCRI,TDC_CODCTA","TDC_TIPO"+GetWhere("=",oTable:DOC_TIPDOC))
+     cDescri:=ALLTRIM(cDescri)+" "+cNombre
+     cCodCta:=oTable:CCD_CODCTA // cCtaDoc
+     cCtaTip:=oDp:aRow[2]
+
+     lUpdate:=.F.
+
+     // Busca la Cuenta Auxliar
+
+     IF oTable:CCD_TIPCTA="A"
+        // Auxiliar Siempre debe Buscar la Cuenta Contable Actual
+
+        cCodCta:=MYSQLGET("DPCTAEGRESO","CEG_CUENTA","CEG_CODIGO"+GetWhere("=",oTable:CCD_CTAEGR))
+        lUpdate:=.T.
+
+     ENDIF
+
+     // Busca la Cuenta del Cliente
+
+     IF (ALLTRIM(cCodCta)=ALLTRIM(oDp:cCtaIndef) .AND. (oDp:cCtaIndef=oTable:CCD_CTAEGR) .OR. Empty(oTable:CCD_CTAEGR))
+
+        lUpdate:=.T.
+
+        IF !lVenta
+
+           cCodCta:=MYSQLGET("DPPROVEEDORCTA","CXP_CTADEB","CXP_CODIGO"+GetWhere("=",cCodigo)+" AND "+;
+                                              "CXP_TIPDOC"+GetWhere("=",cTipDoc))
+        ELSE
+
+           cCodCta:=MYSQLGET("DPCLIENTECTA"  ,"CXC_CTADEB","CXC_CODIGO"+GetWhere("=",cCodigo)+" AND "+;
+                                              "CXC_TIPDOC"+GetWhere("=",cTipDoc))
+
+        ENDIF
+
+
+    ENDIF
+
+    IF lUpdate
+
+        IF Empty(cCodCta) .OR. cCodCta=oDp:cCtaIndef
+           cCodCta:=cCtaTip
+        ENDIF
+
+        cWhere:="CCD_CODSUC"+GetWhere("=",cCodSuc        )+" AND "+;
+                "CCD_TIPDOC"+GetWhere("=",cTipDoc        )+" AND "+;
+                "CCD_ITEM"  +GetWhere("=",oTable:CCD_ITEM)+" AND "+;
+                "CCD_NUMERO"+GetWhere("=",cNumero)+;
+                IIF(lVenta,"",;
+                " AND CCD_CODIGO"+GetWhere("=",cCodigo))
+
+        IF !Empty(cCodCta)
+           SQLUPDATE(cDpCliCta,"CCD_CODCTA",cCodCta,cWhere)
+        ENDIF
+
+     ENDIF
+
+
+     nMtoCta:=oTable:TOTAL*nCxC*-1 // * IIF(oTable:DOC_TIPDOC="OPA",1,-1)*nCxC 
+     cDescri:=oTable:CCD_DESCRI
+
+     EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMtoCta,cCodigo,cTipTra,cNumPag,oTable:CCD_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+
+     oTable:DbSkip()
+
+  ENDDO
+
+  oTable:GoTop()
+
+  //
+  // Retenciones  y Documentos sin Cuentas ni productos
+  //
+
+  // ? lInv,lDoc,"AQUI ES lInv","lDoc",cNumPag
+
+  IF (!lInv .AND. !lDoc) .AND. Empty(cNumPag) // !Empty(cCtaDoc)
+
+    IF lVenta
+      cCodCta:=MYSQLGET("DPCLIENTECTA"  ,"CXC_CTADEB","CXC_CODIGO"+GetWhere("=",oTable:DOC_CODIGO))
+    ELSE
+      cCodCta:=MYSQLGET("DPPROVEEDORCTA","CXP_CTADEB","CXP_CODIGO"+GetWhere("=",oTable:DOC_CODIGO))
+    ENDIF
+
+    cDescri:=MYSQLGET(cDpTipDoc,"TDC_DESCRI,TDC_CODCTA","TDC_TIPO"+GetWhere("=",oTable:DOC_TIPDOC))
+    cDescri:=ALLTRIM(cDescri)+" "+cNombre
+    cCodCta:=cCtaDoc
+
+    IF (Empty(cCodCta).OR. UPPE(cCodCta)=UPPE(oDp:cCtaIndef)) .AND. !Empty(oDp:aRow)
+      cCodCta:=oDp:aRow[2]
+    ENDIF
+
+    nMonto:=ROUND(oTable:DOC_NETO*nCxC*IIF(lVenta,1,-1),2)
+
+  // contabilizacion de cheque devuelto
+  IF oTable:DOC_TIPDOC="CHD" // CHEQUE DEVUELTO VENTAS
+
+   cCodCtaBco:=SQLGET("DPCTABANCOMOV","MOB_CUENTA","MOB_TIPO"+GetWhere("=","DCD")+" AND "+;
+                                     "MOB_DOCASO"+GetWhere("=",oTable:DOC_NUMERO))
+
+   cCtaCtbBco:=SQLGET("DPCTABANCO","BCO_CUENTA","BCO_CTABAN"+GetWhere("=",cCodCtaBco))
+
+    nMonto:=ROUND(oTable:DOC_NETO*nCxC*IIF(lVenta,-1,1),2)
+
+  ENDIF
+
+   // agregada contabilizacion de Reverso de Retencion de IVA
+   IF oTable:DOC_TIPDOC="RVI" // Retencion de IVA
+     nMonto:=ROUND(oTable:DOC_NETO*nCxC*IIF(lVenta,-1,1),2)
+   ENDIF
+
+   // IF lVenta
+   IF oTable:DOC_TIPDOC="ITF"
+    nCxC:=nCxC*-1
+   //  ENDIF
+    nMonto:=oTable:DOC_NETO*nCxC
+   ENDIF
+
+   EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto*nCxC,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+
+  ENDIF
+
+  // Calcula los Impuestos (Por Producto)
+  oDp:aArrayIva:={}
+
+// ? oTable:DOC_IVAREB,"oTable:DOC_IVAREB",VALTYPE(oTable:DOC_IVAREB),"oTable:DOC_IVAREB"
+// ViewArray(oTable)
+
+  IF lInv
+    EJECUTAR("DPDOCCLIIMP",cCodSuc,cTipDoc,cCodigo,cNumero,.F.,oTable:DOC_DCTO,oTable:DOC_RECARG,oTable:DOC_OTROS,IIF(lVenta,"V","C"),oTable:DOC_IVAREB)
+  ENDIF
+
+  FOR I=1 TO LEN(oDp:aArrayIva)
+
+    IF oTable:DOC_IVAREB>0 .AND. oDp:aArrayIva[I,13+1]>0
+       oDp:aArrayIva[I,08]:=oDp:aArrayIva[I,13+1]
+    ENDIF
+
+    nMonto :=ROUND(oDp:aArrayIva[I,08]*-1*nCxC,2)
+
+    IF !lVenta
+      cCodCta:=IIF( nMonto<0 , oDp:aArrayIva[I,11] , oDp:aArrayIva[I,11] )
+    ELSE
+      cCodCta:=IIF( nMonto>0 , oDp:aArrayIva[I,10] , oDp:aArrayIva[I,10] ) // Gracias: Ritzan Gutierrez
+    ENDIF
+
+    // cDescri:="IVA "+ALLTRIM(oDp:aArrayIva[I,12])+" "+LSTR(oDp:aArrayIva[I,3])+"% Sobre: "+ALLTRIM(TRAN(oDp:aArrayIva[I,07],"999,999,999,999,999.99"))
+
+//? oTable:DOC_IVAREB,"oTable:DOC_IVAREB",oDp:aArrayIva[I,13]
+
+    cDescri:="IVA "+ALLTRIM(oDp:aArrayIva[I,02])+" "+LSTR(oDp:aArrayIva[I,3])+IF(oDp:aArrayIva[I,3]>0 .AND. oTable:DOC_IVAREB>0 ,"-("+LSTR(oTable:DOC_IVAREB)+")","")+"% Sobre: "+ALLTRIM(TRAN(oDp:aArrayIva[I,4],"999,999,999,999,999.99"))
+
+    EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+
+  NEXT I
+  
+
+  // Impuesto Nacional de Licores
+
+  cSqlLic:=" SELECT "+;
+           " SUM(MOV_IMPOTR) AS MOV_IMPOTR,"+;
+           " SUM(MOV_IMPPRO) AS MOV_IMPPRO,"+;
+           " SUM(MOV_EXPEND) AS MOV_EXPEND,"+;
+           " SUM(MOV_BANDA ) AS MOV_BANDA  "+;
+           " FROM DPMOVINV WHERE "+;
+           " MOV_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+           " MOV_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+           " MOV_CODCTA"+GetWhere("=",cCodigo)+" AND "+;
+           " MOV_DOCUME"+GetWhere("=",cNumero)+" AND "+;
+           " MOV_APLORG"+GetWhere("=",IIF(lVenta,"V","C"))
+
+   oImpLic:=OpenTable(cSqlLic ,  .T.)
+   oImpLic:Gotop()
+
+   WHILE !oImpLic:Eof()
+
+      IF oImpLic:MOV_IMPOTR<>0  
+         nMonto :=ROUND(oImpLic:MOV_IMPOTR * nCxC,2)
+         cCodCta:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPPVP'"    )
+         cDescri:=IIF( Empty(oDp:aRow) , oDp:aRow[2] , " Impuesto al PVP ")
+         EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+      ENDIF
+
+      IF oImpLic:MOV_IMPPRO<>0 
+         nMonto :=ROUND(oImpLic:MOV_IMPPRO * nCxC,2)
+         cCodCta:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPPROD'"    )
+         cDescri:=IIF( Empty(oDp:aRow) , oDp:aRow[2] , " Impuesto Sobre Producción ")
+         EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+      ENDIF
+
+      IF oImpLic:MOV_EXPEND<>0 
+         nMonto :=ROUND(oImpLic:MOV_EXPEND * nCxC,2)
+         cCodCta:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPEXPEND'"    )
+         cDescri:=IIF( Empty(oDp:aRow) , oDp:aRow[2] , " Impuesto Sobre Expendio ")
+         EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+      ENDIF
+
+      IF oImpLic:MOV_BANDA<>0 
+         nMonto :=ROUND(oImpLic:MOV_BANDA * nCxC,2)
+         cCodCta:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPBANDA'"    )
+         cDescri:=IIF( Empty(oDp:aRow) , oDp:aRow[2] , " Impuesto Sobre Banda ")
+         EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+      ENDIF
+
+      oImpLic:DbSkip()
+
+   ENDDO
+
+   // oDp:cCtaImpPvP:=SQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPPVP '")
+   // IVA por Documento
+
+   EJECUTAR("DPDOCCLIIVA",cCodSuc,cTipDoc,cCodigo,cNumero,.F.,oTable:DOC_DCTO,oTable:DOC_RECARG,oTable:DOC_OTROS,NIL,IIF(lVenta,"V","C"),oTable:DOC_IVAREB)
+
+   ADEPURA(oDp:aArrayIva,{|a,n| Empty(a[3])}) // Remueve Exento 11/10/2017
+
+   FOR I=1 TO LEN(oDp:aArrayIva)
+
+     IF oTable:DOC_IVAREB>0 .AND. oDp:aArrayIva[I,08]>0
+        oDp:aArrayIva[I,05]:=oDp:aArrayIva[I,08]
+     ENDIF
+
+     nMonto :=ROUND(oDp:aArrayIva[I,05]*-1*nCxC,2)
+
+     IF lVenta
+        cCodCta:=IIF(nMonto>0 , oDp:aArrayIva[I,06] , oDp:aArrayIva[I,06] )  // Gracias Orlando Perez
+     ELSE
+        cCodCta:=IIF(nMonto<0 , oDp:aArrayIva[I,07] , oDp:aArrayIva[I,07] )  // Gracias Orlando Perez
+     ENDIF
+
+     cDescri:="IVA "+ALLTRIM(oDp:aArrayIva[I,02])+" "+LSTR(oDp:aArrayIva[I,3])+IF(oTable:DOC_IVAREB>0 .AND. oDp:aArrayIva[I,3]>0 .AND. oDp:aArrayIva[I,1]="GN",;
+              "-("+LSTR(oTable:DOC_IVAREB)+")","")+"% Sobre: "+ALLTRIM(TRAN(oDp:aArrayIva[I,04],"999,999,999,999,999.99"))
+
+     EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+
+   NEXT I
+
+   // oTable:Browse()
+
+   IF lDoc .AND. oTable:DOC_IMPOTR<>0
+
+      nMonto :=ROUND(oTable:DOC_IMPOTR*nCxC*-1,2)
+      cCodCta:=MYSQLGET("DPCODINTEGRA","CIN_CODCTA,CIN_ABREVI","CIN_CODIGO='IMPPVP'"    )
+      cDescri:=IIF( Empty(oDp:aRow) , oDp:aRow[2] , " Impuesto al PVP ")
+
+      EJECUTAR("ASIENTOCREA",cCodSuc,cNumCom,oTable:DOC_FECHA,cOrg,cCodCta,oTable:DOC_TIPDOC,oTable:DOC_NUMERO,cDescri,nMonto,cCodigo,cTipTra,cNumPag,oTable:DOC_CENCOS,NIL,oTable:DOC_CODMON,oTable:DOC_VALCAM)
+
+   ENDIF
+
+   oTable:End()
+
+   SQLUPDATE(cDpDocCli,"DOC_CBTNUM",cNumCom,cWhereDoc)
+
+  // ? CLPCOPY(oDp:cSql)
+  // Aqui Fin de Transacción
+
+RETURN .T.
+
+FUNCTION RUNSAVE()
+  LOCAL oData
+
+  oRunCbte:cResp:="Documento Contabilizado Exitosamente"
+  oRunCbte:oResp:Refresh(.T.)
+
+  oData:=DATASET(IIF(oRunCbte:lVenta,"VTA","COM")+"CONTAB","ALL")
+
+  oData:Set("CLOSE",oRunCbte:lClose)
+  oData:Set("VIEW" ,oRunCbte:lView )
+
+  oData:Save()
+  oData:End()
+
+  EJECUTAR("DPASIENTOSACT",oRunCbte:cNumero, ,"N",oRunCbte:cCodSuc, Nil , Nil)
+
+  IF oRunCbte:lView
+
+     EJECUTAR("DPDOCVIEWCON",oRunCbte:cCodSuc,oRunCbte:cTipDoc,oRunCbte:cCodigo,oRunCbte:cNumero,oRunCbte:cTipTra,oRunCbte:lVenta)
+
+  ENDIF
+
+  IF oRunCbte:lClose   
+     oRunCbte:Close()
+  ENDIF
+
+RETURN .T.
+// EOF

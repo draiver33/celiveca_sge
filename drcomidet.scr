@@ -1,0 +1,487 @@
+// Programa   : DRCOMIDET
+// Fecha/Hora : 17/11/2022 11:10:42
+// Propósito  : Edicion de Comisiones
+// Creado Por : Juan Navas
+// Llamado por: Ventas y Cuentas por Cobrar
+// Aplicación : Ventas y Cuentas por Cobrar
+// Tabla      : DPMOVINV
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cCodSuc,cTipDoc,cNumDoc,cNomDoc,dDesde,dHasta,cCodVen)
+
+  //,oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO,oDocCli:cNomDoc,oDocCli:DOC_FECHA,oDocCli:DOC_FECHA,oDocCli:DOC_CODVEN
+
+  LOCAL oBtn,oFont,oBrw,oCol,
+  LOCAL aTipVen,aVendedor,nAt,aFac
+
+  DEFAULT cCodsuc:=oDp:cSucursal,;
+          cTipDoc:=nil,;
+          cNumDoc:=nil,;
+          dDesde:=FCHINIMES(oDp:dFecha),;
+          dHasta:=FCHFINMES(oDp:dFecha)
+
+  
+  aVendedor:=ATABLE("SELECT CONCAT(VEN_CODIGO,'-',VEN_NOMBRE) FROM DPVENDEDOR"+IIF(empty(cCodVen),""," WHERE VEN_CODIGO"+GetWhere("=",cCodVen)))
+  aFac:={"Todos","Cobrados","Pendientes"}
+  IF Empty(aVendedor)
+   MensajeErr("No Hay Vendedores Registrados")
+   RETURN .F.
+  ENDIF
+  
+  
+   
+  DEFINE FONT oFont NAME "Arial"   SIZE 0, -10 
+
+  oComiEdi:=DPEDIT():New("Comisiones  Detalladas "+IIF(Empty(cTipDoc),"",cTipDoc)+" "+IIF(Empty(cNumDoc),"",cNumDoc),"DRCOMIEDIT.EDT","oComiEdi",.T.)
+
+
+  oDp:lDpxbase:=.F.
+  oComiEdi:cCodSuc:=cCodSuc
+  oComiEdi:cTipDoc:=cTipDoc
+  oComiEdi:cNumDoc:=cNumDoc
+  oComiEdi:aVendedor :=aVendedor
+  oComiEdi:aFac :=aFac
+  oComiEdi:cFac :=IIF(Empty(aFac[1]),"",aFac[1])
+  oComiEdi:cVendedor :=IIF(Empty(cCodVen),aVendedor[1],cCodVen)
+  oComiEdi:dDesde:=dDesde
+  oComiEdi:dHasta:=dHasta
+
+  oComiEdi:aData:={}
+ 
+
+
+  AADD( oComiEdi:aData,{"","","","","","","",0,0,0,""})
+
+
+
+ 
+  //AEVAL(oComiEdi:aData,{|a,n|oComiEdi:aData[n,13]:=.F. })
+
+
+
+  oComiEdi:lMsgBar :=.F.
+
+ 
+  @ 1.8,1 SAY "Vendedor:" SIZE 60,12
+  @ 2,10 COMBOBOX oComiEdi:oVendedor VAR oComiEdi:cVendedor ITEMS oComiEdi:aVendedor;
+              WHEN LEN(oComiEdi:oVendedor:aItems)>1 SIZE 120,12
+
+ @ 2.8,1 SAY "Documentos:" SIZE 60,12
+  @ 3,10 COMBOBOX oComiEdi:oFac VAR oComiEdi:cFac ITEMS oComiEdi:aFac;
+              WHEN LEN(oComiEdi:oFac:aItems)>1 SIZE 120,12
+
+ @ 2.1,28 BMPGET oComiEdi:oDesde VAR oComiEdi:dDesde;
+                 NAME "BITMAPS\CALENDAR.BMP"; 
+                 WHEN Empty(oComiEdi:cTipDoc);
+                 ACTION (LbxDate(oComiEdi:oDesde ,oComiEdi:dDesde));
+                 SIZE 48,10
+
+ @ 3.1,28 BMPGET oComiEdi:oHasta VAR oComiEdi:dHasta;
+                 NAME "BITMAPS\CALENDAR.BMP";
+                 WHEN Empty(oComiEdi:cTipDoc);
+                 ACTION (LbxDate(oComiEdi:oHasta ,oComiEdi:dHasta));
+                 SIZE 48,10
+
+
+ @2.1, 65  SBUTTON oBtn ;
+           FONT oFont;
+           LEFT PROMPT "Filtrar";
+           NOBORDER;
+           SIZE 45,20;
+           COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+           ACTION oComiEdi:Filtrar()
+
+
+
+ // @ 3.3,15 SAY oComiEdi:oDescri PROMPT MYSQLGET("DPMAQUINARIA","MAQ_DESCRI","MAQ_CODIGO"+GetWhere("=",oComiEdi:cVendedor))
+
+
+   oComiEdi:oBrw:=TXBrowse():New(oComiEdi:oDlg)
+  oComiEdi:oBrw:SetArray(oComiEdi:aData)
+
+  oBrw:=oComiEdi:oBrw
+
+
+ 
+  oBrw:lFastEdit:= .T.
+  oBrw:lHScroll := .F.
+  oBrw:nFreeze  := 3
+  oBrw:lRecordSelector:=.F.
+  oBrw:lFooter     := .T.
+  
+  oCol:=oBrw:aCols[1]
+  oCol:cHeader   := "Tipo"
+  oCol:nWidth       := 30
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+
+
+  oCol:=oBrw:aCols[2]
+  oCol:cHeader   := "Documento"
+  oCol:nWidth       := 75
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+
+
+  oCol:=oBrw:aCols[3]
+  oCol:cHeader   := "Item"
+  oCol:nWidth       := 50
+
+  oCol:=oBrw:aCols[4]
+  oCol:cHeader   := "Producto"
+  oCol:nWidth       := 70
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+
+  oCol:=oBrw:aCols[5]
+  oCol:cHeader   := "Descripcion"
+  oCol:nWidth       := 230
+
+  oCol:=oBrw:aCols[6]
+  oCol:cHeader   := "Fecha"
+  oCol:nWidth       := 58
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+
+  oCol:=oBrw:aCols[7]
+  oCol:cHeader   := "Cliente"
+  oCol:nWidth       := 145
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+
+
+  oCol:=oBrw:aCols[8]
+  oCol:cHeader   := "Monto Base"
+  oCol:nWidth       := 95
+  oCol:bStrData     :={|oBrw|oBrw:=oComiEdi:oBrw,TRAN(oBrw:aArrayData[oBrw:nArrayAt,8],"999,999,999,999.99")} 
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nFootStrAlign:=AL_RIGHT
+
+  oCol:=oBrw:aCols[9]
+  oCol:cHeader   := "% Comis."
+  oCol:nWidth       := 60
+  oCol:nEditType    :=1
+  oCol:cEditPicture :="999.99"
+  oCol:bStrData     :={|oBrw|oBrw:=oComiEdi:oBrw,TRAN(oBrw:aArrayData[oBrw:nArrayAt,9],"999.99")} 
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nFootStrAlign:=AL_RIGHT
+  oCol:bOnPostEdit  :={|oCol,uValue|oComiEdi:PUTMONTO(oCol,uValue,9)}
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+ // oCol:cFooter      :="0.00"
+
+  // oCol:bPostEdit:='oGrid:ColCalc("CEN_DESCRI")' // Obtiene el Nombre de la Unidad de Medida
+
+
+  
+  oCol:=oBrw:aCols[10]
+  oCol:cHeader   := "Comision"
+  oCol:nWidth       := 88
+  oCol:bStrData     :={|oBrw|oBrw:=oComiEdi:oBrw,TRAN(oBrw:aArrayData[oBrw:nArrayAt,10],"999,999,999.99")} 
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nFootStrAlign:=AL_RIGHT
+  //oCol:bCalc :={||SQLGET("DPDOCCLICOMISION","CXD_MONTO","CXD_CODINV"+GetWhere("=",oComiEdi:oBrw:aArrayData[oBrw:nArrayAt,3]))}
+ 
+  oCol:cFooter      :="0.00"
+
+
+  oCol:=oBrw:aCols[11]
+  oCol:cHeader   := "Vendedor"
+  oCol:nWidth       := 60
+  oCol:bLClickHeader := {|r,c,f,o| SortArray( o, oComiEdi:oBrw:aArrayData ) } 
+
+
+  oBrw:bClrStd   := {|oBrw|oBrw:=oComiEdi:oBrw,nAt:=oBrw:nArrayAt, { ,;
+                                                   iif( oBrw:nArrayAt%2=0, 11595007 ,  14613246  ) } }
+
+  oBrw:bClrSel     :={|oBrw|oBrw:=oComiEdi:oBrw, { 65535,  16733011}}
+
+  oComiEdi:oBrw:CreateFromCode()
+
+  oBrw:bClrHeader  := {|| { 0,  12632256}}
+
+ 
+  oComiEdi:oFocus:=oBrw
+     
+          
+   oComiEdi:Activate({||oComiEdi:INICIO()})
+  //oFrmConBco:oFocus:=oBrw
+  //oComiEdi:Activate({||oComiEdi:NMCONBAR(oComiEdi)})
+
+
+  //oComiEdi:Activate()
+
+
+RETURN
+
+FUNCTION INICIO()
+
+ oComiEdi:oBrw:SetColor(NIL,14613246)
+ oComiEdi:oBrw:nColSel:=9
+ oComiEdi:Ejecutar()
+ oComiEdi:NMCONBAR(oComiEdi)
+RETURN .T.
+
+
+
+
+
+
+FUNCTION PUTMONTO(oCol,uValue,nCol)
+
+   LOCAL nValAnt:=0,nMonto:=0,lTodosV:=.F.,lTodosI:=.F.
+   LOCAL oMovInv,oDB:=OPENODBC(oDp:cDsnData),cSqlM
+
+  nValAnt:= oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,7]
+
+
+ 
+  // 
+ // IF uValue<>nValAnt
+
+  IF MsgYesNo("¿Desea Actualizar todos los Productos Asociados al Documento:"+oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,1]+;
+        "-"+oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,2]+"?")
+   lTodosI:=.T.
+  ENDIF
+
+
+   SQLUPDATE("DPMOVINV","MOV_PORCOM",uValue,"MOV_CODSUC"+GetWhere("=",oComiEdi:cCodSuc)+;
+                     " AND MOV_TIPDOC"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,1])+;
+                     " AND MOV_DOCUME"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,2])+;
+                       IIF(lTodosI,""," AND MOV_ITEM"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,3]))+;
+                       IIF(lTodosI,""," AND MOV_CODIGO"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,4])))
+
+
+   //SQLUPDATE("DPMOVINV","MOV_MTOCOM",ROUND(PORCEN(uValue,oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,8]),2),"MOV_CODSUC"+GetWhere("=",oComiEdi:cCodSuc)+;
+                     " AND MOV_TIPDOC"+GetWhere("=",oComiEdi:cTipDoc)+;
+                     " AND MOV_DOCUME"+GetWhere("=",oComiEdi:cNumDoc)+;
+                       IIF(lTodosI,""," AND MOV_ITEM"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,3]))+;
+                       IIF(lTodosI,""," AND MOV_CODIGO"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,4])))
+
+  //IF !lTodosI
+  // SQLUPDATE("DPMOVINV","MOV_MTOCOM",MOV_TOTAL*MOV_PORCOM/100,"MOV_CODSUC"+GetWhere("=",oComiEdi:cCodSuc)+;
+                     " AND MOV_TIPDOC"+GetWhere("=",oComiEdi:cTipDoc)+;
+                     " AND MOV_DOCUME"+GetWhere("=",oComiEdi:cNumDoc)+;
+                       IIF(lTodosI,""," AND MOV_ITEM"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,3]))+;
+                       IIF(lTodosI,""," AND MOV_CODIGO"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,4])))
+
+ // ELSE
+  // oDB:Excecute("UPDATE DPMOVINV SET MOV_MTOCOM=ROUND(MOV_TOTAL*MOV_PORCOM/100,2) WHERE MOV_CODSUC"+GetWhere("=",oComiEdi:cCodSuc)+;
+                     " AND MOV_TIPDOC"+GetWhere("=",oComiEdi:cTipDoc)+;
+                     " AND MOV_DOCUME"+GetWhere("=",oComiEdi:cNumDoc))
+
+    cSqlM:="UPDATE DPMOVINV SET MOV_MTOCOM=ROUND((MOV_DI*MOV_CANTID)*MOV_PORCOM/100,2) WHERE MOV_CODSUC"+GetWhere("=",oComiEdi:cCodSuc)+;
+                     " AND MOV_TIPDOC"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,1])+;
+                     " AND MOV_DOCUME"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,2])+;
+                     IIF(lTodosI,""," AND MOV_ITEM"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,3]))+;
+                       IIF(lTodosI,""," AND MOV_CODIGO"+GetWhere("=",oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,4]))
+
+      DpSqlBegin( NIL , NIL , "DPMOVINV")
+       oDb:=GetOdbc("DPMOVINV")
+        IF !oDb:Execute(cSqlM)
+         DpSqlRollBack()
+        ENDIF
+  //ENDIF
+
+   // ?clpcopy(odp:csql)
+   oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,9]:=uValue
+   oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,10]:=ROUND(PORCEN(uValue,oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,8]),2)
+
+ // ENDIF
+
+ 
+ IF lTodosI 
+ oComiEdi:Filtrar()
+ ELSE
+  AEVAL(oComiEdi:oBrw:aArrayData,{|a|nMonto:=nMonto+a[10]})
+ //?nmonto
+ oComiEdi:oBrw:aCols[10]:cFooter:=TRAN(nMonto,"99,999,999,999.99")
+
+  oComiEdi:oBrw:DrawLine(.T.)
+  oComiEdi:oBrw:Refresh(.T.)
+ ENDIF
+ 
+
+RETURN .T.
+
+
+
+
+
+
+FUNCTION Filtrar()
+
+ MsgRun("Leyendo Datos","Por Favor Espere",{||oComiEdi:Ejecutar()})
+
+
+RETURN .T.
+
+FUNCTION Ejecutar()
+ LOCAL I:=0,cSql:="",cWhere,nCantUnd:=0,nCant:=0,cSelect,oComp,nMonto:=0
+
+  // ?oComiEdi:cCodSuc
+   // Pendientes y todos, fecha de emision
+   // Cobrados, fecha de cobranza
+   cSql:= "SELECT MOV_TIPDOC,MOV_DOCUME,MOV_ITEM,MOV_CODIGO,INV_DESCRI,MOV_FECHA,CLI_NOMBRE,(MOV_DI*MOV_CANTID*(1-DOC_DCTO/100)*DOC_CXC) AS MOV_TOTDI,MOV_PORCOM,MOV_MTOCOM,MOV_CODVEN,"+;
+                        "SUM(DOC_NETO*DOC_CXC) AS DOC_SALDO,MAX(DOC_FECHA) AS DOC_FCHPAG FROM DPDOCCLI INNER JOIN "+;
+                        " DPMOVINV ON DOC_CODSUC=MOV_CODSUC AND DOC_TIPDOC=MOV_TIPDOC AND DOC_NUMERO=MOV_DOCUME INNER JOIN "+;
+                        " DPINV ON MOV_CODIGO=INV_CODIGO "+;
+                        " INNER JOIN DPCLIENTES ON DOC_CODIGO=CLI_CODIGO "+;
+                        " WHERE DOC_ACT=1 AND MOV_INVACT=1 AND MOV_CODSUC"+GetWhere("=",oComiEdi:cCodSuc)+ " AND MOV_TIPDOC IN ('ODE')"+;
+                        IIF(Empty(oComiEdi:cTipDoc),""," AND MOV_TIPDOC"+GetWhere("=",oComiEdi:cTipDoc))+;
+                        IIF(Empty(oComiEdi:cNumDoc),""," AND MOV_DOCUME"+GetWhere("=",oComiEdi:cNumDoc))+;
+                        IIF(oComiEdi:cVendedor="Todos",""," AND DOC_CODVEN"+GetWhere("=",LEFT(oComiEdi:cVendedor,6)))+;
+                        IIF(Empty(oComiEdi:dDesde) .OR. oComiEdi:cFac="Cobrados",""," AND MOV_FECHA"+GetWhere(">=",oComiEdi:dDesde))+;
+                        IIF(Empty(oComiEdi:dHasta) .OR. oComiEdi:cFac="Cobrados",""," AND MOV_FECHA"+GetWhere("<=",oComiEdi:dHasta))+;
+                        " GROUP BY DOC_CODSUC,DOC_TIPDOC,DOC_NUMERO,MOV_ITEM "+;
+                        IIF(oComiEdi:cFac="Todos","",IIF(oComiEdi:cFac="Cobrados",;
+                        " HAVING ABS(DOC_SALDO)<0.5 AND DOC_FCHPAG"+Getwhere(">=",oComiEdi:dDesde)+" AND DOC_FCHPAG"+GetWhere("<=",oComiEdi:dHasta)," HAVING ABS(DOC_SALDO)>=0.5"))+;
+                        " ORDER BY MOV_FECHA,MOV_DOCUME,MOV_ITEM"
+
+
+
+ // ?clpcopy(csql)
+
+  // oComiEdi:aData:=ASQL(cSql)
+
+   oComp:=OpenTable(cSql,.T.)
+   oComiEdi:aData:=oComp:aDataFill
+
+
+
+   //VIEWARRAY(oComiEdi:aData)
+
+   IF EMPTY(oComiEdi:aData) 
+      oComiEdi:aData:={}
+      AADD(oComiEdi:aData,{"","","","","","","",0,0,0,""})
+   ENDIF
+
+
+    //oComiEdi:aData:=ACLONE(aData)
+   oComiEdi:oBrw:aArrayData:=ACLONE(oComiEdi:aData)
+   //VIEWARRAY(oComiEdi:oBrw:aArrayData)
+  // oComiEdi:oBrw:GoTop()
+
+   AEVAL(oComiEdi:oBrw:aArrayData,{|a|nMonto:=nMonto+a[8]})
+   oComiEdi:oBrw:aCols[8]:cFooter:=TRAN(nMonto,"99,999,999,999.99")
+   nMonto:=0
+   AEVAL(oComiEdi:oBrw:aArrayData,{|a|nMonto:=nMonto+a[10]})
+   oComiEdi:oBrw:aCols[10]:cFooter:=TRAN(nMonto,"99,999,999,999.99")
+
+
+   oComiEdi:oBrw:Refresh(.T.)
+
+
+
+RETURN .T.
+
+FUNCTION ValMaq(oCol,uValue,nCol)
+
+ 
+ 
+  oComiEdi:oBrw:aArrayData[oComiEdi:oBrw:nArrayAt,8]:=uValue
+  oComiEdi:Filtrar()
+   
+  oComiEdi:oBrw:KeyBoard(VK_DOWN)
+  oComiEdi:oBrw:DrawLine(.T.)
+
+RETURN .T.
+// EOF
+
+/*
+// Coloca la Barra de Botones
+*/
+FUNCTION NMCONBAR(oComiEdi)
+   LOCAL oCursor,oBar,oBtn,oFont,oCol,nDif
+   LOCAL nWidth :=0 // Ancho Calculado seg£n Columnas
+   LOCAL nHeight:=0 // Alto
+   LOCAL nLines :=0 // Lineas
+   LOCAL oDlg:=oComiEdi:oDlg
+   
+   DEFINE CURSOR oCursor HAND
+   DEFINE BUTTONBAR oBar SIZE 52-15,60-15 OF oDlg 3D CURSOR oCursor
+
+  
+
+  DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\EXCEL.BMP";
+          ACTION (EJECUTAR("BRWTOEXCEL",oComiEdi:oBrw,"Comisiones Detalladas"))
+
+   oBtn:cToolTip:="Exportar hacia Excel"
+
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\XFIND.BMP";
+          ACTION EJECUTAR("BRWSETFIND",oComiEdi:oBrw)
+
+  oBtn:cToolTip:="Buscar "
+
+ // DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\FILTRAR.BMP";
+          ACTION EJECUTAR("BRWSETFILTER",oComiEdi:oBrw)
+
+ //  oBtn:cToolTip:="Filtrar Registros"
+
+  DEFINE BUTTON oBtn;
+         OF oBar;
+         NOBORDER;
+         FONT oFont;
+         FILENAME "BITMAPS\xTOP.BMP";
+         ACTION (oComiEdi:oBrw:GoTop(),oComiEdi:oBrw:Setfocus())
+
+  oBtn:cToolTip:="Primero"
+
+
+  DEFINE BUTTON oBtn;
+         OF oBar;
+         NOBORDER;
+         FONT oFont;
+         FILENAME "BITMAPS\xSIG.BMP";
+         ACTION (oComiEdi:oBrw:PageDown(),oComiEdi:oBrw:Setfocus())
+
+  oBtn:cToolTip:="Siguiente "
+
+
+  DEFINE BUTTON oBtn;
+         OF oBar;
+         NOBORDER;
+         FONT oFont;
+         FILENAME "BITMAPS\xANT.BMP";
+         ACTION (oComiEdi:oBrw:PageUp(),oComiEdi:oBrw:Setfocus())
+
+  oBtn:cToolTip:="Anterior"
+
+
+  DEFINE BUTTON oBtn;
+         OF oBar;
+         NOBORDER;
+         FONT oFont;
+         FILENAME "BITMAPS\xFIN.BMP";
+         ACTION (oComiEdi:oBrw:GoBottom(),oComiEdi:oBrw:Setfocus())
+
+   oBtn:cToolTip:="Ultimo "
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\XSALIR.BMP";
+          ACTION oComiEdi:Close()
+
+   oBtn:cToolTip:="Cerrar Formulario"
+
+   AEVAL(oBar:aControls,{|o,n|o:cMsg:=o:cToolTip})
+   oBar:SetColor(CLR_BLACK,15724527)
+   AEVAL(oBar:aControls,{|o,n|o:SetColor(CLR_BLACK,15724527)})
+
+ //  oComiEdi:CALMONTOS()
+
+RETURN .T.

@@ -1,0 +1,90 @@
+// Programa   : LIBAGREGARRTI
+// Fecha/Hora : 23/09/2009 21:20:26
+// Propósito  : Agregar retenciones Extemporáneas en Libro de Ventas
+// Creado Por : Juan Navas
+// Llamado por: DPLIBVTA
+// Aplicación : Ventas
+// Tabla      :
+
+/*
+//  JN 20, fue cambiado el filtro DOC_TIPTRA="P" por "D"
+*/
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(oTable,cCodSuc,dDesde,dHasta)
+
+  LOCAL cSql,oRet,nMonto,cField
+  LOCAL nVersion:=DPVERSION()
+
+  DEFAULT cCodSuc:=NIL,;
+          dDesde :=FCHINIMES(oDp:dFecha),;
+          dHasta :=FCHFINMES(oDp:dFecha)
+
+  oRet  :=OpenTable(" SELECT * FROM DPDOCCLIRTI ",.F.)
+//cField:=IF(oRet:FieldPos("RTI_FCHDEC")>0,"RTI_FCHDEC","DOC_FECHA")
+  oRet:End()
+
+//  IF !(nVersion>4)
+//     cField:="DOC_FECHA"
+//  ENDIF
+
+  cField:="RTI_FCHDEC" // 19/10/2016
+  
+  /*
+  // Agregamos las Retencione de IVA, de Otro Periodo, solo trae las retenciones pagadas
+  */
+
+  cSql:="SELECT * FROM DPDOCCLIRTI INNER JOIN DPDOCCLI ON "+;
+                       " RTI_CODSUC=DOC_CODSUC AND " +;
+                       " RTI_TIPDOC=DOC_TIPDOC AND " +;
+                       " RTI_NUMERO=DOC_NUMERO AND " +;
+                       " DOC_TIPTRA"+GetWhere("=","D")+;
+                       " AND DOC_ACT=1 "+;
+                       " INNER JOIN DPCLIENTES ON DOC_CODIGO=CLI_CODIGO "+;
+                       " WHERE  "+IF(Empty(cCodSuc),"","RTI_CODSUC "+GetWhere("=",cCodSuc)+" AND ")+;
+                       "       DOC_FECHA "+GetWhere("<",dDesde)  +" AND "+;
+                       GetWhereAnd(cField,dDesde,dHasta)
+
+ // ?CLPCOPY(CSQL)  
+
+  oRet:=OpenTable(cSql,.T.)
+
+  IF ValType(oTable)<>"O"
+     oRet:End()
+     RETURN NIL
+  ENDIF
+
+  oRet:Gotop()
+
+  WHILE !oRet:Eof()
+
+     oTable:AddRecord(.T.)
+
+     oTable:Replace("DOC_FECHA"  ,oRet:DOC_FECHA )
+     oTable:Replace("DOC_CODSUC"  ,oRet:DOC_CODSUC )
+     oTable:Replace("CLI_NOMBRE" ,oRet:CLI_NOMBRE)
+     oTable:Replace("CLI_RIF"    ,oRet:CLI_RIF   )
+     oTable:Replace("CLI_TIPPER" ,oRet:CLI_TIPPER)
+     //oTable:Replace("DOC_FACAFE" ,oRet:DOC_FACAFE)
+     oTable:Replace("DOC_FACTURA",oRet:RTI_DOCNUM)
+     oTable:Replace("DOC_CODIGO" ,oRet:DOC_CODIGO)
+     oTable:Replace("RTI_DOCNUM" ,oRet:RTI_DOCNUM)
+     oTable:Replace("RTI_NUMCLI" ,oRet:RTI_NUMCLI)
+     oTable:Replace("RTI_PORCEN" ,oRet:RTI_PORCEN)
+     oTable:Replace("DOC_FACAFE" ,oRet:RTI_NUMERO)
+     oTable:Replace("RTI_DOCTIP" ,oRet:RTI_DOCTIP)
+     oTable:Replace("RTI_FECHA" ,oRet:RTI_FECHA)
+
+   //cambiado
+   //oTable:Replace("DOC_FACAFE" ,oRet:RTI_NUMERO)
+   //oTable:Replace("DOC_NUMFIS" ,oRet:DOC_NUMFIS)
+
+     oRet:DbSkip()
+
+  ENDDO
+
+  oRet:End()
+
+RETURN NIL
+
+// EOF

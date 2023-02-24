@@ -1,0 +1,1622 @@
+// ProTgrama   : DPLIBVTA
+// Fecha/Hora : 08/01/2006 13:14
+// Propósito  : Generar Libro de Ventas
+// Creado Por : Juan NavasC
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(lConEsp,lPlanilla,oLiq,cCodSuc,dDesde,dHasta,cNumero,lFecha)
+  LOCAL oBtn,oFont,cModelo:="",aSeries:={},oTable      //,oLiq
+  LOCAL nVer,lTodas:=.F.
+  LOCAL oData:=DATASET("DPLIBVTA","ALL") 
+  LOCAL cCodigo:="LIBROVTA"
+  LOCAL cWhere,nMes,nAno,cWherex
+  LOCAL aModelo:={"Clásico sin Rebaja","Rebaja como Alicuota"}
+  Odp:ldpxbase:=.F.
+
+  nVer:=oDp:nVersion
+
+  DEFAULT lConEsp:=.F., lPlanilla:=.F.,cCodSuc:=oDp:cSucursal, lFecha:=.F.
+
+
+
+   // envia datos Hacia Forma 30
+  IF ValType(oLiq)="O"
+
+     dDesde:=oLiq:dDesde
+     dhasta:=oLiq:dHasta
+     dFecha:=oLiq:dFecha
+     PUBLICO("oLibVta",oLiq)
+
+     RETURN HACERLIBVTA(dDesde,dHasta,dFecha,oDp:cSucursal,oLiq,.F.,.T.,.F.,.F.)  // Envia la Tabla Hacia la LIQ30
+
+  ENDIF
+
+
+  IF lFecha
+
+    // Busca la Primera Fecha Planificada, y sugiere la Fecha Anterior
+    cWhere:="PFT_CODSUC"+GetWhere("=",cCodSuc    )+" AND "+;
+            "PFT_CODEMP"+GetWhere("=",oDp:cEmpCod)+" AND "+;
+            "PFT_CODIGO"+GetWhere("=",cCodigo    )
+
+    dDesde :=SQLGET("DPFORMYTAREASPROG","PFT_DESDE",cWhere+" ORDER BY PFT_DESDE LIMIT 1")
+    dDesde :=IF(Empty(dDesde),oDp:dFecha,FCHINIMES(dDesde)-1)
+    cNumero:=""
+
+  ENDIF
+
+
+  cWhere:="PFT_CODIGO"+GetWhere("=",cCodigo        )+" AND "+;
+          "PFT_CODEMP"+GetWhere("=",oDp:cEmpCod    )+" AND "+;
+          "PFT_CODSUC"+GetWhere("=",cCodSuc        )+" AND "+;
+          GetWhereAnd("PFT_DESDE",oDp:dFchInicio,oDp:dFchCierre)
+
+  
+  IF COUNT("DPFORMYTAREASPROG",cWhere)=0 .AND. !lFecha
+
+     // Crea el Calendario durante el Ejercicio
+
+     EJECUTAR("DPFORMYTAREASP",cCodigo)
+
+     IF COUNT("DPFORMYTAREASPROG",cWhere)=0
+        MsgMemo("Libro de Ventas no tiene Calendario como Formalidad ["+cCodigo+"]")
+        RETURN .T. 
+     ENDIF
+
+  ENDIF
+
+  IF Empty(cNumero) .AND. !lFecha
+    EJECUTAR("BRLIBVTA")
+    RETURN .F.
+  ENDIF
+
+  aSeries:=ASQL("SELECT SFI_MODELO FROM DPSERIEFISCAL WHERE SFI_ACTIVO=1")
+
+  IF Empty(aSeries)
+    MsgMemo("No hay Series Fiscales Activas")
+    RETURN .F.
+  ENDIF
+
+
+  cModelo:=SQLGET("DPTIPDOCCLI","TDC_SERIEF","TDC_TIPO='FAV'")
+
+  AEVAL(aSeries,{|a,n|aSeries[n]:=a[1]})
+
+
+  DPEDIT():New("Libro de Ventas "+IF(Empty(cNumero),"[Sin Planificación]","[Registro: "+cNumero+"] "),"forms\dplibvta.edt","oLibVta",.T.)
+
+  nMes:=MONTH(dDesde)
+  nAno:=YEAR(dDesde)
+
+  oLibVta:aMeses   :={"Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"} 
+  oLibVta:nMes     :=nMes    // MONTH(oDp:dFecha)
+  oLibVta:nAno     :=nAno    // YEAR(oDp:dFecha)
+  oLibVta:nRecord  :=0
+  oLibVta:cCodSuc  :=oDp:cSucursal
+  oLibVta:cModelo  :=cModelo
+  oLibVta:lConEsp  :=lConEsp
+  oLibVta:dFecha   :=oDp:dFecha
+  oLibVta:cAudita  :="Libro de Ventas"
+  oLibvTA:cTable   :="DPLIBVTA"
+  oLibVta:cTableAud:="DPAUDITOR"
+  oLibVta:aAdjuntos:={}
+  oLibVta:cMemo    :=""
+  oLibVta:cMemoTxt :=""
+  oLibVta:lMsgBar  :=.F.
+  oLibVta:lTodas   :=oData:Get("lTodas",.F.)
+  oLibVta:lVer     :=(nVer>=4.0)
+  oLibVta:lGuardar :=oData:Get("lGuardar",(nVer>=4.0))
+  oLibVta:cNumero  :=cNumero
+  oLibVta:cCodigo  :="LIBROVTA"
+  oLibVta:lFecha   :=lFecha
+  oLibVta:cModelo:=aModelo[1]
+  oLibVta:aModelo:=aModelo
+  oLibVta:aModRpt:={"DPLIBVTACO.RPT","DPLIBVTACOL.RPT"}
+
+
+
+  @ 3,2 SAY "Año:" RIGHT
+  @ 3,2 SAY "Mes:" RIGHT
+
+  @ 3,1 SAY "Forma Fiscal:" 
+  @ 4,1 SAY GetFromVar("{oDp:xDPSUCURSAL}")+":"
+
+  @ 0.5,15 GET oLibVta:oAno VAR oLibVta:nAno PICTURE "9999" SPINNER ON CHANGE oLibVta:HACERFECHA();
+           WHEN Empty(oLibVta:cNumero);
+
+  @ 2.0,3 COMBOBOX oLibVta:oMes VAR oLibVta:nMes;
+          ITEMS oLibVta:aMeses ON CHANGE oLibVta:HACERFECHA();
+          WHEN Empty(oLibVta:cNumero)
+
+  @ 3,2 SAY oLibVta:oSayRecord PROMPT "Registros:"
+
+  // Modelos
+  @ 0,1 COMBOBOX oLibVta:oModelo VAR oLibVta:cModelo ITEMS aSeries WHEN LEN(oLibVta:oModelo:aItems)>1
+
+  ComboIni(oLibVta:oModelo)
+
+  oLibVta:oModelo:cMsg    :="Serie Fiscal"
+  oLibVta:oModelo:cTooltip:="Serie Fiscal"
+
+
+  /*
+  // Modelo del libro de Compras
+  */
+  @ 2.0,3 COMBOBOX oLibVta:oModelo VAR oLibVta:cModelo;
+          ITEMS oLibVta:aModelo;
+          WHEN LEN(oLibVta:oModelo:aItems)>1
+
+
+  ComboIni(oLibVta:oModelo)
+
+  oLibVta:oModelo:cMsg    :="Modelo del Libro de Ventas"
+  oLibVta:oModelo:cTooltip:="Modelo del Libro de Ventas"
+
+
+  // SUCURSAL
+  @ .1,06 BMPGET oLibVta:oCodSuc VAR oLibVta:cCodSuc;
+                 VALID CERO(oLibVta:cCodSuc,NIL,.T.) .AND.;
+                            oLibVta:FindCodSuc();
+                 NAME "BITMAPS\FIND.BMP"; 
+                 ACTION (oDpLbx:=DpLbx("DPSUCURSAL",NIL,NIL),;
+                         oDpLbx:GetValue("SUC_CODIGO",oLibVta:oCodSuc));
+                 WHEN Empty(oLibVta:cNumero); 
+                 SIZE 48,10
+
+  @ 3,2 SAY oLibVta:oSucNombre PROMPT  SQLGET("DPSUCURSAL","SUC_DESCRI","SUC_CODIGO"+GetWhere("=",oLibVta:cCodSuc));
+            UPDATE
+
+  @ 10,1 GET oLibVta:oMemo VAR oLibVta:cMemo  MULTILINE READONLY
+
+  @ 10,1 SAY "Visor de Ejecución"
+
+  @ 04,1 SAY "Modelo de Impresión"
+
+  @ 02,01 METER oLibVta:oMeter VAR oLibVta:nRecord
+
+  @ 3,10 CHECKBOX oLibVta:lTodas PROMPT ANSITOOEM("Consolida "+oDp:xDPSUCURSAL) ;
+         WHEN oLibVta:lVer .AND. COUNT("DPSUCURSAL")>1
+
+  @ 3,10 CHECKBOX oLibVta:lGuardar PROMPT ANSITOOEM("Almacenar Libro de Auditoría ") ;
+         WHEN oLibVta:lVer
+
+//@ 3,10 CHECKBOX oLibVta:lRecalC PROMPT ANSITOOEM("Revisión Datos")
+
+  // Filtro por Fecha
+  //---------------------------------------------------------------------------------
+  oLibVta:dDesde  :=CTOD("01/"+STRZERO(oLibVta:nMes,2)+"/"+STRZERO(oLibVta:nAno,4))
+  oLibVta:dHasta  :=FCHFINMES(oLibVta:dDesde)
+  @ 3.7,10 GET oLibVta:oDesde VAR oLibVta:dDesde;                    
+                 SIZE 48,10
+  //NAME "BITMAPS\CALENDAR.BMP";   
+  //ACTION (LbxDate(oLibVta:oDesde ,oLibVta:dDesde));
+
+  @ 3.7,17 GET oLibVta:oHasta VAR oLibVta:dHasta;                  
+                 SIZE 48,10
+
+  //---------------------------------------------------------------------------------
+
+  oLibVta:Activate({|| oLibVta:ViewDatBar() })
+
+RETURN .T.
+
+/*
+// Barra de Botones
+*/
+FUNCTION ViewDatBar()
+   LOCAL oCursor,oBar,oBtn,oFont
+
+   DEFINE CURSOR oCursor HAND
+   DEFINE BUTTONBAR oBar SIZE 52-15,60-15 OF oLibVta:oDlg 3D CURSOR oCursor
+   DEFINE FONT oFont  NAME "Arial"   SIZE 0, -12 BOLD
+/*
+      DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\RUN.BMP",NIL,"BITMAPS\RUNG.BMP";
+          ACTION (CursorWait(),;
+                   oLibVta:dDesde:=CTOD("01/"+STRZERO(oLibVta:oMes:nAt,2)+"/"+STRZERO(oLibVta:nAno)),;
+                  oLibVta:dHasta:=FCHFINMES(oLibVta:dDesde),;
+                  oLibVta:HACERLIBVTA(oLibVta:dDesde,oLibVta:dHasta,NIL,oLibVta:cCodSuc,,oLibVta:lTodas,oLibVta:lVer),;
+
+                  EJECUTAR("IVALOAD",oLibVta:dFecha))
+*/
+DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\RUN.BMP",NIL,"BITMAPS\RUNG.BMP";
+          ACTION (CursorWait(),;
+                  oLibVta:HACERLIBVTA(oLibVta:dDesde,oLibVta:dHasta,NIL,oLibVta:cCodSuc,,oLibVta:lTodas,oLibVta:lVer),;
+                  EJECUTAR("IVALOAD",oLibVta:dFecha))    
+          
+   oBtn:cToolTip  :="Ejecutar Libro"
+   oLibVta:oBtnRun:=oBtn
+
+   IF oDp:nVersion>=4
+
+     DEFINE BUTTON oBtn;
+            OF oBar;
+            NOBORDER;
+            FONT oFont;
+            FILENAME "BITMAPS\AUDITORIA.BMP";
+            ACTION EJECUTAR("DPAUDVIEWPROC",oLibVta:cAudita,oLibVta:cTable)
+
+   ENDIF
+
+   IF ISRELEASE("17.01")
+
+       DEFINE BUTTON oBtn;
+              OF oBar;
+              NOBORDER;
+              FONT oFont;
+              FILENAME "BITMAPS\XBROWSE.BMP",NIL,"XBROWSEG\RUNG.BMP";
+              ACTION (CursorWait(),;
+                      oLibVta:VERNUMFISCAL())
+              
+      oBtn:cToolTip  :="Visualizar todos las Series Fiscales"
+
+    ENDIF
+
+
+    DEFINE BUTTON oBtn;
+           OF oBar;
+           NOBORDER;
+           FONT oFont;
+           FILENAME "BITMAPS\XSALIR.BMP";
+           ACTION (CursorWait(),;
+                   oLibVta:Close())
+
+
+  oBar:SetColor(CLR_BLACK,15724527 )
+
+  AEVAL(oBar:aControls,{|o,n|o:SetColor(CLR_BLACK,15724527)})
+
+
+RETURN .T.
+
+FUNCTION HACERLIBVTA(dDesde,dHasta,dFecha,cCodSuc,oLiq,lTodas,lVer,lGuardar,lFecha)
+  LOCAL cSql,oTable,aTipDoc,nContar:=0,oDpMovi,cSqlMovi,cClave:="",cFileHead,nLine:=0,cWhere:=""
+  LOCAL aData,aStruct:={},aStructP:={},cIndex,aSort,nIVA,nFECHA,nNUMERO,nNUMFIS,nRecord:=0,nRecAct:=0,nB ase:=0,I,aLine,nAt
+  LOCAL nMontoRti:=0,aTipIva:={},nContar:=0,nLine:=0,nCODIGO,nTIPO  //,oLiq:=0
+  LOCAL nMontoRVI:=0 
+  LOCAL nIntBas:=0,nIntIva:=0 // Ventas Internas
+  LOCAL nExpBas:=0 // Ventas Exportación
+  LOCAL nGNBas :=0,nGNIva:=0 // Ventas Internas Alicuota General
+  LOCAL nS1Bas :=0,nS1Iva:=0 // Ventas Internas Alicuota Adicional S1
+  LOCAL nS2Bas :=0,nS2Iva:=0 // Ventas Internas Alicuota Adicional S2
+  LOCAL nRDBas :=0,nRDIva:=0 // Ventas Internas Alicuota Adicional Reducida
+  LOCAL nOtro:=0,nBase:=0,X:=0,cComent,nAt,cRepite:=""
+  LOCAL nT1:=SECONDS()
+  LOCAL aFacGub:={} // Facturas emitidas a entes Gubernamentales
+  LOCAL aPagGub:={} // Pagos de los Entes Gubernamentales
+  LOCAL cWhereG:="" // Condicion para incluir facturas Gubernamental
+  LOCAL oRet,cNumero,dFecha,cTipDoc
+  LOCAL cAudCri:="",cDocSinC:=""
+  LOCAL oTipIva,nAt,oTotal,cField,nMonto,aFiles:={},aPar:=ARRAY(5)
+  LOCAL lFileChk:=FILE("DPXBASE\DPCHKOMEMO.DXB")
+  LOCAL cNumAnt,aGrupo,cChar,cTipDoc,cDesde,cHasta,dFecha,lNumVacio,lSecCrono,dFechaD,cMemo:="",cFile
+  LOCAL oData:=DATASET("DPLIBVTA","ALL")
+  LOCAL cModelo,cIvaReb,nField3,nField5,cFileRpt
+  LOCAL nField6,nField7,nField8,nField9
+  
+  DEFAULT dDesde:=FCHINIMES(oDp:dFecha),dHasta:=FCHFINMES(oDp:dFecha),dFecha:=oDp:dFecha
+
+  DEFAULT lTodas:=.F.
+
+  oLibVta:cMemo:=""
+
+  DEFAULT lGuardar:=.T.,;
+          lFecha  :=.F.
+
+  IF lFecha .AND. !oLibVta:VALPLANIFICA()
+    RETURN .F.
+  ENDIF
+
+  IF ValType(oLiq)=NIL .AND. !(oLibVta:oModelo:nAt==LEN(oLibVta:oModelo:aItems))
+    cWhere :=" DOC_MODFIS"+GetWhere("=",oLibVta:cModelo)
+    cModelo:=oLibVta:cModelo
+  ENDIF
+  
+  // original
+  //IF !(oLibVta:oModelo:nAt==LEN(oLibVta:oModelo:aItems))
+  //cWhere:=" DOC_MODFIS"+GetWhere("=",oLibVta:cModelo)
+  //ENDIF
+  
+  EJECUTAR("IVALOAD",dDesde)
+
+  IF !lVer
+
+
+     oLibVta:oMemo:Append("El Proceso de Veficación de Secuencia y Cronología "+CRLF+;
+                          "Requiere SGE Versión 4.1 o Superior")
+
+
+  ENDIF
+
+
+  // Pagos de Clientes Gubernamentales
+  oDp:cSql:=" SELECT DOC_TIPDOC,DOC_NUMERO,SUM(DOC_NETO) FROM DPDOCCLI "+;
+            " INNER JOIN DPCLIENTES ON CLI_CODIGO=DOC_CODIGO AND CLI_TIPPER"+GetWhere("=","Z")+;
+            " WHERE "+IF(lTodas,""," DOC_CODSUC "+GetWhere("=",cCodSuc) +" AND ")+;
+             GetWhereAnd("DOC_FECHA",dDesde,dHasta)    +" AND "+;
+            " DOC_TIPTRA"+GetWhere("=","P")            +" AND "+;
+            " DOC_ACT=1 "+;                              
+            " GROUP BY DOC_TIPDOC,DOC_NUMERO"
+
+  // Facturas Gubernamentales, Pagadas este Mes, deben ser incluidas en el Libro de Venta
+
+  aPagGub:=ASQL(oDp:cSql)
+
+  IF !Empty(aPagGub)
+
+    cWhereG:=""
+
+    AEVAL( aPagGub ,{|a,n | DPCONCAT(@cWhereG," OR ","(DOC_TIPDOC"+GetWhere("=",a[1])+" AND "+;
+                                                  "  DOC_NUMERO"+GetWhere("=",a[2])+")") })
+    /*
+    // Buscamos los Documentos Emitidos con el monto Neto y Fecha
+    */
+
+    oDp:cSql:=" SELECT DOC_TIPDOC,DOC_NUMERO,DOC_NETO,DOC_FECHA FROM DPDOCCLI "+;
+              " INNER JOIN DPCLIENTES ON CLI_CODIGO=DOC_CODIGO AND CLI_TIPPER"+GetWhere("=","Z")+;
+              " WHERE "+IF(lTodas,""," DOC_CODSUC "+GetWhere("=",cCodSuc) +" AND ")+;
+              cWhereG                                    +" AND "+;                                 
+              " DOC_TIPTRA"+GetWhere("=","D")            +" AND "+;
+              " DOC_ACT=1 "
+
+//              " WHERE DOC_CODSUC "+GetWhere("=",cCodSuc) +" AND "+;
+
+    aFacGub:=ASQL(oDp:cSql)
+
+    // Las facturas pagadas y emitidas del mes, seran excluida
+
+    FOR I=1 TO LEN(aPagGub)
+
+      nAt:=ASCAN(aFacGub,{|a,n| aPagGub[I,1]=a[1] .AND. aPagGub[I,2]=a[2]})
+
+      IF nAt>0 .AND. aPagGub[I,3]=aFacGub[nAt,3] .AND. MONTH(aFacGub[nAt,4])=MONTH(dDesde)
+        // la Factura fue pagada el mismo mes, y no ha pasado nada
+        // ARREDUCE(aFacGub,nAt) // jn 10/12/2012
+      ENDIF
+
+    NEXT I
+
+   ENDIF
+
+  aTipDoc:=ASQL("SELECT TDC_TIPO FROM DPTIPDOCCLI WHERE TDC_LIBVTA=1")
+  aTipIva:=ASQL("SELECT TIP_CODIGO FROM DPIVATIP")
+
+  // Ojo, de esta sentencia TIKECT fue excluido, esto debe estar definido en el DPTIPDOCCLI
+
+  cSql:="SELECT DOC_NETO ,"+;
+        "       DOC_FECHA ,"+;
+        "       CLI_CONTRI,"+;
+        "       CLI_CONESP,"+;
+        "       DOC_DESTIN,"+;
+        "       RTI_DOCNUM,"+;
+        "       RTI_PORCEN,"+;
+        "       RTI_NUMCLI,"+;
+        "       DOC_CODIGO,"+;
+        "       DOC_CODSUC,"+;
+        "       CLI_TIPPER,"+;
+        "       IF(DOC_CODIGO='0000000000',DPCLIENTESCERO.CCG_RIF   ,DPCLIENTES.CLI_RIF   ) AS  CLI_RIF    ,"+;
+        "       IF(DOC_CODIGO='0000000000',DPCLIENTESCERO.CCG_NOMBRE,DPCLIENTES.CLI_NOMBRE) AS  CLI_NOMBRE ,"+;
+        "       IF(DOC_TIPDOC='FAV' OR DOC_TIPDOC='FCC' OR DOC_TIPDOC='FCI'     ,DOC_NUMERO              ,SPACE(10)             ) AS  DOC_FACTURA,"+;
+        "       IF(DOC_TIPDOC='DEB'       ,DOC_NUMERO              ,SPACE(10)             ) AS  DOC_DEBITO ,"+;
+        "       IF(DOC_TIPDOC='DEV' OR DOC_TIPDOC='CRE'       ,DOC_NUMERO              ,SPACE(10)             ) AS  DOC_CREDITO,"+;
+        "       IF(DOC_TIPDOC='TIK'       ,DOC_NUMERO              ,DOC_NUMFIS            ) AS  DOC_NUMFIS ,"+;
+        "       IF(DOC_TIPDOC='RTI'       ,RTI_NUMCLI              ,SPACE(10)             ) AS  RTI_NUMERO,"+;
+        "        RTI_FECHA,"+;
+        "       DOC_TIPDOC, "+;
+        "       DOC_NUMERO, "+;
+        "       IF(DOC_TIPDOC='RTI'      ,RTI_NUMERO           ,DOC_FACAFE           ) AS  DOC_FACAFE,"+;
+        "       IF(DOC_ESTADO='NU',0,MOV_IVA) AS MOV_IVA,"+;
+        "       MOV_TIPIVA, "+;
+        "       DOC_DCTO  , "+;
+        "       DOC_RECARG, "+;
+        "       DOC_OTROS , "+;
+        "       DOC_ESTADO, "+;
+        "       DOC_ANUFIS, "+;
+        "       TDC_LIBTRA, "+;
+        "       DOC_CXC   , "+;
+        "       CLI_RIFVAL, "+;
+        "       DOC_IMPRES, "+;
+        "       DOC_IVAREB, "+;
+        "       DOC_IVABAS, RTI_DOCTIP,DOC_SERFIS,"+;
+        "       SUM(MOV_TOTAL) AS MOV_TOTAL, SUM(MOV_IMPOTR) AS MOV_IMPOTR"+;
+        " FROM DPDOCCLI "+;
+        " INNER JOIN DPCLIENTES  ON DOC_CODIGO=CLI_CODIGO "+;
+        " INNER JOIN DPTIPDOCCLI ON DOC_TIPDOC=TDC_TIPO   "+;
+        " LEFT  JOIN DPCLIENTESCERO ON DOC_CODSUC=CCG_CODSUC AND "+;
+        "            DOC_TIPDOC=CCG_TIPDOC AND "+;
+        "            DOC_NUMERO=CCG_NUMDOC "+;
+        " LEFT  JOIN DPMOVINV ON MOV_CODSUC=DOC_CODSUC AND MOV_TIPDOC=DOC_TIPDOC AND  MOV_CODCTA=DOC_CODIGO"+;
+        "                     AND MOV_DOCUME=DOC_NUMERO AND MOV_INVACT=1 "+;
+        " LEFT JOIN DPIVATIP    ON MOV_TIPIVA=TIP_CODIGO   "+;
+        " LEFT JOIN DPDOCCLIRTI ON RTI_CODSUC=DOC_CODSUC AND " +;
+                               " RTI_TIPDOC=DOC_TIPDOC AND " +;
+                               " RTI_NUMERO=DOC_NUMERO AND DOC_TIPTRA"+GetWhere("=","D")+;
+                               " AND DOC_ACT=1 "+;
+        " WHERE "+IF(lTodas,"","DOC_CODSUC "+GetWhere("=",cCodSuc)+" AND ")+;
+        GetWhereAnd("DOC_FECHA",dDesde,dHasta)+" AND "+;
+        "       DOC_TIPTRA"+GetWhere("=","D") +" AND "+;
+                GetWhereOr("DOC_TIPDOC",aTipDoc)      +;
+        IIF( !Empty(cWhere ) , "       AND "+ cWhere  , "" )  +;
+        IIF( !Empty(cWhereG) , "       OR  (("+ cWhereG+") AND DOC_TIPTRA"+GetWhere("=","D")+")" , "" )  +;
+	   " GROUP BY DOC_NETO  ,"+;
+        "          DOC_FECHA ,"+;
+        "          DOC_DESTIN,"+;
+        "          RTI_DOCNUM,"+;
+        "          RTI_PORCEN,"+;
+        "          RTI_NUMCLI,"+;
+        "          DOC_CODIGO,"+;
+        "          DOC_CODSUC,"+;
+        "          CLI_RIF    ,"+;
+        "          CLI_NOMBRE ,"+;
+        "          DOC_FACTURA,"+;
+        "          DOC_DEBITO ,"+;
+        "          DOC_CREDITO,"+;
+        "          DOC_NUMFIS, "+;
+        "          DOC_TIPDOC, "+;
+        "          DOC_NUMERO, "+;
+        "          DOC_FACAFE, "+;
+        "          TIP_CODIGO, "+;
+        "          DOC_DCTO  , "+;
+        "          DOC_RECARG, "+;
+        "          DOC_OTROS , "+;
+        "          DOC_ESTADO, "+;
+        "          DOC_ANUFIS, "+;
+        "          TDC_LIBTRA, "+;
+        "          DOC_CXC     "+;
+        " ORDER BY DOC_FECHA,DOC_NUMERO,MOV_IVA "
+
+// JN 9-9-9 asi estaba antes en enlace
+//        " LEFT JOIN DPDOCCLIRTI ON DOC_CODSUC=RTI_CODSUC AND "+;
+//        "                          DOC_TIPDOC=RTI_DOCTIP AND "+;
+//        "                          DOC_NUMERO=RTI_DOCNUM AND "+;
+//        "                          DOC_TIPTRA=RTI_TIPTRA "+;
+
+
+ // ? clpcopy(csql)
+
+  oTable:=OpenTable(cSql,.T.)
+
+  IF oTable:RecCount()=0
+     oTable:aDataFill:=EJECUTAR("SQLARRAYEMPTY",cSql)
+  ENDIF
+
+//  oTable:Replace("MOV_IVA_3",0   )    // IVA con Rebaja 7
+//  oTable:Replace("MOV_IVA_5",0   )    // IVA con Rebaja 9
+
+  nContar:=0
+
+//  oTable:AddFields("MOV_IVA_3",0,"N",19,2)
+//  oTable:AddFields("MOV_IVA_5",0,"N",19,2)
+//  oTable:Replace("DOC_OPERAC",STRZERO(nContar,6))
+
+  oTable:GoTop()
+
+  WHILE !oTable:Eof()
+
+    IF Empty(oTable:DOC_TIPDOC)
+       oTable:DbSkip()
+       LOOP
+    ENDIF
+
+//  nContar++   //SE INACTIVO PARA Q LLEVE EL NUMERO DE OPERACION DEBIDA
+//  oTable:Replace("DOC_OPERAC",STRZERO(nContar,6))
+//  IF oTable:DOC_TIPDOC='CHD'
+//  ENDIF
+ 
+    IF oTable:DOC_ANUFIS
+      oTable:Replace("TDC_LIBTRA","00-ANU")
+    ENDIF
+
+    IF oTable:DOC_TIPDOC='DEB'
+      oTable:Replace("DOC_FACTURA",SPACE(10))
+      oTable:Replace("DOC_DEBITO" ,oTable:DOC_NUMERO)
+    ENDIF
+
+    IF oTable:DOC_TIPDOC='RTI'
+      oTable:Replace("DOC_NUMFIS",SPACE(10))
+      oTable:Replace("DOC_DEBITO",SPACE(10))
+      oTable:Replace("DOC_NETO",0)
+      oTable:Replace("DOC_EXONER",0)
+      oTable:Replace("DOC_CXC",1)
+    ENDIF
+
+    IF oTable:DOC_TIPDOC='DEV'
+      oTable:Replace("DOC_FACTURA",SPACE(10))
+      oTable:Replace("DOC_CREDITO",oTable:DOC_NUMERO)
+     // oTable:Replace("DOC_NUMERO",oTable:DOC_FACAFE)
+    ENDIF
+
+    IF oTable:DOC_TIPDOC='CRE' 
+      oTable:Replace("DOC_FACTURA",SPACE(10))
+      oTable:Replace("DOC_CREDITO",oTable:DOC_NUMERO)
+    ENDIF
+
+    //////////////////////////////////////////////////////
+    //oTable:Replace("DOC_OPERAC",STRZERO(nContar,6))
+    //////////////////////////////////////////////////////
+
+    cWhere:="CCD_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+            "CCD_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+            "CCD_NUMERO"+GetWhere("=",oTable:DOC_NUMERO)+" AND "+;
+            "CCD_TIPTRA"+GetWhere("=","D")
+
+
+    IF Empty(oTable:MOV_TIPIVA) .AND. Empty(SQLGET("DPDOCCLICTA","CCD_TIPDOC",cWhere))
+
+      IF lFileChk .AND. lVer
+        EJECUTAR("DPCHKOMEMO",oLibVta,"Documento: "+oTable:DOC_TIPDOC+"-"+oTable:DOC_NUMERO+" no Tiene Cuerpo")
+      ENDIF
+
+      oTable:Replace("DOC_NETO"  ,0        )    // Neto
+      oTable:Replace("DOC_MTOIVA",0        )    // Alicuota IVA
+      oTable:Replace("DOC_EXONER",0        )    // Exento
+      oTable:Replace("DOC_MTORTI",0        )    // Monto de Retención RTI
+      oTable:Replace("DOC_MTORVI",0        )    // Monto de Reverso   RVI
+
+//      EJECUTAR("DPDOCCLIIVA",oTable:DOC_CODSUC,oTable:DOC_TIPDOC,oTable:DOC_CODIGO,oTable:DOC_NUMERO,.T.,;
+//                             oTable:DOC_DCTO  ,oTable:DOC_RECARG,oTable:DOC_OTROS,NIL,"V",oTable:DOC_IVAREB)
+
+      EJECUTAR("DPDOCCLIIMP",oTable:DOC_CODSUC,oTable:DOC_TIPDOC,oTable:DOC_CODIGO,oTable:DOC_NUMERO,.T.,;
+                             oTable:DOC_DCTO  ,oTable:DOC_RECARG,oTable:DOC_OTROS,NIL,"V",oTable:DOC_IVAREB)
+
+
+
+// ? "oTable:DOC_IVAREB",oTable:DOC_IVAREB
+/*
+      IF oTable:DOC_IVAREB>0
+        oTable:Replace("DOC_MTOIVA",oDp:nIva   )
+        oTable:Replace("DOC_IVABAS",oDp:nIvaBas)
+        oTable:Replace("MOV_IVA_"+ALLTRIM(LSTR(oTable:DOC_IVAREB)),oDp:nIva )   
+      ENDIF
+*/
+      cDocSinC:=cDocSinC+ if( Empty(cDocSinC),"",CRLF)+;
+                oTable:DOC_TIPDOC+"-"+oTable:DOC_NUMERO
+
+
+    ENDIF
+
+    oTable:DbSkip()
+
+  ENDDO
+
+  IF !EMPTY(cDocSinC)
+     MsgMemo(cDocSinC,"Documentos Anulados, Sin detalles para Mostrar")
+     //MensajeErr(cDocSinC,"Documentos sin Cuerpo, No seran Mostrados en Libro de Ventas")
+  ENDIF
+
+  // Obtenemos las facturas de entes gubernamentales
+  // Debe buscar los pagos, y para esta fecha "debe estar pendiente"
+  aFacGub:=ASQL(" SELECT DOC_TIPDOC,DOC_NUMERO,DOC_ESTADO,DOC_NETO FROM DPDOCCLI "+;
+                " INNER JOIN DPCLIENTES ON CLI_CODIGO=DOC_CODIGO AND CLI_TIPPER"+GetWhere("=","G")+;
+                oTable:cWhere)
+
+
+  oDp:cSql:=" SELECT DOC_TIPDOC,DOC_NUMERO,SUM(DOC_NETO) FROM DPDOCCLI "+;
+            " INNER JOIN DPCLIENTES ON CLI_CODIGO=DOC_CODIGO AND CLI_TIPPER"+GetWhere("=","G")+;
+            " WHERE DOC_CODSUC "+GetWhere("=",cCodSuc) +" AND "+;
+             GetWhereAnd("DOC_FECHA",dDesde,dHasta)    +" AND "+;
+            " DOC_TIPTRA"+GetWhere("=","P")            +" AND "+;
+            " DOC_ACT=1 "+;                              
+            " GROUP BY DOC_TIPDOC,DOC_NUMERO"
+
+  aPagGub:=ASQL(oDp:cSql)
+
+  // Aqui debe ser Declaradas con Montos Ceros, no puede haber Vacios-
+
+  FOR I=1 TO LEN(aPagGub)
+
+     nAt:=ASCAN(aFacGub,{|a,n| aPagGub[I,1]=a[1] .AND. aPagGub[I,2]=a[2]})
+
+     IF nAt>0 .AND. aPagGub[I,3]=aFacGub[nAt,4]
+        // la Factura fue pagada el mismo mes, y no ha pasado nada
+        ARREDUCE(aFacGub,nAt)
+     ENDIF
+
+  NEXT I
+
+  oTable:Replace("DOC_OPERAC",STRZERO(0,6)) // Número de Transacción
+  oTable:Replace("DOC_FACAFE",SPACE(10))    // Factura Afectada
+  oTable:Replace("DOC_MTOIVA",0        )    // Alicuota IVA
+  oTable:Replace("DOC_EXONER",0        )    // Exento
+  oTable:Replace("DOC_MTORTI",0        )    // Monto de Retención RTI
+  oTable:Replace("DOC_MTORVI",0        )    // Monto de Reverso   RVI
+
+  oTable:Gotop()
+
+  nIVA   := oTable:FieldPos("MOV_IVA")
+  nFECHA := oTable:FieldPos("DOC_FECHA")
+  nNUMERO:= oTable:FieldPos("DOC_NUMERO")
+  nNUMFIS:= oTable:FieldPos("DOC_NUMFIS")
+  nCODIGO:= oTable:FieldPos("DOC_CODIGO")
+  nTIPO  := oTable:FieldPos("DOC_TIPDOC")
+
+/////////////////////////////////////////////////////////////////////////////////
+  // Busca los Impuestos de los Documentos
+  EJECUTAR("DPCHKOMEMO",oLibVta,"")
+
+  IF lFileChk .AND. lVer
+    EJECUTAR("DPCHKOMEMO",oLibVta,"[Procesando Documentos con Cuentas]")
+  ENDIF
+
+// oTable:Browse()
+
+  WHILE !oTable:Eof() 
+
+    IF Empty(oTable:MOV_TIPIVA) // No tiene Productos
+
+      cComent:=IF(!oTable:CLI_RIFVAL," RIF no Validado","")
+
+      IF lFileChk .AND. lVer
+        EJECUTAR("DPCHKOMEMO",oLibVta,"Calculando "+oTable:DOC_TIPDOC+"-"+oTable:DOC_NUMERO+cComent)
+      ENDIF
+
+      aLine:=ACLONE(oTable:aDataFill[oTable:Recno()])
+
+//      EJECUTAR("DPDOCCLIIVA",oTable:DOC_CODSUC,oTable:DOC_TIPDOC,oTable:DOC_CODIGO,oTable:DOC_NUMERO,.F.,;
+//                             oTable:DOC_DCTO  ,oTable:DOC_RECARG,oTable:DOC_OTROS,NIL,"V",oTable:DOC_IVAREB)
+
+      EJECUTAR("DPDOCCLIIMP",oTable:DOC_CODSUC,oTable:DOC_TIPDOC,oTable:DOC_CODIGO,oTable:DOC_NUMERO,.F.,;
+                             oTable:DOC_DCTO  ,oTable:DOC_RECARG,oTable:DOC_OTROS,"V",oTable:DOC_IVAREB)
+
+
+// ViewArray(oDp:aArrayIva)
+
+/*
+      WHILE .T.
+
+        nAt:=ASCAN(oDp:aArrayIva,{|a,n|a[4]=0})
+
+        IF nAt=0
+          EXIT
+        ENDIF
+
+        oDp:aArrayIva:=ARREDUCE(oDp:aArrayIva,nAt)
+
+      ENDDO
+*/
+      ADEPURA(oDp:aArrayIva,{|a,n| Empty(a[4]) })
+
+      FOR I:=1 TO LEN(oDp:aArrayIva)
+
+        nAt:=ASCAN(aTipIva,{|a,n|a[1]==oDp:aArrayIva[I,1]})
+
+        IF nAt>0 .AND. oDp:aArrayIva[I,4]<>0 .AND. LEN(oDp:aArrayIva)>0
+
+          aLine[oTable:FieldPos("MOV_TIPIVA")]:=oDp:aArrayIva[I,1]
+          aLine[oTable:FieldPos("MOV_TOTAL" )]:=oDp:aArrayIva[I,4]
+          aLine[oTable:FieldPos("MOV_IVA"   )]:=oDp:aArrayIva[I,3]
+
+          IF I=1
+            oTable:aDataFill[oTable:Recno()]:=ACLONE(aLine)
+          ELSE
+            AADD(oTable:aDataFill,ACLONE(aLine))
+          ENDIF
+
+        ENDIF
+
+      NEXT I
+
+/*
+      IF oTable:DOC_IVAREB>0
+        oTable:Replace("DOC_MTOIVA",oDp:nIva   )
+        oTable:Replace("DOC_IVABAS",oDp:nIvaBas)
+        oTable:Replace("MOV_IVA_"+ALLTRIM(LSTR(oTable:DOC_IVAREB)),oDp:nIva )   
+      ENDIF
+*/
+    ELSE
+     
+      // Es Documentos
+  
+    ENDIF
+
+    oTable:DbSkip()
+
+  ENDDO
+
+  oTable:GOTOP()
+
+  IF lFileChk .AND. lVer
+    EJECUTAR("DPCHKOMEMO",oLibVta,"[Fin Documentos con Cuentas]")
+    EJECUTAR("DPCHKOMEMO",oLibVta,"")
+  ENDIF
+
+  aSort:=ACLONE(oTable:aDataFill)
+
+  ASORT(aSort,,, { |x, y|  DTOS(x[nFECHA])+x[nNUMERO]+x[nNUMFIS]+x[nCODIGO]+x[nTIPO]+STR(100-x[nIVA],6,2)<DTOS(y[nFECHA])+y [nNUMERO]+y[nNUMFIS]+y[nCODIGO]+y[nTIPO]+STR(100-y[nIVA],6,2) })
+
+  // Agrega las Retenciones
+  oTable:aDataFill:=ACLONE(aSort)
+
+  IF lFileChk .AND. lVer
+    EJECUTAR("DPCHKOMEMO",oLibVta,"Leyendo Retenciones Extemporáneas ")
+  ENDIF
+
+  EJECUTAR("LIBAGREGARRTI",oTable,IIF(lTodas,NIL,cCodSuc),dDesde,dHasta)
+
+ /*
+ // Aqui Agrupa las Diversas Alícuotas por Documento.
+ */
+ oTable:GoTop()
+ oLibVta:oMeter:SetTotal(oTable:RecCount())
+
+ IF lFileChk .AND. lVer
+    EJECUTAR("DPCHKOMEMO",oLibVta,"[Procesando ("+LSTR(oTable:RecCount())+") Documentos con Productos]")
+ ENDIF
+
+// JN 15/10/2017 
+
+ oTable:AddFields("MOV_IVA_3",0,"N",19,2)
+ oTable:AddFields("MOV_IVA_5",0,"N",19,2)
+
+ //Base del IVA
+ oTable:AddFields("MOV_BAS_3",0,"N",19,2)
+ oTable:AddFields("MOV_BAS_5",0,"N",19,2)
+
+ //IVA Retenido 
+ oTable:AddFields("IVA_RET_3",0,"N",19,2)
+ oTable:AddFields("IVA_RET_5",0,"N",19,2)
+
+
+ nField3:=oTable:FieldPos("MOV_IVA_3")
+ nField5:=oTable:FieldPos("MOV_IVA_5")
+
+  
+ nField6:=oTable:FieldPos("MOV_BAS_3")
+ nField7:=oTable:FieldPos("MOV_BAS_5")
+
+ nField8:=oTable:FieldPos("IVA_RET_3")
+ nField9:=oTable:FieldPos("IVA_RET_5")
+
+
+//? nField3,nField5,"nField3,nField5"
+
+ WHILE !oTable:Eof()
+
+    oLibVta:oMeter:Set(oTable:RecNo())
+
+    oLibVta:oSayRecord:SetText("Registro:"+LSTR(oTable:Recno())+"/"+LSTR(oTable:Reccount()))
+
+    cClave :=oTable:DOC_TIPDOC+oTable:DOC_NUMERO+oTable:DOC_CODIGO
+    cComent:=""
+
+    IF oTable:DOC_CODIGO=STRZERO(1,10)
+       cComent:=IF(!oTable:CLI_RIFVAL," RIF no Validado","")
+    ENDIF
+
+    IF lFileChk .AND. lVer
+
+      IF Empty(oTable:DOC_TIPDOC)
+
+        IF !cRepite=oTable:DOC_FACTURA
+          EJECUTAR("DPCHKOMEMO",oLibVta,"RTI,Factura:"+oTable:DOC_FACTURA+cComent)
+        ENDIF
+
+        cRepite:=oTable:DOC_FACTURA         
+
+      ELSE
+
+        EJECUTAR("DPCHKOMEMO",oLibVta,"Documento: "+oTable:DOC_TIPDOC+"-"+oTable:DOC_NUMERO+cComent)
+
+      ENDIF
+
+    ENDIF
+
+    // Vacio, no se cumple cClave
+    IF Empty(oTable:DOC_TIPDOC)
+       oTable:Replace("DOC_NUMERO",oTable:DOC_FACTURA)
+    ENDIF
+
+    nContar++
+    nLine  :=0
+    nRecord:=oTable:Recno()       // Primer Renglón
+
+    WHILE !oTable:Eof() .AND. cClave==oTable:DOC_TIPDOC+oTable:DOC_NUMERO+oTable:DOC_CODIGO 
+
+      oTable:Replace("DOC_OPERAC",STRZERO(nContar,6))
+
+      IF oTable:DOC_ANUFIS
+         oTable:Replace("MOV_TOTAL",0)
+      ENDIF
+
+      oDp:nDesc     :=oTable:DOC_DCTO 
+      oDp:nRecarg   :=oTable:DOC_RECARG
+      oDp:nDocOtros :=oTable:DOC_OTROS
+      oDp:nBruto    :=oTable:MOV_TOTAL
+      oDp:nMtoDesc  :=Porcen(oDp:nBruto,oDp:nDesc  )
+      oDp:nMtoRecarg:=Porcen(oDp:nBruto,oDp:nRecarg)
+      oDp:nNeto     :=oDp:nBruto+oDp:nMtoRecarg-oDp:nMtoDesc+oDp:nDocOtros
+      oDp:nMtoVar   :=oDp:nBruto-oDp:nNeto
+      oDp:nPorVar   :=(100-RATA(oDp:nNeto,oDp:nBruto))*-1
+
+      oTable:Replace("MOV_BASE"  ,oTable:MOV_TOTAL+PORCEN(oTable:MOV_TOTAL,oDp:nPorVar))
+
+      // JN 14/15/2017 Si es Impresora Fiscal no debe restar DOC_IVAREB
+      IF oTable:DOC_IVA>0
+        oTable:Replace("DOC_MTOIVA",ROUND(PORCEN(oTable:MOV_BASE,oTable:MOV_IVA-oTable:DOC_IVAREB),4))
+      ENDIF
+
+// X:=ROUND(PORCEN(oTable:MOV_BASE,oTable:MOV_IVA),3)
+// ?? X
+// oTable:Replace("DOC_MTOIVA",PORCEN(oTable:MOV_BASE,oTable:MOV_IVA))
+// oTable:Replace("DOC_MTOIVA",oTable:DOC_MTOIVA)
+// nMtoIva:= ROUND( oTable:MOV_TOTAL *  ROUND(oTable:MOV_IVA/100,2 ) , 2 )
+// oTable:Replace("DOC_MTOIVA",ROUND(PORCEN(oTable:MOV_BASE,oTable:MOV_IVA),3))
+// oTable:Replace("DOC_MTOIVA",PORCEN(oTable:MOV_BASE,oTable:MOV_IVA))
+
+      nLine:=nLine+1
+
+     // ?oTable:DOC_FACAFE,oTable:RTI_DOCTIP,oTable:RTI_DOCNUM
+      IF nLine=1 .AND. !Empty(oTable:RTI_DOCNUM) .AND. oTable:RTI_DOCTIP="RTI"
+
+
+        nMontoRti:=SQLGET("DPDOCCLI","DOC_NETO","DOC_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND  "+;
+                                                "DOC_TIPDOC"+GetWhere("=","RTI")            +"  AND "+;
+                                                "DOC_CODIGO"+GetWhere("=",oTable:DOC_CODIGO)+"  AND "+;
+                                                "DOC_NUMERO"+GetWhere("=",oTable:RTI_DOCNUM))
+
+
+         oTable:Replace("DOC_MTORTI",nMontoRti)
+
+        dFechaD:=SQLGET("DPDOCCLIRTI","RTI_FCHDEC",;
+                                      "RTI_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+                                      "RTI_DOCTIP"+GetWhere("=","RTI"  )+" AND "+;
+                                      "RTI_DOCNUM"+GetWhere("=",oTable:RTI_DOCNUM))
+
+//? nMontoRti,dFechaD,dDesde,dHasta
+
+
+// La retencion esta en el Mismo Periodo
+        IF dFechaD>=dDesde .AND. dFechaD<=dHasta
+           oTable:Replace("DOC_MTORTI",nMontoRti)
+        //   oTable:Replace("DOC_FACAFE","" )
+//? "1"
+
+//           oTable:Replace("DOC_NUMERO",""        )
+
+        ELSE
+//? "2"
+           oTable:Replace("DOC_MTORTI",0        )
+           oTable:Replace("RTI_NUMCLI",""   )
+        ENDIF
+
+   ENDIF
+
+      //?oTable:RTI_DOCTIP,oTable:RTI_DOCNUM
+      IF nLine=1 .AND. !Empty(oTable:RTI_DOCNUM) .AND. oTable:RTI_DOCTIP="RVI"
+
+        nMontoRVI:=SQLGET("DPDOCCLI","DOC_NETO","DOC_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND  "+;
+                                                "DOC_TIPDOC"+GetWhere("=","RVI")            +"  AND "+;
+                                                "DOC_CODIGO"+GetWhere("=",oTable:DOC_CODIGO)+"  AND "+;
+                                                "DOC_NUMERO"+GetWhere("=",oTable:RTI_DOCNUM))
+
+
+        oTable:Replace("DOC_MTORTI",nMontoRVI*-1)
+
+        dFechaD:=SQLGET("DPDOCCLIRTI","RTI_FCHDEC",;
+                                      "RTI_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+                                      "RTI_DOCTIP"+GetWhere("=","RVI"  )+" AND "+;
+                                      "RTI_DOCNUM"+GetWhere("=",oTable:RTI_DOCNUM))
+
+//? nMontoRti
+
+// La retencion esta en el Mismo Periodo
+        IF dFechaD>=dDesde .AND. dFechaD<=dHasta
+           oTable:Replace("DOC_MTORVI",nMontoRVI)
+         //  oTable:Replace("DOC_FACAFE",""        )
+
+//           oTable:Replace("DOC_NUMERO",""        )
+
+        ELSE
+
+           oTable:Replace("DOC_MTORVI",0        )
+           oTable:Replace("RTI_NUMCLI",""   )
+      
+
+//           oTable:Replace("DOC_FACAFE",""        )
+
+          EJECUTAR("DPCHKOMEMO",oLibVta,"RTI:"+oTable:RTI_DOCNUM+" Excluida, Declaración "+DTOC(dFechaD)+" "+ALLTRIM(TRAN(nMontoRti,"999,999,999.99")))
+          nMontoRti:=0 
+          
+        ENDIF
+
+      ENDIF 
+
+     //   ENDIF
+
+     // ENDIF 
+
+
+
+/*
+        IF !(LEFT(DTOC(dFechaD),6)=LEFT(DTOC(oTable:DOC_FECHA),6))
+
+          oTable:Replace("DOC_MTORTI",0    )
+          oTable:Replace("RTI_NUMCLI",""   )
+
+          EJECUTAR("DPCHKOMEMO",oLibVta,"RTI:"+oTable:RTI_DOCNUM+" Excluida, Declaración "+DTOC(dFechaD)+" "+ALLTRIM(TRAN(nMontoRti,"999,999,999.99")))
+          nMontoRti:=0
+
+        ENDIF
+
+      ENDIF
+*/
+
+      IF nLine=1 .AND. oTable:MOV_IVA=0
+
+//? "1"
+        oTable:Replace("DOC_EXONER",oTable:DOC_NETO)
+        oTable:Replace("MOV_BASE"  ,0) // No va para el Libro de Venta
+      ENDIF
+
+//?oTable:DOC_NETO,"oTable:DOC_NETO"
+
+      IF nLine>1
+        oTable:Replace("DOC_NETO",0)
+        nBase :=oTable:MOV_BASE        // EXENTO
+
+//? nBase,"nBase"
+
+        IF oTable:MOV_IVA=0            // EXENTO
+          oTable:Replace("MOV_BASE",0) // No va para el Libro de Venta
+          oTable:Replace("DOC_NETO",0) //
+          nRecAct:=oTable:Recno()
+          oTable:Goto(nRecord)         // Registro Anterior
+          oTable:Replace("DOC_EXONER",nBase)
+          oTable:Goto(nRecAct)
+        ENDIF
+
+      ENDIF
+
+//? oTable:DOC_EXONER,"oTable:EXONER 11"
+
+      IF oTable:DOC_ANUFIS
+
+//? "DOCANUFIS"
+        oTable:Replace("MOV_BASE"  ,0)
+        oTable:Replace("MOV_IVA"   ,0)
+        oTable:Replace("DOC_EXONER",0)   
+        oTable:Replace("DOC_MTOIVA",0)
+        oTable:Replace("DOC_MTORTI",0)
+        oTable:Replace("DOC_MTORVI",0)
+      ENDIF
+
+      // Retenciones de IVA, no debe Aparecer como numero de Factura
+      IF Empty(oTable:DOC_TIPDOC)
+        oTable:Replace("DOC_FACTURA","")
+      ENDIF
+
+     oTable:DbSkip()
+
+    ENDDO
+
+  ENDDO
+
+  oLibVta:oMeter:Set(oTable:RecCount())
+
+  
+
+  IF lVer .AND. lFileChk
+    EJECUTAR("DPCHKOMEMO",oLibVta,"[Fin en Procesando Documentos ("+LSTR(oTable:RecCount())+") con Productos]")
+  ENDIF
+
+
+  /*
+  // Procesando Anuladas
+  */
+  oTable:GoTop()
+
+  WHILE !oTable:Eof() 
+
+    IF oTable:DOC_ANUFIS 
+      // Anulación Fiscal
+      oTable:REPLACE("DOC_CXC",0)
+    ENDIF
+
+    IF oTable:DOC_CXC=0
+
+//? "DOC_CXC=0"
+
+      oTable:Replace("DOC_NETO"   ,oTable:DOC_NETO  *1)
+      oTable:Replace("MOV_TOTAL"  ,oTable:MOV_TOTAL *1)
+      oTable:Replace("MOV_BASE"   ,oTable:MOV_BASE  *1)
+      oTable:Replace("DOC_EXONER" ,oTable:DOC_EXONER*1)
+      oTable:Replace("DOC_MTOIVA" ,oTable:DOC_MTOIVA*1)    // Factura Afectada
+      oTable:Replace("DOC_MTORTI" ,oTable:DOC_MTORTI*1)    // Monto de Retención RTI
+      oTable:Replace("DOC_MTORVI" ,oTable:DOC_MTORVI*1)    // Monto de Reverso   RVI
+
+//? oTable:DOC_EXONER,"oTable:EXONER 12"
+
+    ELSE
+//? "DOC_CXC=0  222"
+
+      oTable:Replace("DOC_NETO"   ,oTable:DOC_NETO  *oTable:DOC_CXC)
+      oTable:Replace("MOV_TOTAL"  ,oTable:MOV_TOTAL *oTable:DOC_CXC)
+      oTable:Replace("MOV_BASE"   ,oTable:MOV_BASE  *oTable:DOC_CXC)
+      oTable:Replace("DOC_EXONER" ,oTable:DOC_EXONER*oTable:DOC_CXC)
+      oTable:Replace("DOC_MTOIVA" ,oTable:DOC_MTOIVA*oTable:DOC_CXC)    // Factura Afectada
+      oTable:Replace("DOC_MTORTI" ,oTable:DOC_MTORTI*oTable:DOC_CXC)    // Monto de Retención  RTI
+      oTable:Replace("DOC_MTORVI" ,oTable:DOC_MTORVI*oTable:DOC_CXC)    // Monto de Reverso    RVI
+
+//? oTable:DOC_EXONER,"oTable:EXONER 13"
+
+    ENDIF
+
+//? oTable:DOC_EXONER,"oTable:EXONER 14"
+
+
+    // Buscamos las facturas GUBERNAMENTALES, Cero a los impuestos
+    nAt  :=ASCAN(aFacGub,{|a,n| a[1]=oTable:DOC_TIPDOC .AND. a[2]=oTable:DOC_NUMERO })
+
+    IF nAt>0 .AND. MONTH(oTable:DOC_FECHA)=MONTH(dDesde)
+//    oTable:Replace("DOC_EXONER",0)   
+      oTable:Replace("DOC_MTOIVA",0)
+//    oTable:Replace("DOC_MTORTI",0)
+    ENDIF
+
+//? oTable:DOC_IVAREB,oTable:DOC_MTOIVA,"oTable:DOC_MTOIVA"
+
+    IF oTable:DOC_IVAREB=3
+//  oTable:Replace("MOV_IVA3",oTable:DOC_MTOIVA ) 
+       oTable:FieldPut(nField3,oTable:DOC_MTOIVA)
+       oTable:FieldPut(nField6,oTable:MOV_BASE)
+       oTable:FieldPut(nField8,oTable:DOC_MTORTI)
+
+    ENDIF
+
+    IF oTable:DOC_IVAREB=5
+       oTable:FieldPut(nField5,oTable:DOC_MTOIVA ) 
+       oTable:FieldPut(nField7,oTable:MOV_BASE)
+       oTable:FieldPut(nField9,oTable:DOC_MTORTI)
+    ENDIF
+
+    oTable:DbSkip()
+
+  ENDDO
+
+  //otable:Browse()
+
+  //  oTable:Browse()
+  // para forma 30
+  // Aqui realiza la Forma 30
+
+  IF ValType(oLiq)="O"
+    RETURN oTable
+  ENDIF
+
+  cFileRpt:="CRYSTAL\"+oLibVta:aModRpt[oLibVta:oModelo:nAt]
+
+//? cFileRpt,"cFileRpt"
+
+  FERASE("CRYSTAL\DPLIBVTA.DBF")
+  FERASE("CRYSTAL\DPLIBVTA.CDX")
+
+  IF FILE("CRYSTAL\DPLIBVTA.DBF")
+     MensajeErr("Archivo CRYSTAL\DPLIBVTA.DBF"+CRLF+" Está Abierto")
+     RETURN NIL
+  ENDIF
+
+  /*
+  // Los Campos, son pasados hacia Caracter
+  */
+
+  oTable:Gotop()
+
+  WHILE !oTable:Eof()
+     oTable:Replace("DOC_NETOC" ,STRDP(oTable:DOC_NETO  ,14,2))
+     oTable:Replace("MOV_TOTALC",STRDP(oTable:MOV_TOTAL ,14,2))
+     oTable:Replace("MOV_BASEC" ,STRDP(oTable:MOV_BASE  ,14,2))
+     oTable:Replace("DOC_EXONEC",STRDP(oTable:DOC_EXONER,14,2))
+     oTable:Replace("DOC_MTOIVC",STRDP(oTable:DOC_MTOIVA,14,2))    // Factura Afectada
+     oTable:Replace("DOC_MTORTC",STRDP(oTable:DOC_MTORTI,14,2))    // Monto de Retención RTI
+     oTable:Replace("DOC_MTORTV",STRDP(oTable:DOC_MTORVI,14,2))    // Monto de Reverso   RVI
+     oTable:DbSkip()
+  ENDDO
+
+  //oTable:Browse()
+
+  oTable:CTODBF("CRYSTAL\DPLIBVTA.DBF")
+
+  CLOSE ALL
+  USE ("CRYSTAL\DPLIBVTA.DBF") EXCLU 
+
+//BROWSE()
+
+
+  DELETE ALL FOR  DOC_TIPDOC ="CPP"
+  GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="ANT"
+  GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="CHD"
+  GO TOP
+  // DELETE ALL FOR  DOC_TIPDOC ="CRE" .AND.  MOV_IVA = 0 
+  // GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="TIK" .AND. DOC_NETO=0 .AND. MOV_BASE=0 .AND. MOV_IVA = 0 
+  GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="FAV" .AND. DOC_NETO=0 .AND. MOV_BASE=0 .AND. MOV_IVA = 0 .AND.  .NOT. DOC_ANUFIS
+  GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="DEV" .AND. DOC_NETO=0 .AND. MOV_BASE=0 .AND. MOV_IVA = 0 .AND.  .NOT. DOC_ANUFIS
+  GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="CRE" .AND. DOC_NETO=0 .AND. MOV_BASE=0 .AND. MOV_IVA = 0 .AND.  .NOT. DOC_ANUFIS
+  GO TOP
+  DELETE ALL FOR  DOC_TIPDOC ="CPP" .AND. DOC_NETO=0 .AND. MOV_BASE=0 .AND. MOV_IVA = 0 .AND.  .NOT. DOC_ANUFIS
+ 
+
+  REPLACE ALL DOC_NETO WITH 0,MOV_TOTAL WITH 0 FOR DOC_ESTADO="NU"
+  GO TOP
+  PACK
+
+  
+  nContar:=0
+  INDEX ON DTOC(DOC_FECHA)+DOC_TIPDOC TAG "DPLIBVTA" TO ("CRYSTAL\DPLIBVTA.CDX")
+  GO TOP
+  cNumero:=""
+
+  EJECUTAR("DPCHKOMEMO",oLibVta,"")
+
+//BROWSE()
+
+// EJECUTAR("DPCHKOMEMO",oLibVta,"Revisando [Secuencia en Documentos]")
+  cNumero:=DOC_NUMERO
+
+  oTipIva:=OpenTable("SELECT TIP_CODIGO FROM DPIVATIP",.T.)
+  oTotal :=OpenTable("SELECT 0 AS TOTAL,0 AS BASE,0 AS MTOIVA,0 AS MTORTI,0 AS MTORVI FROM DPIVATIP LIMIT 1",.T.)
+
+  AEVAL(oTipIva:aDataFill,{|a,n,cField| cField:="TOTAL" +ALLTRIM(a[1]) , oTotal:AddFields(cField,0,"N",14,2) })
+  AEVAL(oTipIva:aDataFill,{|a,n,cField| cField:="BASE"  +ALLTRIM(a[1]) , oTotal:AddFields(cField,0,"N",14,2) })
+  AEVAL(oTipIva:aDataFill,{|a,n,cField| cField:="MTOIVA"+ALLTRIM(a[1]) , oTotal:AddFields(cField,0,"N",14,2) })
+  AEVAL(oTipIva:aDataFill,{|a,n,cField| cField:="MTORTI"+ALLTRIM(a[1]) , oTotal:AddFields(cField,0,"N",14,2) })
+  AEVAL(oTipIva:aDataFill,{|a,n,cField| cField:="MTORvI"+ALLTRIM(a[1]) , oTotal:AddFields(cField,0,"N",14,2) })
+
+  oTotal:AddFields("EXONER",0,"N",14,2) 
+
+  WHILE !EOF()
+
+    IF !Empty(DOC_OPERAC)
+       nContar++
+       REPLACE DOC_OPERAC WITH STRZERO(nContar,6)
+    ENDIF
+
+
+    // DOC_NETO     
+    cField:="TOTAL"+ALLTRIM(MOV_TIPIVA)
+    nMonto:=oTotal:GetValue(cField)
+    oTotal:Replace(cField,nMonto+DOC_NETO)
+
+    // DOC_BASE
+    cField:="BASE"+ALLTRIM(MOV_TIPIVA)
+    nMonto:=oTotal:GetValue(cField)
+    oTotal:Replace(cField,nMonto+MOV_BASE)
+
+    // DOC_MTOIVA
+    cField:="MTOIVA"+ALLTRIM(MOV_TIPIVA)
+    nMonto:=oTotal:GetValue(cField)
+    oTotal:Replace(cField,nMonto+DOC_MTOIVA)
+
+    // DOC_MTORTI
+    cField:="MTORTI"+ALLTRIM(MOV_TIPIVA)
+    nMonto:=oTotal:GetValue(cField)
+    oTotal:Replace(cField,nMonto+DOC_MTORTI)
+
+    // DOC_MTORVI
+    cField:="MTORVI"+ALLTRIM(MOV_TIPIVA)
+    nMonto:=oTotal:GetValue(cField)
+    oTotal:Replace(cField,nMonto+DOC_MTORVI)
+
+    // EXONERADO
+    cField:="EXONER"
+    nMonto:=oTotal:GetValue(cField)
+    oTotal:Replace(cField,nMonto+DOC_EXONER)
+
+//? nMonto,"nMontoyyyyyyyYYYYYYYYYYYY"
+
+    DBSKIP()
+
+  ENDDO
+
+  /*
+  // IVA Percibido, JN 12/06/2012
+  */
+
+  CursorWait()
+  IF lVer .AND. lFileChk
+    EJECUTAR("DPCHKOMEMO",oLibVta,"Calculando IVA Percibido")
+  ENDIF
+
+  // Se Inactivo hasta que no tenegamos la ley del como se calcula el iva percibido TJ
+  // EJECUTAR("DPIVAPERCAL",cCodSuc,dDesde,dHasta,lTodas,cModelo,.T.)   
+
+  // para Visualizar su Contenido
+//  ViewArray(oDp:aResumen)
+/*
+  oTotal:AddFields("EX_PERCI",0,"N",14,2)
+  oTotal:AddFields("RD_PERCI",0,"N",14,2) 
+  oTotal:AddFields("GN_PERCI",0,"N",14,2) 
+  oTotal:AddFields("S1_PERCI",0,"N",14,2) 
+  oTotal:AddFields("S2_PERCI",0,"N",14,2) 
+
+  oTotal:Replace("EX_PERCI",oDp:aResumen[1,2])
+  oTotal:Replace("RD_PERCI",oDp:aResumen[2,2])
+  oTotal:Replace("GN_PERCI",oDp:aResumen[3,2])
+  oTotal:Replace("S1_PERCI",oDp:aResumen[4,2])
+  oTotal:Replace("S2_PERCI",oDp:aResumen[5,2])
+*/
+
+//  oTotal:Browse()
+
+
+  oTotal:CTODBF("CRYSTAL\DPLIBVTAT.DBF")
+
+  IF lGuardar
+    oTotal:CTOTXT("TEMP\DPLIBVTAT.TXT")
+  ENDIF
+
+  oTotal:End()
+
+
+  oTipIva:End()
+
+  IF lGuardar
+    oTable:CTOTXT("TEMP\DPLIBVTA.TXT")
+  ENDIF
+
+//oTable:CTODBF("TEMP\DPLIBVTA_"+cChar+".DBF")
+//  AADD(aFiles,"TEMP\DPLIBVTA_" +cChar+".DBF")
+//  AADD(aFiles,"TEMP\DPLIBVTAT_"+cChar+".DBF")
+//  cMemo:=MemoRead("TEMP\DPLIBVTA.TXT") +CRLF+"Contenido DPLIBVTAT.TXT"+CRLF+;
+//         MemoRead("TEMP\DPLIBVTAT.TXT")
+
+/*
+  IF lFileChk .AND. lVer
+    EJECUTAR("DPCHKOMEMO",oLibVta,"Resultado DPLIBVTA.DBF"+CRLF+cMemo)
+    EJECUTAR("DPCHKOMEMO",oLibVta,"Proceso Concluido ",NIL,.T.)
+  ENDIF
+*/
+
+  EJECUTAR("DPCHKOMEMO",oLibVta,"Contenido de la Tabla DPLIBVTA.DBF"+CRLF+cMemo)
+
+  // Genera Nuevamente el Indice: DOC_TIPDOC + DOC_NUMERO , para verificar la Secuencia
+  CLOSE ALL
+  FERASE("CRYSTAL\DPLIBVTA.CDX")
+  USE ("CRYSTAL\DPLIBVTA.DBF") EXCLU 
+  INDEX ON DOC_TIPDOC+DOC_NUMERO TAG "DPLIBVTA" TO ("CRYSTAL\DPLIBVTA.CDX")
+  GO TOP
+
+  cNumAnt:=""
+  aGrupo :={}
+  nAt    :=0
+
+  GO TOP
+
+  WHILE !EOF() .AND. lVer
+
+     cChar:=LEFT(DOC_NUMERO,1)
+     cChar:=IF(ISDIGIT(cChar),"0",cChar)
+     nAt  :=ASCAN(aGrupo,{|a,n| a[2]=DOC_TIPDOC .AND. a[1]=cChar})
+
+     IF nAt=0
+
+       IF !Empty(aGrupo)
+          aGrupo[LEN(aGrupo),4]:=cNumAnt
+       ENDIF
+
+       AADD(aGrupo,{cChar,DOC_TIPDOC,DOC_NUMERO,"",DOC_FECHA})
+
+     ENDIF
+
+     cNumAnt:=DOC_NUMERO
+
+     SKIP
+
+   ENDDO
+
+   IF !Empty(aGrupo)
+      aGrupo[LEN(aGrupo),4]:=cNumAnt
+   ENDIF
+
+   lNumVacio:=.F.
+   lSecCrono:=.F.
+
+   FOR I=1 TO LEN(aGrupo)
+
+     cTipDoc:=aGrupo[I,2]
+     cDesde :=aGrupo[I,3]
+     cHasta :=aGrupo[I,4]
+     dFecha :=aGrupo[I,5]
+
+     EJECUTAR("DPCHKOMEMO",oLibVta,"Verificando Secuencia de Documentos ["+cTipDoc+"] "+cDesde+" "+cHasta)
+
+     GO TOP
+     LOCATE FOR DOC_TIPDOC=cTipDoc .AND. DOC_NUMERO=cDesde
+
+
+/*
+     WHILE !EOF() .AND. cTipDoc=DOC_TIPDOC .AND. DOC_NUMERO>=cDesde .AND. DOC_NUMERO<cHasta
+
+       nAt    :=RECNO()
+       cNumero:=DPINCREMENTAL(DOC_NUMERO)
+
+       WHILE cNumero<=cHasta
+
+         LOCATE FOR DOC_TIPDOC=cTipDoc .AND. DOC_NUMERO=cNumero
+
+         IF !FOUND()
+
+           cComent:="Falta "+cTipDoc+"-"+cNumero
+           EJECUTAR("DPCHKOMEMO",oLibVta,cComent)
+           GO TOP
+           cNumero  :=DPINCREMENTAL(cNumero)
+           lNumVacio:=.T.
+           LOOP
+
+         ENDIF
+
+         IF DOC_FECHA<dFecha
+           cComent:="Fecha "+DTOC(DOC_FECHA)+" de "+cTipDoc+"-"+cNumero+" debe >= "+DTOC(dFecha)
+           EJECUTAR("DPCHKOMEMO",oLibVta,cComent)
+           lSecCrono:=.T.
+         ENDIF
+
+         dFecha:=MAX(dFecha,DOC_FECHA)
+
+         EXIT
+
+       ENDDO
+
+       DBGOTO(nAt)
+
+       SKIP
+
+     ENDDO
+*/
+
+
+   NEXT I
+
+   EJECUTAR("DPCHKOMEMO",oLibVta,"Concluida Verificación de Secuencia")
+
+   IF lNumVacio
+      MensajeErr("fué detectado Ausencia de Números")
+   ENDIF
+
+   IF lSecCrono
+      MensajeErr("fué detectado Inconsistencia Cronológica")
+   ENDIF
+
+  GO TOP
+
+  IF lFileChk .AND. lVer
+    EJECUTAR("DPCHKOMEMO",oLibVta,"Verificando Documentos no Impresos")
+  ENDIF
+
+  SET FILTER TO !DOC_IMPRES
+  GO TOP
+
+  WHILE !EOF() 
+
+     IF lFileChk .AND. lVer
+       EJECUTAR("DPCHKOMEMO",oLibVta,"No Impreso "+DOC_NUMERO+" Fecha: "+DTOC(DOC_FECHA))
+     ENDIF
+     SKIP
+
+  ENDDO
+
+  oTable:End()
+
+  AADD(aStruct,{"LIB_EMPRES","C",120,0})
+  AADD(aStruct,{"LIB_RIF"   ,"C",020,0})
+  AADD(aStruct,{"LIB_NIT"   ,"C",020,0})
+  AADD(aStruct,{"LIB_DIRECC","C",160,0})
+  AADD(aStruct,{"LIB_DESDE" ,"D",008,0})
+  AADD(aStruct,{"LIB_HASTA" ,"D",008,0})
+  AADD(aStruct,{"LIB_FECHA" ,"D",008,0})
+  AADD(aStruct,{"LIB_INTBAS","N",019,2})
+  AADD(aStruct,{"LIB_INTIVA","N",019,2})
+  AADD(aStruct,{"LIB_EXPBAS","N",019,2})
+  AADD(aStruct,{"LIB_GNBAS" ,"N",019,2})
+  AADD(aStruct,{"LIB_GNIVA" ,"N",019,2})
+  AADD(aStruct,{"LIB_ADBAS" ,"N",019,2})
+  AADD(aStruct,{"LIB_ADIVA" ,"N",019,2})
+  AADD(aStruct,{"LIB_RDBAS" ,"N",019,2})
+  AADD(aStruct,{"LIB_RDIVA" ,"N",019,2})
+  AADD(aStruct,{"LIB_TASAGN","N",006,2}) //  General
+  AADD(aStruct,{"LIB_TASARD","N",006,2}) //  Reducido
+  AADD(aStruct,{"LIB_TASAS1","N",006,2}) //  Suntuario
+  AADD(aStruct,{"LIB_TASAS2","N",006,2}) //  Suntuario 2
+  AADD(aStruct,{"LIB_TASAEX","N",006,2}) //  Exento
+
+  cFileHead:="CRYSTAL\DPLIBVTA_.DBF"
+  FERASE(cFileHead)
+
+  IF FILE(cFileHead)
+    MensajeErr(cFileHead+" está Abierto")
+    RETURN .F.
+  ENDIF
+
+  DBCREATE(cFileHead,aStruct,"DBFCDX")
+  USE (cFileHead) SHARED VIA "DBFCDX"
+  APPEND BLANK
+  BLOC()
+
+  REPLACE LIB_DESDE  WITH dDesde       ,;
+          LIB_HASTA  WITH dHasta       ,;
+          LIB_FECHA  WITH dFecha       ,;
+          LIB_EMPRES WITH oDp:cEmpresa ,;
+          LIB_DIRECC WITH oDp:cDir1+" "+oDp:cDir2+" "+oDp:cDir3+" "+oDp:cDir4,;
+          LIB_RIF    WITH oDp:cRif     ,;
+          LIB_NIT    WITH oDp:cNit     ,;
+          LIB_INTBAS WITH nIntBas      ,;
+          LIB_INTIVA WITH nIntIva      ,;
+          LIB_GNBAS  WITH nGNBas       ,;
+          LIB_ADIVA  WITH nS1Iva+nS2Iva,;
+          LIB_ADBAS  WITH nS1Bas+nS2Bas,;
+          LIB_RDIVA  WITH nRDIva       ,;
+          LIB_RDBAS  WITH nRDBas       ,;
+          LIB_TASAGN WITH oDp:nTasaGN  ,;
+          LIB_TASARD WITH oDp:nTasaRD  ,;
+          LIB_TASAS1 WITH oDp:nTasaS1  ,;
+          LIB_TASAS2 WITH oDp:nTasaS2  ,;
+          LIB_TASAEX WITH oDp:nTasaEX 
+  USE
+
+  aFiles:={}
+
+  cChar:=DTOS(oDp:dFecha)+"_"+STRTRAN(TIME(),":","")
+
+
+  /*
+  // Temporal de Encabezado
+  */
+
+  cFile:="TEMP\DPLIBVTA_"+cChar+".DBF"
+  __copyfile(cFileHead,cFile)
+  AADD(aFiles,cFile)
+
+  /*
+  // Temporal del Libro de Ventas CUERPO
+  */
+
+  cFile:="TEMP\DPLIBVTA"+cChar+".DBF"
+  __copyfile("CRYSTAL\DPLIBVTA.DBF",cFile)
+  AADD(aFiles,cFile)
+
+   
+  IF !oTable:RecNo()>1
+   MsgMemo("No se ha registrado información de Ventas en Periodo "+CRLF+;
+              "["+ALLTRIM(cMes(dDesde))+" / "+LSTR(YEAR(dDesde))+" ] "+DTOC(dDesde)+"-"+DTOC(dHasta))
+// RUNRPT("CRYSTAL\DPLIBVTASV.RPT",{cFileHead},1,"Libro de Ventas")
+   EJECUTAR("RUNRPT",cFileRpt,1,"Libro de Ventas")
+
+//  RETURN .F.
+  ENDIF
+
+/*
+  IF !oTable:RecNo()>1
+    MensajeErr("No hay Información fiscal en este Periodo")
+    RETURN .F.
+  ENDIF
+*/
+
+  IF lFileChk .AND. lVer .AND. oTable:RecNo()>1
+    
+    IF !lGuardar
+      aFiles:={}
+    ELSE
+      cMemo:=MemoRead("TEMP\DPLIBVTA.TXT") +CRLF+"Contenido DPLIBVTAT.TXT"+CRLF+;
+             MemoRead("TEMP\DPLIBVTAT.TXT")
+    ENDIF
+
+    oLibVta:aAdjuntos:=ACLONE(aFiles)
+
+    EJECUTAR("DPCHKOMEMO",oLibVta,"Registrado Auditoria")
+
+    MsgRun("Guardando Registro de Auditoria, para el Libro de Ventas ","Por favor espere... ",;
+            {||EJECUTAR("DPCHKOMEMO",oLibVta,"Proceso Concluido ",NIL,.T.,cMemo) })
+
+  ENDIF
+
+  // Desde este Punto es el proceso de Impresión
+  IF oTable:RecNo()>1
+    EJECUTAR("DPLIBVTAOUT",oLibVta:lConEsp,cFileRpt)
+  ENDIF
+
+  EJECUTAR("IVALOAD",oDp:dFecha)
+  //EJECUTAR("DPFORMYTARGRAB" , "LIBROVTA" , NIL , dDesde , dHasta) // Guarda la Ejecución del Proceso
+  
+  
+
+  SQLUPDATE("DPFORMYTAREASPROG",{"PFT_FCHEJE","PFT_ESTADO","PFT_USUARI"},{oDp:dFecha,"E",oDp:cUsuario},;
+            "PFT_CODEMP"+GetWhere("=",oDp:cEmpCod    )+" AND "+;
+            "PFT_CODSUC"+GetWhere("=",cCodSuc        )+" AND "+;
+            "PFT_NUMERO"+GetWhere("=",oLibVta:cNumero)+" AND "+;
+            "PFT_NUMEJE"+GetWhere("=",oLibVta:nAno   )+" AND "+;
+            "PFT_CODIGO"+GetWhere("=",oLibVta:cCodigo))
+
+  IF Type("oVTALIB")="O" .AND. oVTALIB:oWnd:hWnd>0
+      oVTALIB:BRWREFRESCAR()
+  ENDIF
+ 
+
+
+RETURN .T.
+
+FUNCTION FINDCODSUC()
+  oLibVta:oSucNombre:Refresh(.T.) 
+
+  IF  !oLibVta:cCodSuc==SQLGET("DPSUCURSAL","SUC_CODIGO","SUC_CODIGO"+GetWhere("=",oLibVta:cCodSuc))
+    EVAL(oLibVta:oCodSuc:bAction)
+    RETURN .F.
+  ENDIF
+RETURN .T.
+
+FUNCTION STRDP(uValue,nLen,nDec)
+
+   uValue:=(INT(uValue*100)/100)
+   uValue:=STR(uValue,nLen,nDec)
+   
+RETURN uValue
+
+
+/*
+// Valida que la Fecha no pertenece a Planificación
+*/
+FUNCTION VALPLANIFICA()
+  LOCAL oTable,cNumero
+
+  LOCAL cWhere:="PFT_CODSUC"+GetWhere("=",cCodSuc        )+" AND "+;
+                "PFT_CODEMP"+GetWhere("=",oDp:cEmpCod    )+" AND "+;
+                "PFT_CODIGO"+GetWhere("=",oLibVta:cCodigo)+" AND "+;
+                GetWhereAnd("PFT_DESDE",oLibVta:dDesde,oLibVta:dHasta)
+
+  cNumero:=SQLGET("DPFORMYTAREASPROG","PFT_NUMERO",cWhere)
+
+  IF !Empty(cNumero)
+    oLibVta:oAno:MsgErr("Fecha "+DTOC(oLibVta:dDesde)+" - "+DTOC(oLibVta:dHasta)+CRLF+"Posee registro de Planificación "+cNumero)
+    RETURN .T.
+  ENDIF
+
+RETURN .T.
+
+/*
+// Visualizar todas las Series Fiscales
+*/
+FUNCTION VERNUMFISCAL()
+  LOCAL cWhere,cCodSuc,nPeriodo:=11,dDesde,dHasta,cTitle
+
+  oLibVta:dDesde:=CTOD("01/"+STRZERO(oLibVta:oMes:nAt,2)+"/"+STRZERO(oLibVta:nAno))
+  oLibVta:dHasta:=FCHFINMES(oLibVta:dDesde)
+
+//? oLibVta:dDesde,oLibVta:dHasta,"oLibVta:dDesde,oLibVta:dHasta"
+
+  EJECUTAR("BRSERFISCAL",cWhere,cCodSuc,nPeriodo,oLibVta:dDesde,oLibVta:dHasta,cTitle)
+
+RETURN NIL
+
+
+/*
+// Funcion desde bin
+*/
+FUNCTION ISRELEASE()
+RETURN .F.
+
+FUNCTION HACERFECHA()
+
+  oLibVta:oMes:nAt:=MAX(1,oLibVta:oMes:nAt)
+
+  oLibVta:dDesde:=CTOD("01/"+STRZERO(oLibVta:oMes:nAt,2)+"/"+STRZERO(oLibVta:nAno))
+  oLibVta:dHasta:=FCHFINMES(oLibVta:dDesde)
+  oLibVta:oDesde:VarPut(oLibVta:dDesde,.T.)
+  oLibVta:oHasta:VarPut(oLibVta:dHasta,.T.)
+
+RETURN .T.
+
+
+
+// EOF

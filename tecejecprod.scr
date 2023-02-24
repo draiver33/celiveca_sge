@@ -1,0 +1,1904 @@
+// Programa   : TECEJECPROD 
+// Fecha/Hora : 26/01/2005 23:10:42
+// Propósito  : Ejecución de orden de Producción
+// Creado Por : Juan Navas
+// Llamado por: Producción
+// Aplicación : Producción
+// Tabla      : DPEJECUCIONPROD
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cTipo)
+  LOCAL I,aData:={},oFontG,oGrid,oCol,cSql,oFont,oFontB,oBtn,cTitle,cScope
+  LOCAL nMedidas:=0,cCodUnd:=SPACE(4),aMedidas,oBtn,cWhere,lUndMed:=.F.
+  LOCAL nLenUnd :=SQLFIELDLEN("DPUNDMED","UND_CODIGO"),cExcluye:=""
+  LOCAL oSayRef
+
+  DEFAULT cTipo  :="I"
+
+  cTitle:=oDp:DPEJECUCIONPROD + " ["+;
+          ALLTRIM(SAYOPTIONS("DPEJECUCIONPROD","EOP_TIPO",cTipo))+"]"
+
+  // Font Para el Browse
+  DEFINE FONT oFont  NAME "Times New Roman"   SIZE 0, -12
+  DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -12 BOLD
+
+  oEjp:=DOCENC(cTitle,"oEjp","TECEJECPROD"+cTipo+".edt")
+
+  oEjp:INV_CODIGO:=SPACE(20)
+  oEjp:cUndMed   :=SPACE(20) // según Formula
+  oEjp:nCantid   :=0.00      // según Formula
+  oEjp:cTipo     :=cTipo
+  oEjp:EOP_CODSUC:=oDp:cSucursal
+  oEjp:ORP_CANTID:=0 // Cantidad en la Orden de Producción
+  oEjp:ORP_CODALM:=oDp:cAlmacen
+  oEjp:EOP_FECHA :=oDp:dFecha
+  oEjp:EOP_DEPORG:=SPACE(10) // Departamento Origen
+  oEjp:nGridCant :=0
+  oEjp:cList     :="forms\DPEJECUCIONPROD"+cTipo+".BRW"
+  oEjp:cCodSuc   :=oDp:cSucursal
+
+  oEjp:aTallas:={}
+  oEjp:cPreSave   :="PREGRABAR"
+  oEjp:cPostSave  :="POSTGRABAR"
+  oEjp:cPicture   :=FIELDPICTURE("DPMOVINV","MOV_CANTID",.T.) // Para Existencia
+
+  oEjp:oMnuOpr    :=NIL
+  oEjp:cCodFor    :="" // aFormulas[1]
+  oEjp:aData      :={}
+  oEjp:nBtnStyle  :=1
+  oEjp:lBar       :=.T.
+  oEjp:lAutoEdit  :=.F.
+  oEjp:lDepOrg    :=(oEjp:cTipo="A")
+  oEjp:lDepDes    :=(oEjp:cTipo="A")
+  oEjp:cCodFor    :="ESTANDAR"
+  oEjp:cNameInv   :=oDp:xDPINV
+  oEjp:cNameAlm   :=oDp:xDPALMACEN
+  oEjp:cPicture   :=FIELDPICTURE("DPMOVINV","MOV_CANTID",.T.) // Para Existencia
+
+  oEjp:SetTable("DPEJECUCIONPROD","EOP_CODSUC,EOP_NUMERO",;
+                                  " WHERE EOP_CODSUC"+GetWhere("=",oDp:cSucursal)+;
+                                  "   AND EOP_TIPO  "+GetWhere("=",cTipo)+;
+                                  "   AND EOP_TIPTRA"+GetWhere("=",IIF(cTipo="C","S","E")))
+
+  oEjp:SetScope( "EOP_CODSUC"+GetWhere("=",oDp:cSucursal)+;
+                                  "   AND EOP_TIPO  "+GetWhere("=",cTipo)+;
+                                  "   AND EOP_TIPTRA"+GetWhere("=",IIF(cTipo="C","S","E")))
+
+  oEjp:SetIncremental("EOP_NUMERO","EOP_CODSUC"+GetWhere("=",oDp:cSucursal),STRZERO(0,8))
+
+  oEjp:SetMemo("EOP_NUMMEM","Descripción Amplia")
+
+//  IF cTipo="C"
+//    oEjp:Windows(0,0,450-100,735+50)
+//  ELSE
+//    oEjp:Windows(0,0,450,735+50)
+//  ENDIF
+
+  oEjp:Windows(30,30,550,900+70)
+
+
+
+
+  oEjp:AddBtn("MENU.bmp","Menú de Opciones","(oEjp:nOption=0)",;
+                     "EJECUTAR('TECEJECPRODMNU',oEjp:EOP_CODSUC ,;
+                                               oEjp:EOP_NUMERO ,;
+                                               oEjp:EOP_TIPO   ,;
+                                               oEjp  )","PROD")
+
+
+  @ 1.35, 0 FOLDER oEjp:oFolder ITEMS "Documento","Otros Valores";
+                OF oEjp:oDlg SIZE 390,61
+
+  SETFOLDER( 1)
+
+  
+  @ 0.2,.1 SAY oSayRef PROMPT "O. Producción:" RIGHT
+
+  SayAction(oSayRef,{|| IIF( !Empty(oEjp:EOP_ORDPRO) , ;
+                        EJECUTAR("DPORDPRODCCON",NIL,oDp:cSucursal,oEjp:EOP_ORDPRO ) , NIL )})
+
+  @ 1.5,.1 SAY "Medida:"        RIGHT
+  @ 2.1,.1 SAY "Cantidad:"      RIGHT
+
+  @ 2,1 GROUP oGrp TO 4, 21.5 PROMPT ALLTRIM(oDp:xDPDPTOPRODUCC) + IIF( cTipo="C" , " Final", IIF(cTipo="I", " Inicial ",""))
+
+
+  IF cTipo="A" 
+
+    @ 0.2,20 SAY "Origen:"  RIGHT
+    @ 0.8,20 SAY "Destino:" RIGHT
+
+  ELSE
+
+    @ 0.8,20 SAY "Código:" RIGHT
+
+  ENDIF
+
+  @ 0.2,40 SAY "Número:"  RIGHT
+  @ 1.5,40 SAY "Fecha:"   RIGHT 
+
+
+  @ 0.8,5 SAY oEjp:oINV_CODIGO PROMPT oEjp:INV_CODIGO
+
+  @ 0.9,5 SAY oEjp:oINV_DESCRI PROMPT MYSQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oEjp:INV_CODIGO))
+
+  @ 1,1 SAY oEjp:oUndMed PROMPT oEjp:cUndMed
+
+  @ 0.1,06 BMPGET oEjp:oEOP_ORDPRO VAR oEjp:EOP_ORDPRO;
+           VALID CERO(oEjp:EOP_ORDPRO,NIL,.T.) .AND.;
+                       oEjp:VALORDPRO();
+           NAME "BITMAPS\FIND.BMP";
+           ACTION (oEjp:ViewOrdPro());
+           WHEN (AccessField("DPEJECUCIONPROD","EOP_ORDPRO",oEjp:nOption);
+                      .AND. oEjp:nOption!=0  .AND. oEjp:nGridCant=0  );
+           SIZE 48,10
+
+
+  IF cTipo="A"
+
+    @ 3,1.0 BMPGET oEjp:oEOP_DEPORG  VAR oEjp:EOP_DEPORG;
+            NAME "BITMAPS\departamentos.BMP";
+            VALID CERO(oEjp:EOP_DEPORG) .AND. oEjp:EOPDEPORG() .AND. oEjp:VALORDPRO();
+            ACTION (oDpLbx:=DpLbx("DPDPTOPRODUCC.LBX",NIL,NIL),;
+                         oDpLbx:GetValue("DEP_CODIGO",oEjp:oEOP_DEPORG));
+            WHEN (oEjp:cTipo<>"I" .AND. AccessField("DPEJECUCIONPROD","EOP_DEPORG",oEjp:nOption);
+                   .AND. oEjp:nOption=1);
+            SIZE 40,NIL
+
+  ENDIF
+
+  @ 3,1.0 BMPGET oEjp:oEOP_DEPDES  VAR oEjp:EOP_CODDEP;
+          NAME "BITMAPS\departamentos.BMP";
+          VALID CERO(oEjp:EOP_CODDEP) .AND. oEjp:EOPDEPDES() .AND. oEjp:VALORDPRO();
+          ACTION (oDpLbx:=DpLbx("DPDPTOPRODUCC.LBX",NIL,NIL),;
+                         oDpLbx:GetValue("DEP_CODIGO",oEjp:oEOP_DEPDES));
+          WHEN ((!oEjp:cTipo$"CI") .AND. AccessField("DPDPTOPRODUCC","EOP_CODDEP",oEjp:nOption);
+                .AND. oEjp:nOption=1);
+          SIZE 40,NIL
+
+
+  @ 0.8,06 BMPGET oEjp:oEOP_CANTID VAR oEjp:EOP_CANTID;
+           PICTURE "9,999,999.99";
+           VALID oEjp:EOPCANTID();
+           NAME "BITMAPS\FIND.BMP";
+           ACTION oEjp:oEOP_CANTID:KeyBoard(13);
+           WHEN (AccessField("DPEJECUCIONPROD","EOP_CANTID",oEjp:nOption);
+                .AND. oEjp:nOption!=0 .AND. !Empty(oEjp:EOP_ORDPRO) );
+           RIGHT
+
+  @ 3,1.0 BMPGET oEjp:oEOP_FECHA  VAR oEjp:EOP_FECHA  PICTURE "99/99/9999";
+          NAME "BITMAPS\Calendar.bmp";
+          ACTION LbxDate(oEjp:oEOP_FECHA ,oEjp:EOP_FECHA);
+          WHEN (AccessField("DPEJECUCIONPROD","EOP_FECHA",oEjp:nOption);
+                .AND. oEjp:nOption=1);
+          SIZE 40,NIL
+
+
+  @ 0.8,06 GET oEjp:oEOP_NUMERO VAR oEjp:EOP_NUMERO;
+           WHEN (AccessField("DPEJECUCIONPROD","EOP_NUMERO",oEjp:nOption);
+                .AND. oEjp:nOption=5 )
+
+
+  IF cTipo="A"
+
+     @ 2.0,2 SAY oEjp:oDEP_DEPORG PROMPT MYSQLGET("DPDPTOPRODUCC","DEP_DESCRI","DEP_CODIGO"+GetWhere("=",oEjp:EOP_DEPORG))
+
+  ENDIF
+
+  @ 2.0,2 SAY oEjp:oDEP_DEPDES PROMPT MYSQLGET("DPDPTOPRODUCC","DEP_DESCRI","DEP_CODIGO"+GetWhere("=",oEjp:EOP_CODDEP))
+
+
+  cSql :=" SELECT "+SELECTFROM("DPMOVINV",.F.)+;
+         " ,DPINV.INV_DESCRI "+;
+         " FROM DPMOVINV"+;
+         " INNER JOIN DPINV ON MOV_CODIGO=INV_CODIGO "
+
+  @ 1.5,40 SAY "Estado:"  RIGHT
+
+  @ 2.0,2 SAY oEjp:oEstado PROMPT IIF(oEjp:EOP_ACT=0,"Anulada","Activa")
+
+  IF cTipo="C"
+     @ 4.4, 8 BMPGET oEjp:oEOP_ALMPRI  VAR oEjp:EOP_ALMPRI ;
+                VALID oEjp:ALMACEN();
+                NAME "BITMAPS\FIND.BMP"; 
+                ACTION (oDpLbx:=DpLbx("DPALMACEN"), oDpLbx:GetValue("ALM_CODIGO",oEjp:oEOP_ALMPRI)); 
+                WHEN (AccessField("DPEJECUCIONPROD","EOP_ALMPRI",oEjp:nOption);
+                                                    .AND. oEjp:nOption=1);
+                FONT oFont;
+                SIZE 40,12
+
+     oEjp:oEOP_ALMPRI:cMsg    :="Almacen Primera"
+     oEjp:oEOP_ALMPRI:cToolTip:="Almacen Primera"
+
+     @ 3.9,1 SAY "Almacen Primera" SIZE 50,12
+
+     @ oEjp:oEOP_ALMPRI:nTop,oEjp:oEOP_ALMPRI:nRight+5 SAY oEjp:oALM_DESCRI;
+                              PROMPT "Seleccione un Almacen" PIXEL;
+                              SIZE 100,12 FONT oFont COLOR 16777215,16711680
+
+
+     @ 6.0, 8 BMPGET oEjp:oEOP_ALMSEG  VAR oEjp:EOP_ALMSEG ;
+                VALID oEjp:ALMACEN2();
+                NAME "BITMAPS\FIND.BMP"; 
+                ACTION (oDpLbx:=DpLbx("DPALMACEN"), oDpLbx:GetValue("ALM_CODIGO",oEjp:oEOP_ALMSEG)); 
+                WHEN (AccessField("DPEJECUCIONPROD","EOP_ALMSEG",oEjp:nOption);
+                                                    .AND. oEjp:nOption=1);
+                FONT oFont;
+                SIZE 40,12
+
+     oEjp:oEOP_ALMSEG:cMsg    :="Almacen Segunda"
+     oEjp:oEOP_ALMSEG:cToolTip:="Almacen Segunda"
+
+     @ 5.3,1 SAY "Almacen Segunda" SIZE 50,12
+
+     @ oEjp:oEOP_ALMSEG:nTop,oEjp:oEOP_ALMSEG:nRight+5 SAY oEjp:oALM_DESCRI2;
+                              PROMPT "Seleccione un Almacen2" PIXEL;
+                              SIZE 100,12 FONT oFont COLOR 16777215,16711680
+
+
+     @ 7.4, 8.0 BMPGET oEjp:oEOP_ALMDES  VAR oEjp:EOP_ALMDES ;
+                VALID oEjp:ALMACEN3();
+                NAME "BITMAPS\FIND.BMP"; 
+                ACTION (oDpLbx:=DpLbx("DPALMACEN"), oDpLbx:GetValue("ALM_CODIGO",oEjp:oEOP_ALMDES)); 
+                WHEN (AccessField("DPEJECUCIONPROD","EOP_ALMDES",oEjp:nOption);
+                                                    .AND. oEjp:nOption=1);
+                FONT oFont;
+                SIZE 40,12
+
+     oEjp:oEOP_ALMDES:cMsg    :="Almacén Stock"
+     oEjp:oEOP_ALMDES:cToolTip:="Almacén Stock"
+
+     @ 6.5,1 SAY "Almacen Stock" SIZE 50,12
+
+     @ oEjp:oEOP_ALMDES:nTop,oEjp:oEOP_ALMDES:nRight+5 SAY oEjp:oALM_DESCRI3;
+                              PROMPT "Seleccione un Almacen3" PIXEL;
+                              SIZE 100,12 FONT oFont COLOR 16777215,16711680
+
+
+  ENDIF
+
+
+  IF cTipo="I"
+     @ 2.5,10 GET oEjp:oEOP_NUMMEZ VAR oEjp:EOP_NUMMEZ;
+              PICTURE "999,999";
+              VALID oEjp:EOPNUMMEZ();
+              WHEN (AccessField("DPEJECUCIONPROD","EOP_NUMMEZ",oEjp:nOption);
+                   .AND. oEjp:nOption!=0 .AND. !Empty(oEjp:EOP_ORDPRO) );
+              RIGHT
+
+     @ 2.5,2 SAY "Nº de Mezclas:"
+  ENDIF
+
+  SETFOLDER( 2)
+ 
+  oEjp:oScroll:=oEjp:SCROLLGET("DPEJECUCIONPROD","DPEJECUCIONPROD.SCG",cExcluye)
+
+  IF oEjp:IsDef("oScroll")
+    oEjp:oScroll:SetEdit(.F.)
+  ENDIF
+
+// iif( Empty(oDp:cModeVideo), oEjp:oScroll:SetColSize(200,250,282) ,  oEjp:oScroll:SetColSize(230,400,320))
+
+  iif( Empty(oDp:cModeVideo),oEjp:oScroll:SetColSize(200,250,282) , oEjp:oScroll:SetColSize(240,370,320))
+  oEjp:oScroll:SetColorHead(CLR_BLACK,16763025,oFontB) 
+  oEjp:oScroll:SetColor(16775408,0,1,16770764,oFontB) 
+
+  oEjp:oScroll:SetColor(16775408,CLR_BLACK,3,16770764,oFontB) 
+  oEjp:oScroll:SetColor(16775408,CLR_BLACK,2,16770764,oFont) 
+
+  SETFOLDER( 0)
+
+
+IF oEjp:cTipo <> "C"
+
+ // @ 6.8, 1.0 FOLDER oEjp:oFolder ITEMS "Materias Primas","Valores Agregados"
+ @ 6.8, 1.0 FOLDER oEjp:oFolder ITEMS "Materias Primas"
+
+
+  SETFOLDER( 1)
+
+  cWhere:="MOV_TIPDOC='DEJE' AND MOV_APLORG='P'" 
+  oGrid:=oEjp:GridEdit( "DPMOVINV" , oEjp:cPrimary , "MOV_CODSUC,MOV_DOCUME" , cSql , cWhere , "MOV_ITEM") 
+
+  oGrid:cScript  :="TECEJECPROD"
+  oGrid:aSize    :={1,0,765+166,160+10}
+//oGrid:aSize    :={1,0,765+12-5,160+230}
+//oGrid:aSize    :={177,4,890+65,230}
+
+  oGrid:aComponentes:={}
+
+  oGrid:bValid   :=".T."
+  oGrid:lBar     :=.F.
+  oGrid:cMetodo  :=""
+  oGrid:oDlg     :=oEjp:oFolder:aDialogs[1]
+
+  oGrid:cPostSave:="GRIDPOSTSAVE"
+  oGrid:cLoad    :="GRIDLOAD"
+  oGrid:cTotal   :="GRIDTOTAL" 
+  oGrid:cPreSave :="GRIDPRESAVE"
+  oGrid:oFontH   :=oFontB // Fuente para los Encabezados
+  oGrid:oFont    :=oFont  // Fuente para los Encabezados
+  oGrid:nClrPane1:=16773345
+  oGrid:nClrPane2:=16770764 // 8957695
+  oGrid:bWhen    :="!EMPTY(oEjp:EOP_DEPORG) .AND. !EMPTY(oEjp:EOP_CODDEP) .AND. oEjp:EOP_CANTID>0"
+  oGrid:lImport  :=.F. // No estß importando MP
+
+  IF cTipo="I"
+    oGrid:bWhen    :="!EMPTY(oEjp:EOP_CODDEP)"
+  ENDIF
+
+// oGrid:bValid   :="!EMPTY(oDocPro:DOC_NUMERO)"
+// oGrid:bChange  :='oEjp:oProducto:SetText("")'
+
+  oGrid:cItem      :="MOV_ITEM"
+  oGrid:cLoad      :="GRIDLOAD"
+  oGrid:lTallas     :=.F.
+  oGrid:cTallas     :=""
+  oGrid:MOV_APLORG  :="P"
+  oGrid:nCostoLote  :=0
+  oGrid:nLotes      :=0
+  oGrid:cMetodo     :="P" // Método de Costo
+  oGrid:aSeriales   :={}
+  oGrid:nExiste     :=0
+  oGrid:nClrPaneH   :=16701890 //12615680
+  oGrid:nClrTextH   :=4194304
+  oGrid:nRecSelColor:=16701890
+
+   oGrid:AddBtn("IMPORTAR.BMP","Importar","oGrid:nOption=1",;
+                 [oEjp:IMPORTAR()],"IMP")
+
+
+  oGrid:AddBtn("GRUPOS2.BMP","Grupos","oGrid:nOption=1",;
+               [EJECUTAR("GRIDGRUPOS",oGrid)],"GRU")
+
+  oGrid:AddBtn("MARCA2.BMP","Marcas","oGrid:nOption=1",;
+                [EJECUTAR("GRIDMARCAS",oGrid)],"MAR")
+
+  oGrid:AddBtn("xFIND2.BMP","Buscar Productos","oGrid:nOption=1",;
+               [EJECUTAR("GRIDBUSCAINV",oGrid)],"BUS")
+
+  IF oDp:MOV_MultiAlm .AND. oDp:nAlmacen>1
+    oCol:=oGrid:AddCol("MOV_CODALM")
+    oCol:cTitle   :="Alm."
+    oCol:bValid   :={||oGrid:MOVALMACE(oGrid:MOV_CODALM)}
+    oCol:cMsgValid:="Almacén no Existe"
+    oCol:nWidth   :=32+5+2
+    oCol:cListBox :="DPALMACEN.LBX"
+    oCol:lRepeat  :=.T.
+    oCol:nEditType:=EDIT_GET_BUTTON
+  ENDIF
+
+  // Lista
+  oCol:=oGrid:AddCol("MOV_CODIGO")
+  oCol:cTitle   :="Producto"
+  oCol:bValid   :={||oGrid:MOVCODIGO(oGrid:MOV_CODIGO)}
+  oCol:cMsgValid:="Producto no Existe"
+  oCol:nWidth   :=120
+  oCol:cListBox :="DPINV.LBX"
+  oCol:lPrimary :=.F. // No puede Repetirse
+  oCol:bPostEdit:='oGrid:ColCalc("INV_DESCRI")'
+  oCol:lRepeat  :=.F.
+  oCol:nEditType:=EDIT_GET_BUTTON
+
+  // Descripción
+  oCol:=oGrid:AddCol("INV_DESCRI")
+  oCol:cTitle:="Descripción del Producto"
+  oCol:nWidth:=250-96
+  oCol:bWhen :=".F."
+  oCol:bCalc :={||SQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))}
+
+  // Transacción
+  oCol:=oGrid:AddCol("MOV_CODTRA")
+  oCol:cTitle   :="C.Trans"
+  oCol:bValid   :={||oGrid:MOVCODTRA(oGrid:MOV_CODTRA)}
+  oCol:cMsgValid:="Transacción"
+  oCol:nWidth   :=45+5
+  oCol:cListBox :="DPINVTRAN.LBX"
+  oCol:lRepeat  :=.T.
+  oCol:nEditType:=EDIT_GET_BUTTON
+
+  oCol:=oGrid:AddCol("MOV_UNDMED")
+  oCol:cTitle    :="Medida"
+  oCol:nWidth    :=60
+  oCol:aItems    :={||oGrid:BuildUndMed(.T.)}
+  oCol:aItemsData:={||oGrid:BuildUndMed(.F.)}
+  oCol:bValid    :={||oGrid:MOVUNDMED(oGrid:MOV_UNDMED)}
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CODIGO) .AND. oGrid:cMetodo<>'S'"
+
+  // Cantidad Requerida
+  oCol:=oGrid:AddCol("MOV_CANTID")
+  oCol:cTitle   :="Cantidad"
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CODIGO) .AND. oGrid:cMetodo<>'S' .AND. !oGrid:lTallas"
+  oCol:bValid   :={||oGrid:MOVCANTID(oGrid:MOV_CODTRA)}
+  oCol:cMsgValid:="Cantidad debe ser Mayor que Cero"
+  oCol:nWidth   :=90-5
+  oCol:cPicture :=oDp:cPictComCan
+  oCol:lTotal   :=.T.
+  oGrid:XMOV_CANTID:=0
+  oCol:bPostEdit:='oGrid:ColCalc("MOV_TOTAL")' 
+
+  oCol:=oGrid:AddCol("MOV_COSTO")
+  oCol:cTitle   :="Costo"
+  oCol:bWhen    :="Left(oGrid:MOV_CODTRA,1)$'E'"
+  oCol:bValid   :="oGrid:MOV_COSTO>0"
+ // oCol:cPicture :=FIELDPICTURE("DPMOVINV","MOV_COSTO",.T.)
+  oCol:cPicture :="999,999,999.9999"
+  oCol:nWidth   :=103+7
+  oCol:lTotal   :=.T.
+  oCol:bPostEdit:='oGrid:ColCalc("MOV_TOTAL")' 
+
+  // Renglón Total
+  oCol:=oGrid:AddCol("MOV_TOTAL")
+  oCol:cTitle   :="Total"
+  oCol:cPicture :=oDp:cPictTotRen // FIELDPICTURE("DPMOVINV","MOV_TOTAL",.T.)
+  oCol:bCalc    :={||oGRID:MOV_CANTID*oGRID:MOV_COSTO }
+  oCol:bWhen    :={||.F.}
+  oCol:lTotal   :=.T.
+  oCol:nWidth   :=96
+  oCol:bValid   :={||.T. }
+
+  oEjp:oFocus:=oGrid:oBrw
+
+/*
+
+  // VALORES AGREGADOS
+
+  @ 2,30 SAY oEjp:oProducto PROMPT oEjp:cNameInv+SPACE(40)
+
+  SETFOLDER( 1)
+
+  cWhere:=" EVA_CODSUC "+GetWhere("=",oEjp:cCodSuc)
+
+  cSql :=" SELECT "+SELECTFROM("DPEJECUCIONVALAGRE",.F.)+;
+         " ,DPVALAGREGADO.VAA_DESCRI "+;
+         " FROM DPEJECUCIONVALAGRE "+;
+         " INNER JOIN DPVALAGREGADO  ON VAA_CODIGO=EVA_CODVAL  "
+
+  oGrid:=oEjp:GridEdit( "DPEJECUCIONVALAGRE" , oEjp:cPrimary , "EVA_CODSUC,EVA_NUMERO" , cSql , cWhere , "EVA_CODVAL") 
+
+  oGrid:cScript  :="TECEJECPROD"
+//oGrid:aSize    :={1,0,765+12-5,160}
+  oGrid:aSize    :={1,0,765+166,160+100}
+  oGrid:lTotal   :=.T.
+
+  oGrid:bValid   :=".T."
+  oGrid:lBar     :=.F.
+  oGrid:cMetodo  :=""
+  oGrid:oDlg     :=oEjp:oFolder:aDialogs[2]
+
+  oGrid:cPostSave:="VGRIDPOSTSAVE"
+  oGrid:cTotal   :="GRIDTOTAL" 
+  oGrid:cLoad    :="VGRIDLOAD"
+  oGrid:cPreSave :="VGRIDPRESAVE"
+  oGrid:oFontH   :=oFontB // Fuente para los Encabezados
+  oGrid:oFont    :=oFont  // Fuente para los Encabezados
+  oGrid:nClrPane1:=13303807
+  oGrid:nClrPane2:=11266812
+  oGrid:nRecSelColor:=8454143 //   8584661
+
+  oGrid:nClrPaneH:=8454143
+  oGrid:nClrTextH:=CLR_BLACK
+// oGrid:bChange  :='oEjp:oProducto:SetText(oDp:XDPINV+": "+oGrid:INV_DESCRI)'
+
+
+  // Valor Agregado
+  oCol:=oGrid:AddCol("EVA_CODVAL")
+  oCol:cTitle   :="Código"
+  oCol:bValid   :={||oGrid:EVACODVAL(oGrid:EVA_CODVAL)}
+  oCol:cMsgValid:="Valor Agregado"
+  oCol:nWidth   :=080
+  oCol:cListBox :="DPVALAGREGADO.LBX"
+  oCol:lPrimary :=.T. // No puede Repetirse
+  oCol:bPostEdit:='oGrid:ColCalc("VAA_DESCRI")'
+  oCol:lRepeat  :=.F.
+  oCol:nEditType:=EDIT_GET_BUTTON
+
+  // Descripción
+  oCol:=oGrid:AddCol("VAA_DESCRI")
+  oCol:cTitle:="Descripción "
+  oCol:nWidth:=174+156
+  oCol:bWhen :=".F."
+  oCol:bCalc :={||SQLGET("DPVALAGREGADO","VAA_DESCRI","VAA_CODIGO"+GetWhere("=",oGrid:EVA_CODVAL))}
+
+  // Comentarios
+  oCol:=oGrid:AddCol("EVA_COMENT")
+  oCol:cTitle  :="Comentario"
+  oCol:nWidth  :=120
+
+  // Cantidad Requerida
+  oCol:=oGrid:AddCol("EVA_CANTID")
+  oCol:cTitle  :="Cantidad"
+  oCol:nWidth  :=115
+  oCol:cPicture:="999,999.99"
+  oCol:bPostEdit:='oGrid:ColCalc("EVA_TOTAL")' 
+
+
+  // Monto
+  oCol:=oGrid:AddCol("EVA_MONTO")
+  oCol:cTitle  :="Monto"
+  oCol:nWidth  :=115
+  oCol:cPicture:="9,999,999,999.99"
+  oCol:bPostEdit:='oGrid:ColCalc("EVA_TOTAL")' 
+
+  // Total 
+  oCol:=oGrid:AddCol("EVA_TOTAL")
+  oCol:cTitle  :="Total"
+  oCol:nWidth  :=115
+  oCol:cPicture:="99,999,999,999.99"
+  oCol:lTotal  :=.T.
+  oCol:bCalc   :={||oGRID:EVA_MONTO*oGRID:EVA_CANTID}
+  oCol:bWhen   :=".F."
+*/
+
+ENDIF
+
+  //SETFOLDER( 0)
+
+  oEjp:Activate({|| oEjp:INICIO() })
+
+RETURN
+
+FUNCTION INICIO()
+
+  oEjp:oScroll:oBrw:SetColor(NIL,16775408)
+
+  oEjp:oScroll:oBrw:Gotop()
+
+  IF oEjp:cTipo="C"
+     oEjp:oEOP_CANTID:oBmp:Hide()
+  ENDIF
+
+  IF oEjp:nOption=1
+     oEjp:Load()
+  ENDIF
+
+RETURN .T.
+
+/*
+// Carga los Datos
+*/
+FUNCTION LOAD()
+
+   oEjp:EOP_CODSUC:=oDp:cSucursal
+   oEjp:lDepOrg    :=!(oEjp:cTipo="A")
+   oEjp:lDepDes    :=!(oEjp:cTipo="A")
+
+//   oEjp:lDepOrg   :=.T.
+//   oEjp:lDepDes   :=.T.
+
+   IF oEjp:nOption=1
+
+     oEjp:INV_CODIGO:=SPACE(20)
+     oEjp:EOP_FECHA :=oDp:dFecha
+     oEjp:EOP_HORA  :=TIME()
+     oEjp:nGridCant :=0
+     oEjp:EOP_ACT   :=1
+     oEjp:EOP_ESTADO:="P"
+
+     oEjp:BUILDNUMERO()
+
+
+    
+    IF oEjp:cTipo="C"
+        oEjp:EOP_ALMPRI:=oDp:cAlmPri
+        //oEjp:EOP_ALMPRI,oDp:cAlmPri
+        oEjp:EOP_ALMSEG:=oDp:cAlmSeg
+        oEjp:EOP_ALMDES:=oDp:cAlmsto
+
+        oEjp:oEOP_ALMPRI:Refresh()
+        oEjp:oEOP_ALMSEG:Refresh()
+        oEjp:oEOP_ALMDES:Refresh()
+
+        oEjp:ALMACEN()
+        oEjp:ALMACEN2()
+        oEjp:ALMACEN3()
+     ENDIF
+   
+
+     DPFOCUS(oEjp:oEOP_ORDPRO)
+
+   ELSE
+
+//     IF oEjp:cTipo="C"
+//        oEjp:EOP_CANTID:=oEjp:EOP_CANTID*-1
+//     ENDIF
+
+       IF oEjp:cTipo="C"
+          IF !EMPTY(oEjp:EOP_ALMPRI)
+             oEjp:ALMACEN()
+          ENDIF
+          IF !EMPTY(oEjp:EOP_ALMSEG)
+             oEjp:ALMACEN2()
+          ENDIF
+	     IF !EMPTY(oEjp:EOP_ALMDES) //MR20090817
+             oEjp:ALMACEN3()
+          ENDIF
+       ENDIF
+
+     IF oEjp:cTipo!="C"
+       oEjp:nGridCant:=oEjp:aGrids[1]:GetTotal("MOV_CANTID")
+       oEjp:SETMEDIDA()
+     ENDIF
+
+   ENDIF
+
+   // Aqui debe Buscar sus Valores
+   IF oEjp:cTipo!="C"
+      oEjp:VALORDPRO()
+   ENDIF
+
+   oEjp:oINV_CODIGO:Refresh(.T.)
+   oEjp:oEOP_FECHA :Refresh(.T.)
+   oEjp:oINV_DESCRI:Refresh(.T.)
+   oEjp:oEOP_CANTID:Refresh(.T.)
+   oEjp:oEOP_CANTID:ForWhen(.T.)
+   oEjp:oUndMed:Refresh(.T.)
+   oEjp:oEstado:Refresh(.T.)
+
+
+RETURN .T.
+
+/*
+// PreGrabar Formulario
+*/
+FUNCTION PREGRABAR(lSaved)
+
+  LOCAL oGrid:=oEjp:aGrids[1]
+//AG20090206
+  LOCAL cCodTal:="",cCodigo:="",nPares:=0
+
+  IF oEjp:nOption=1 .AND. oEjp:cTipo<>"C" .AND. oGrid:GetTotal("MOV_COSTO")=0 .AND. !oGrid:lImport 
+     MensajeErr("Costo de Materias Primas no puede ser Igual que Cero")
+     RETURN .F.
+  ENDIF
+
+//  IF oEjp:nOption=1 .AND. !lSaved
+//     oEjp:BUILDNUMERO()
+//  ENDIF
+
+  oEjp:EOP_TIPO  :=oEjp:cTipo 
+  oEjp:EOP_TIPTRA:="E" // Entrada
+
+  IF oEjp:cTipo="C"
+    oEjp:EOP_TIPTRA:="S" // Salida  
+    oEjp:EOP_ACT   :=-1  // Salida
+  ENDIF
+
+  IF oEjp:cTipo="C"
+
+     nPares:=EJECUTAR("TECCANTPROD",oEjp:EOP_ORDPRO,oEjp)
+
+     IF nPares=0
+        MSGINFO("Debe indicar la distribucion del producto terminado")
+        RETURN .F.
+     ENDIF
+
+     IF nPares>oEjp:EOP_CANTID
+        MSGINFO("La Cantidad no puede ser mayor a ["+STR(oEjp:EOP_CANTID)+"]")
+        RETURN .F.
+     ENDIF
+
+  ENDIF
+  
+RETURN .T.
+
+FUNCTION POSTGRABAR()
+
+  LOCAL oTable,cWhere,I,aLine,aData,nTotal,nTotalVa:=0,aIni,nCantOrd:=0,oFrm
+  LOCAL cCodDep,cCodInv,cCodFor
+  LOCAL nTotal2:=0,nTotal3:=0
+
+  IF oEjp:nOption=1
+     DPFOCUS(oEjp:oEOP_ORDPRO)
+  ENDIF
+
+  IF oEjp:cTipo="I"
+     SQLUPDATE("DPORDENPRODUCC","ORP_ESTADO","E","ORP_NUMERO='"+oEjp:EOP_ORDPRO+"'")
+  ENDIF
+
+  cCodInv:=SQLGET("DPORDENPRODUCC"  ,"ORP_CODINV,ORP_CODFOR",;
+                                     "ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                     "ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO))
+                                     
+  cCodFor     :=oDp:aRow[2]
+  oEjp:cCodFor:=cCodFor
+
+  // Busca el Ultimo Dpto
+  cCodDep:=SQLGET("DPCOMPPRODUCCION","COM_CODDEP"," INNER JOIN DPDPTOPRODUCC ON COM_CODDEP=DEP_CODIGO "+;
+                                                  " WHERE COM_CODINV"+GetWhere("=",cCodInv)+;
+                                                  "   AND COM_CODFOR"+GetWhere("=",cCodFor)+;
+                                                  " ORDER BY COM_CODDEP DESC LIMIT 1 ")
+
+  nTotal:=SQLGET("DPMOVINV"      ,"SUM(MOV_TOTAL)","MOV_CODSUC"+GetWhere("=",oDp:cSucursal   )+" AND "+;
+                                                   "MOV_APLORG"+GetWhere("=","P"             )+" AND "+;
+                                                   "MOV_ASODOC"+GetWhere("=",oEjp:EOP_ORDPRO )+" AND "+;
+                                                   "MOV_DOCUME"+GetWhere("=",oEjp:EOP_NUMERO )+" AND "+;
+                                                   "MOV_TIPDOC"+GetWhere("=","DEJE"          ))
+
+
+  nTotalVa:=SQLGET("DPEJECUCIONVALAGRE","SUM(EVA_TOTAL)","EVA_CODSUC"+GetWhere("=",oDp:cSucursal  )+" AND "+;
+                                                         "EVA_TIPO"  +GetWhere("=",oEjp:cTipo     )+" AND "+;
+                                                         "EVA_NUMERO"+GetWhere("=",oEjp:EOP_NUMERO))
+
+  SQLUPDATE("DPEJECUCIONPROD",{"EOP_COSTO","EOP_VALAGR"},{nTotal,nTotalVa},;
+                                                         " EOP_CODSUC"+GetWhere("=",oDp:cSucursal  )+" AND "+;
+                                                         " EOP_NUMERO"+GetWhere("=",oEjp:EOP_NUMERO)+" AND "+;
+                                                         " EOP_TIPO  "+GetWhere("=",oEjp:cTipo     ))
+
+  cWhere:=" EOP_CODSUC"+GetWhere("=",oDp:cSucursal  )+" AND "+;
+          " EOP_NUMERO"+GetWhere("=",oEjp:EOP_NUMERO)+" AND "+;
+          " EOP_TIPTRA='S'"
+
+  IF oEjp:cTipo="A"
+
+    oTable:=OpenTable("SELECT * FROM DPEJECUCIONPROD WHERE "+cWhere)
+
+    IF oTable:RecCount()=0
+       oTable:Append()
+       cWhere:=NIL
+    ENDIF
+  
+    FOR I=1 TO LEN(oTable:aFields)
+       oTable:Replace(oTable:FieldName(I),oEjp:Get(oTable:FieldName(I)))
+    NEXT I
+
+    oTable:Replace("EOP_CODDEP" , oEjp:EOP_DEPORG )
+    oTable:Replace("EOP_TIPTRA" , "S"             )
+    oTable:Replace("EOP_CANTID" , oEjp:EOP_CANTID )
+    oTable:Replace("EOP_COSTO"  , 0               )
+    oTable:Replace("EOP_VALAGR" , 0               )
+    oTable:Replace("EOP_ACT"    , -1              )
+
+    oTable:Commit(cWhere)
+
+    oTable:End()
+
+  ENDIF
+
+  IF oEjp:cTipo="C"
+
+    // SQLUPDATE("DPEJECUCIONPROD" , "EOP_CANTID" , oEjp:EOP_CANTID*-1 , cWhere)
+    nCantOrd:=SQLGET("DPORDENPRODUCC","ORP_CANTID","ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                                   "ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO))
+
+
+    aLine:=EJECUTAR("DPORDPVIEWDEP",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO , .F. , NIL , .F. )
+
+    aLine:=ATAIL(aLine)
+
+  FOR I:=1 TO LEN(oEjp:aTallas)
+      nTotal2:=nTotal2+oEjp:aTallas[I,1]+oEjp:aTallas[I,2]+oEjp:aTallas[I,3]
+  NEXT I
+
+    SQLUPDATE("DPORDENPRODUCC" , {"ORP_ESTADO","ORP_DPTFIN"} , {IIF(nTotal2+nTotal3=nCantOrd,"C","P"), cCodDep } ,;
+                                                  "ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                                  "ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO))
+
+
+    // Verifica, si la OP estß Concluida.
+
+  IF oEjp:cTipo="C"
+     SQLUPDATE("DPEJECUCIONPROD","EOP_ALMPRI",oEjp:EOP_ALMPRI," EOP_CODSUC"+GetWhere("=",oDp:cSucursal  )+" AND "+;
+                                               " EOP_NUMERO"+GetWhere("=",oEjp:EOP_NUMERO)+" AND "+;
+                                               " EOP_TIPO  "+GetWhere("=",oEjp:cTipo     ))
+
+     SQLUPDATE("DPEJECUCIONPROD","EOP_ALMSEG",oEjp:EOP_ALMSEG," EOP_CODSUC"+GetWhere("=",oDp:cSucursal  )+" AND "+;
+                                               " EOP_NUMERO"+GetWhere("=",oEjp:EOP_NUMERO)+" AND "+;
+                                               " EOP_TIPO  "+GetWhere("=",oEjp:cTipo     ))
+
+
+  ENDIF
+
+    EJECUTAR("TECORDPRODADDINV",oEjp:EOP_NUMERO,oEjp:EOP_CANTID,oEjp:EOP_FECHA,oEjp:EOP_HORA,oEjp:aTallas)
+  ENDIF
+
+  // Cierra el Menu de Orden de Produccion
+  IF ValType(oEjp:oMnuOpr)="O"
+     oEjp:oMnuOpr:Close()
+  ENDIF
+
+  EJECUTAR("TECEJECPRODMNU",oEjp:EOP_CODSUC ,;
+                           oEjp:EOP_NUMERO ,;
+                           oEjp:EOP_TIPO   ,;
+                           oEjp )
+
+
+RETURN .T.
+
+
+/*
+// Carga de data del Grid
+*/
+FUNCTION GRIDLOAD()
+  LOCAL I
+
+  oGrid:XMOV_CANTID:=0
+  oGrid:aSeriales  :={}
+  oGrid:MOV_APLORG :="P"
+  oGrid:nLotes     :=0
+
+  IF oGrid:nOption=1
+
+    FOR I=1 TO 10
+      oGrid:Set("MOV_TALL"+STRZERO(I,2),0)
+    NEXT I
+
+    oGrid:Set("MOV_CODALM" , IIF(Empty(oGrid:MOV_CODALM),oDp:cAlmacen,oGrid:MOV_CODALM),oDp:MOV_MultiAlm .AND. oDp:nAlmacen>1)
+    oGrid:Set("MOV_CANTID" , 1, .T. )
+    oGrid:Set("MOV_INVACT" , 1  ) // Transacción Activa
+    oGrid:Set("MOV_LOTE"   , CTOEMPTY(oGrid:MOV_LOTE))
+    oGrid:Set("MOV_PRECIO" , 0 )
+    oGrid:Set("MOV_FCHVEN" , CTOD(""))
+    oGridP:aSeriales:={}
+
+    oEjp:GETCODTRAN(oGrid:MOV_CODSUC,oGrid:MOV_CODALM)
+    oGrid:SET("MOV_UNDMED","UND",.T.)
+
+  ELSE
+ 
+    oGrid:XMOV_CANTID:=oGrid:MOV_CANTID
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Pregrabar
+*/
+FUNCTION GRIDPRESAVE()
+   LOCAL nEntSal:=1
+   // Tipo de Transacción
+
+   IF EMPTY(oGrid:MOV_CODTRA)
+
+      MensajeErr("Es necesario Indicar el: "+oDp:DPINVTRAN+CRLF+;
+                 "Debe ser definido en "+oDp:DPALMACEN+" pestaña: Producción")
+
+      RETURN .F.
+   ENDIF
+
+   // Verificar Cod/transacción.
+   EJECUTAR("DPINVTRANINC",oGrid:MOV_CODTRA)
+
+   nEntSal:=IIF(Left(oGrid:MOV_CODTRA,1)="E" ,  1 , nEntSal )
+   nEntSal:=IIF(Left(oGrid:MOV_CODTRA,1)="S" , -1 , nEntSal )
+
+   oGrid:MOV_INVACT:=1
+// IIF(Left(oGrid:MOV_CODTRA,1)="E" ,  1 , oGrid:MOV_INVACT )
+// oGrid:MOV_INVACT:=IIF(Left(oGrid:MOV_CODTRA,1)="S" , -1 , oGrid:MOV_INVACT )
+
+   IF oGrid:cMetodo="C" .AND. oGrid:MOV_INVACT<0  // Salidas de Capas de Costos
+       oGrid:SET("MOV_COSTO",oGrid:nCostoLote,.T.)
+   ENDIF
+
+   oGrid:MOV_APLORG:="P"
+   oGrid:MOV_CONTAB:=nEntSal // Contable
+   oGrid:MOV_LOGICO:=nEntSal // Lógico
+   oGrid:MOV_FISICO:=nEntSal // Físico
+   oGrid:MOV_INVACT:=1 // Transacción Actia
+   oGrid:MOV_FECHA :=oEjp:EOP_FECHA
+   oGrid:MOV_TIPDOC:="DEJE"  // Documento de Inventario
+   oGrid:MOV_CXUND :=EJECUTAR("INVGETCXUND",oGrid:MOV_CODIGO,oGrid:MOV_UNDMED)
+   oGrid:MOV_TIPO  :="I"      // Producto Individual
+   oGrid:MOV_USUARI:=oDp:cUsuario
+   oGrid:MOV_TOTAL :=oGrid:MOV_CANTID*oGrid:MOV_COSTO
+   oGrid:MOV_CODSUC:=oEjp:EOP_CODSUC
+   oGrid:MOV_APLORG:="P"
+   oGrid:MOV_DOCUME:=oEjp:EOP_NUMERO
+
+   IF oGrid:nOption=1
+      oGrid:MOV_HORA  :=TIME() // oEjp:DOC_HORA 
+   ENDIF
+
+RETURN .T.
+
+/*
+// Ejecuta la Impresión del Documento
+*/
+FUNCTION PRINTER()
+   LOCAL oRep
+
+ //  oRep:=REPORTE("DPEJECPROD")
+  oRep:=REPORTE("DPEJECPRODINI")
+
+   oRep:SetRango(1,oEjp:EOP_NUMERO,oEjp:EOP_NUMERO)
+   oRep:SetRango(2,oEjp:EOP_FECHA ,oEjp:EOP_FECHA )
+   oRep:SetCriterio(1,oEjp:EOP_CODSUC )
+   oRep:SetCriterio(2,oEjp:EOP_TIPO   )
+
+RETURN .T.
+
+/*
+// Permiso para Borrar
+*/
+FUNCTION PREDELETE()
+LOCAL cDocMov:="",cSql:="",oTable,oOdbcInt
+
+   IF oEjp:EOP_ESTADO="N"
+       MensajeErr(oDp:xDPEJECUCIONPROD+" "+oEjp:EOP_NUMERO+" ya está Anulada")
+       RETURN .F.
+   ENDIF
+
+   IF !MsgNoYes("Desea Anular "+oDp:xDPEJECUCIONPROD+" "+oEjp:EOP_NUMERO)
+      RETURN .F.
+   ENDIF
+
+   SQLUPDATE("DPEJECUCIONPROD",{"EOP_ACT","EOP_ESTADO"},;
+                               {0,"N"}               ,;
+                               "EOP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                               "EOP_NUMERO"+GetWhere("=",oEjp:EOP_NUMERO))
+
+   IF oEjp:cTipo="I" .OR. oEjp:cTipo="A"
+      SQLUPDATE("DPMOVINV","MOV_INVACT",0,"MOV_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                          "MOV_DOCUME"+GetWhere("=",oEjp:EOP_NUMERO)+" AND "+;
+                                          "MOV_TIPDOC='DEJE' AND MOV_APLORG='P' ")
+
+      cDocMov:=SQLGET("DPDOCMOV","DOC_NUMERO","DOC_ORDPRO='"+oEjp:EOP_ORDPRO+"' AND "+;
+                                              "DOC_EJEPRO='"+oEjp:EOP_NUMERO+"' AND "+;
+                                              "DOC_EJETIP='"+oEjp:cTipo+"'")
+
+      SQLUPDATE("DPMOVINV","MOV_INVACT",0,"MOV_TIPDOC='DINV' AND MOV_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                          "MOV_DOCUME"+GetWhere("=",cDocMov))
+
+///////////////////AQUI ANULE LO DE LA OTRA EMPRESA
+
+
+  cSql:="SELECT ECP_CODCLI,CLI_NOMBRE,ECP_CODALM,INT_DSN "+;
+        "FROM TECEMPCLIPRO INNER JOIN DPCLIENTES ON ECP_CODCLI=CLI_CODIGO "+;
+        "INNER JOIN TECINTERCOM ON ECP_CODCLI=INT_CODCLI"
+
+  oTable:=OpenTable( cSql,.T.)
+
+  WHILE !oTable:Eof()
+     oOdbcInt:=OPENODBC(oTable:INT_DSN)
+     PUTDSN("DPDOCMOV","DPDOCMOV",oTable:INT_DSN)
+     PUTDSN("DPMOVINV","DPMOVINV",oTable:INT_DSN)
+
+     cDocMov:=SQLGET("DPDOCMOV","DOC_NUMERO","DOC_ORDPRO='"+oEjp:EOP_ORDPRO+"' AND "+;
+                                             "DOC_EJEPRO='"+oEjp:EOP_NUMERO+"' AND "+;
+                                             "DOC_EJETIP='"+oEjp:cTipo+"'")
+
+     SQLUPDATE("DPMOVINV","MOV_INVACT",0,"MOV_TIPDOC='DINV' AND MOV_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                         "MOV_DOCUME"+GetWhere("=",cDocMov),,oOdbcInt)
+
+     PUTDSN("DPDOCMOV","DPDOCMOV",oDp:cDsnData)
+     PUTDSN("DPMOVINV","DPMOVINV",oDp:cDsnData)
+
+     oOdbcInt:End()
+     oTable:DbSkip()
+  ENDDO
+
+///////////////////////////////////////////////////
+
+   ENDIF
+
+   IF oEjp:cTipo="I"
+      SQLUPDATE("DPORDENPRODUCC","ORP_ESTADO","P","ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                                  "ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO))
+   ENDIF
+
+   IF oEjp:cTipo="C"
+      SQLUPDATE("DPMOVINV","MOV_INVACT",0,"MOV_TIPDOC='EPRO' AND MOV_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                          "MOV_ASODOC"+GetWhere("=",oEjp:EOP_NUMERO)+" AND "+;
+                                          "MOV_DOCUME='"+oEjp:EOP_ORDPRO+"'")
+      // DR20111206b.Se devuelve el estado a Ejecutado
+      SQLUPDATE("DPORDENPRODUCC","ORP_ESTADO","E","ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+" AND "+;
+                                                  "ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO))
+   ENDIF
+
+   oEjp:EOP_ACT:=0
+   oEjp:oEstado:Refresh(.T.)
+
+RETURN .F.
+
+/*
+// Después de Borrar
+*/
+FUNCTION POSTDELETE()
+RETURN .T.
+
+
+
+/*
+// Ejecución despues de Grabar el Item
+*/
+FUNCTION GRIDPOSTSAVE()
+LOCAL aData:={},I
+
+//  SQLUPDATE("DPINV","INV_UTILIZ","M","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))
+
+   // EJECUTAR("INVUPDATECAPA",oGrid)
+   // oGrid:MOV_CODSUC,oGrid:MOV_TIPDOC,oGrid:MOV_DOCUME,oGrid:MOV_CODCTA,oGrid:MOV_ITEM,.T.)
+
+   IF oGrid:cMetodo="S" .AND. !Empty(oGrid:aSeriales)
+      EJECUTAR("SERGRABAR",oGrid)
+   ENDIF
+
+   oEjp:nGridCant:=oGrid:GetTotal("MOV_CANTID")
+
+   oEjp:oEOP_CANTID:ForWhen(.T.)
+   oEjp:oEOP_ORDPRO:ForWhen(.T.)
+
+
+   oGrid:aComponentes:=ASQL("SELECT CPT_COMPON,CPT_UNDMED,CPT_CANTID,0 AS EXISTE,0 AS REQ,0 AS COSTO,0 AS OK,INV_METCOS FROM DPCOMPONENTES "+;
+                            " INNER JOIN DPINV ON INV_CODIGO=CPT_COMPON "+;
+                            " WHERE CPT_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))
+
+  IF !Empty(oGrid:aComponentes)
+
+     AEVAL(oGrid:aComponentes,{|a,n|oGrid:aComponentes[n,7]:=.F. })
+
+     IF !EJECUTAR("COMPGETEXI",oGrid,oGrid:MOV_FECHA,oGrid:MOV_HORA,NIL)
+
+        aData:={}
+
+        FOR I=1 TO LEN(oGrid:aComponentes)
+
+           AADD(aData,{oGrid:aComponentes[I,1],;
+                       MYSQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGrid:aComponentes[I,1])),;
+                       oGrid:aComponentes[I,2],;
+                       oGrid:aComponentes[I,3],;
+                       oGrid:aComponentes[I,5],;
+                       oGrid:aComponentes[I,6],;
+                       oGrid:aComponentes[I,7]})
+
+        NEXT I
+    
+        EJECUTAR("DPCOMPVIEW",aData,oGrid:MOV_CODIGO,"<Existencia de Componentes no Cubre Existencia Requerida")
+
+        IF oGrid:MOV_CANTID>oGrid:nExiste
+           RETURN .F.
+        ENDIF
+
+      ENDIF
+
+    ENDIF
+
+  IF !Empty(oGrid:aComponentes)  
+    EJECUTAR("TECVTAGRIDSAVCOMP",oGrid)
+  ENDIF
+
+
+RETURN .T.
+
+/*
+// Genera los Totales por Grid
+*/
+FUNCTION GRIDTOTAL()
+RETURN .T.
+
+FUNCTION GRIDSETSCOPE()
+   LOCAL cWhere
+
+   oGrid:COM_CODFOR:=oEjp:cCodFor
+   oGrid:COM_CODDEP:=oEjp:aCodDep[oEjp:oCodDep:nAt]
+   oGrid:COM_CODINV:=oEjp:INV_CODIGO
+
+   cWhere:=" COM_CODDEP "+GetWhere("=",oGrid:COM_CODDEP)+ " AND "+;
+           " COM_CODFOR "+GetWhere("=",oGrid:COM_CODFOR)
+
+   oEjp:aGrids[1]:SetScope(cWhere)
+   oEjp:SETMEDIDA()
+
+   // Valor Agregado
+
+   cWhere:=" CVA_CODDEP "+GetWhere("=",oGrid:COM_CODDEP)+ " AND "+;
+           " CVA_CODFOR "+GetWhere("=",oGrid:COM_CODFOR)
+
+   oEjp:aGrids[2]:SetScope(cWhere)
+
+RETURN .T.
+
+FUNCTION GRIDPRINT()
+/*
+   LOCAL oRep
+
+   oRep:=REPORTE("DPPRECIO")
+  
+   oRep:SetRango(1,oEjp:INV_CODIGO,oEjp:INV_CODIGO)
+   oRep:SetCriterio(2,LEFT(oEjp:cCodMon,oEjp:nLenMon))
+   oRep:SetCriterio(3,LEFT(oEjp:cCodUnd,oEjp:nLenUnd))
+*/
+RETURN .T.
+// EOF
+
+FUNCTION MOVCODIGO(cCodInv)
+   LOCAL lRet:=.t.
+   LOCAL nExi,nCosto:=0,cEquiv,aItems:={}
+   LOCAL oGrid:=oEjp:aGrids[1]
+
+   IF EMPTY(oGrid:MOV_CODIGO)
+      RETURN .F.
+   ENDIF
+
+   oGrid:cMetodo     :="P" // Método de Costo
+
+   IF !ISMYSQLGET("DPINV","INV_CODIGO",oGrid:MOV_CODIGO)
+
+      // BUSCA EL EQUIVALENTE
+      cEquiv:=SQLGET("DPEQUIV","EQUI_CODIG","EQUI_BARRA"+GetWhere("=",oGrid:MOV_CODIGO))
+
+      IF Empty(cEquiv)
+         RETURN .F.
+      ENDIF
+
+      oGrid:GetCol("MOV_CODIGO"):VarPut(cEquiv)
+
+   ENDIF
+
+   // Ubica la Unidad de Medida
+   IF oGrid:nOption=1
+     oEjp:GETCODTRAN(oGrid:MOV_CODSUC,oGrid:MOV_CODALM)
+     aItems:=oGrid:BuildUndMed(.T.)
+
+     oGrid:SET("MOV_UNDMED",aItems[1],.T.)
+     oGrid:SET("MOV_UNDMED",aItems[1],.T.)
+     oGrid:SET("MOV_UNDMED",aItems[1],.T.)
+
+     IF LEN(aItems)=1
+        oGrid:MOVUNDMED(oGrid:MOV_UNDMED)
+     ENDIF
+   ENDIF
+
+
+   oGrid:cMetodo:=MYSQLGET("DPINV","INV_METCOS,INV_TALLAS","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))
+   oGrid:lTallas:=.F.
+   oGrid:cTallas:=""
+
+// ? oGrid:cMetodo,oDp:cSql
+
+   IF !Empty(oDp:aRow) .AND. !Empty(oDp:aRow[2])
+
+      oGrid:lTallas:=.T.
+      oGrid:cTallas:=oDp:aRow[2]
+
+   ENDIF
+
+   nExi:=oEjp:GRID_EXISTENCIA(.t.)
+
+// ? "nExi",nExi
+//? "AQUI ES EXISTENCIA"
+//   oEjp:oProducto:SetText(oEjp:cNameInv+": "+SQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",cCodInv))+;
+//                         " E:("+TRAN(nExi,oEjp:cPicture)+")")
+// nCosto:=EJECUTAR("INVGETULTCOS" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oEjp:EOP_CODSUC, NIL, NIL )
+//   nCosto:=EJECUTAR("INVGETCOSTO"   ,oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oEjp:EOP_CODSUC , NIL , NIL , oGrid:MOV_CANTID , oGrid:cMetodo )
+
+  nCosto:=oGrid:GRID_COSTO()
+
+// ? nCosto,"nCosto"
+//   oGrid:Set("MOV_COSTO",nCosto,.T.)
+
+RETURN lRet
+
+/*
+// Valida Unidad de Medida
+*/
+FUNCTION MOVUNDMED(cUndMed)
+
+   LOCAL nCosto,dHasta,cHoraMax,nExi
+
+   // Cuando Modifica, debe Buscar el Costo de su momento
+
+   IF oGrid:nOption!=1
+      dHasta  :=oGrid:MOV_FECHA
+      cHoraMax:=oGrid:MOV_HORA
+   ENDIF
+
+   nExi  :=oEjp:GRID_EXISTENCIA(.T.)
+   nCosto:=EJECUTAR("INVGETULTCOS" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oEjp:EOP_CODSUC, dHasta, cHoraMax )
+
+   oGrid:Set("MOV_COSTO",nCosto,.T.)
+
+//? "nCosto",nCosto,nExi
+
+RETURN .T.
+
+/*
+// Construye las Opciones
+*/
+FUNCTION BuildUndMed(lData)
+
+  LOCAL aItem:={}
+  LOCAL oGrid:=oEjp:aGrids[1]
+
+  aItem:=EJECUTAR("INVGETUNDMED",oGrid:MOV_CODIGO,NIL,NIL,oGrid)
+  
+  IF (EMPTY(oGrid:MOV_UNDMED).AND.!Empty(aItem)) .OR. LEN(aItem)=1
+     oGrid:Set("MOV_UNDMED",aItem[1],.T.)
+  ENDIF
+
+RETURN aItem
+
+
+/*
+// Colocar Unidad de Medida s/formula
+*/
+FUNCTION SETMEDIDA()
+RETURN .T.
+
+FUNCTION CREAFORMULA()
+
+
+ LOCAL oTable
+
+ oTable:=OpenTable("SELECT * FROM DPFORMULASPROD",.F.)
+ oTable:Append()
+ oTable:Replace("FOR_CODIGO","ESTANDAR")
+ oTable:Replace("FOR_UNDMED","UND")
+ oTable:Replace("FOR_CODINV",cCodInv)
+ oTable:Replace("FOR_CANTID",1)
+ oTable:Commit()
+ oTable:End()
+
+ aFormulas:=ASQL("SELECT FOR_CODIGO FROM DPFORMULASPROD WHERE FOR_CODINV"+GetWhere("=",cCodInv))
+
+RETURN .T.
+// FUNCTION VMOV_UNDMED(cUndMed)
+// RETURN .T.
+
+FUNCTION VGRIDLOAD()
+RETURN .T.
+
+FUNCTION VGRIDPOSTSAVE()
+RETURN .T.
+
+FUNCTION VGRIDPRESAVE()
+
+  oGrid:EVA_TIPO:=oEjp:EOP_TIPO
+
+//  oGrid:CVA_CODFOR:=oEjp:cCodFor
+//  oGrid:CVA_CODDEP:=oEjp:aCodDep[oEjp:oCodDep:nAt]
+//  oGrid:CVA_CODINV:=oEjp:INV_CODIGO
+RETURN .T.
+
+
+FUNCTION EVACODVAL(cCodVal)
+
+  IF !SQLGET("DPVALAGREGADO","VAA_CODIGO","VAA_CODIGO"+GetWhere("=",oGrid:EVA_CODVAL))==cCodVal
+      RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+FUNCTION CONSULTAR()
+
+//  EJECUTAR("DPFORMULASCON",oEjp:INV_CODIGO,oEjp:cCodFor,oEjp:nCantid)
+
+RETURN .T.
+
+FUNCTION VALORDPRO()
+LOCAL oTable,oGridP:=oEjp:aGrids[1],aDpto,cCodDep,nAt,aLine
+LOCAL nCantProd:=0
+
+   IF Empty(oEjp:EOP_ORDPRO)
+       RETURN .T.
+   ENDIF
+
+   IF oEjp:nOption=1
+   IF oEjp:cTipo<>"A"
+      IF !EMPTY(SQLGET("DPEJECUCIONPROD","EOP_NUMERO","EOP_ORDPRO='"+oEjp:EOP_ORDPRO+"' AND "+;
+                                                      "EOP_ACT<>0 AND EOP_TIPO='"+oEjp:cTipo+"'"))
+      
+         MSGINFO("La Orden Ya fue Procesada en esta etapa")
+         oEjp:EOP_ORDPRO:=SPACE(8)
+         oEjp:oEOP_ORDPRO:Refresh()
+         RETURN .F.
+      ENDIF
+   ELSE
+      IF !EMPTY(SQLGET("DPEJECUCIONPROD","EOP_NUMERO","EOP_ORDPRO='"+oEjp:EOP_ORDPRO+"' AND "+;
+                                                      "EOP_ACT<>0 AND EOP_TIPO='"+oEjp:cTipo+"' AND "+;
+                                                      "EOP_DEPORG='"+oEjp:EOP_DEPORG+"' AND "+;
+                                                      "EOP_CODDEP='"+oEjp:EOP_CODDEP+"'"))
+      
+         MSGINFO("La Orden Ya fue Procesada en esta etapa")
+         oEjp:EOP_ORDPRO:=SPACE(8)
+         oEjp:oEOP_ORDPRO:Refresh()
+         RETURN .F.
+      ENDIF
+   ENDIF
+   // DR20111220b. 
+   IF oEjp:cTipo="C"
+      IF EMPTY(SQLGET("DPEJECUCIONPROD","EOP_NUMERO","EOP_ORDPRO='"+oEjp:EOP_ORDPRO+"' AND "+;
+                                                      "EOP_ACT<>0 AND (EOP_TIPO='I' OR EOP_TIPO='A')"))
+      
+         MSGINFO("Para culminar la orden es necesario hacer la ejecución")
+         oEjp:EOP_ORDPRO:=SPACE(8)
+         oEjp:oEOP_ORDPRO:Refresh()
+         RETURN .F.
+      ENDIF
+
+
+   ENDIF
+   ENDIF
+
+//   oEjp:lDepOrg  :=.T.
+//   oEjp:lDepDes  :=.T.
+
+   oTable:=OpenTable(" SELECT ORP_CODINV,ORP_ESTADO,ORP_CANTID,ORP_CODFOR,ORP_CODALM,INV_DESCRI,ORP_NUMMEZ "+;
+                     " FROM DPORDENPRODUCC "+;
+                     " INNER JOIN DPINV ON ORP_CODINV=INV_CODIGO "+;
+                     " WHERE ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+;
+                     " AND ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO),.T.)
+
+   IF oTable:RecCount()=0
+      MensajeErr("Orden Producción no Encontrada "+oEjp:EOP_ORDPRO)
+      RETURN .F.
+   ENDIF
+
+//   oTable:Browse()
+
+   oTable:End()
+
+   oEjp:ORP_CANTID:=oTable:ORP_CANTID
+   oEjp:INV_CODIGO:=oTable:ORP_CODINV
+   oEjp:ORP_CODFOR:=oTable:ORP_CODFOR
+   oEjp:ORP_CODALM:=oTable:ORP_CODALM
+   oEjp:EOP_NUMMEZ:=oTable:ORP_NUMMEZ
+   oEjp:oINV_CODIGO:VarPut(oTable:ORP_CODINV , .T. )
+
+   oEjp:oINV_CODIGO:Refresh(.T.)
+   oEjp:oINV_DESCRI:Refresh(.T.)
+  
+   IF oEjp:cTipo="I"
+   oEjp:oEOP_NUMMEZ:Refresh(.T.)
+   ENDIF
+
+   oEjp:cUndMed:=MYSQLGET("DPFORMULASPROD","FOR_UNDMED","FOR_CODINV"+GetWhere("=",oEjp:INV_CODIGO)+ " AND "+;
+                                           "FOR_CODIGO"+GetWhere("=",oEjp:ORP_CODFOR))
+   oEjp:oUndMed:Refresh(.T.)
+
+
+   IF oEjp:nOption=0
+      RETURN .F.
+   ENDIF
+
+   oGridP:Set("MOV_CODALM" , oEjp:ORP_CODALM , oDp:MOV_MultiAlm .AND. oDp:nAlmacen>1 )
+
+   oEjp:GETCODTRAN(oEjp:EOP_CODSUC,oEjp:ORP_CODALM)
+
+//   oEjp:cUndMed:=MYSQLGET("DPFORMULASPROD","FOR_UNDMED","FOR_CODINV"+GetWhere("=",oEjp:INV_CODIGO)+ " AND "+;
+//                                           "FOR_CODIGO"+GetWhere("=",oEjp:ORP_CODFOR))
+//   oEjp:oUndMed:Refresh(.T.)
+
+//   nCantProd:=MYSQLGET("DPEJECUCIONPROD","SUM(EOP_CANTID*EOP_ACT)","EOP_ORDPRO"+GetWhere("=",oEjp:EOP_ORDPRO))
+
+   IF oEjp:nOption=1
+      oEjp:EOP_FECHA :=oDp:dFecha
+      oEjp:oEOP_FECHA:Refresh(.T.)
+      oEjp:oEOP_CANTID:VarPut(oTable:ORP_CANTID-nCantProd,.T.)
+   ENDIF
+
+   oTable:=OpenTable(" SELECT ORP_CODFOR,COM_CODDEP FROM DPORDENPRODUCC "+;
+                      " INNER JOIN DPFORMULASPROD   ON (FOR_CODIGO = ORP_CODFOR AND FOR_CODINV = ORP_CODINV) "+;
+                      " INNER JOIN DPCOMPPRODUCCION ON (FOR_CODINV = COM_CODINV AND FOR_CODIGO = COM_CODFOR) "+;
+                      " WHERE ORP_CODSUC"+GetWhere("=",oEjp:EOP_CODSUC)+;
+                      "   AND ORP_NUMERO"+GetWhere("=",oEjp:EOP_ORDPRO)+;
+                      " ORDER BY COM_CODDEP "+IIF(oEjp:cTipo="C"," DESC ","")+"LIMIT 1 ",.T.)
+
+   oTable:End()
+
+   IF oEjp:cTipo="I"
+      // Determinar el Primer Dpto
+      oEjp:oEOP_DEPDES:VarPut(oTable:COM_CODDEP,.T.)
+      oEjp:oDEP_DEPDES:Refresh(.T.)
+   ENDIF
+
+   IF oEjp:cTipo="C"
+
+     oDP:aData:=EJECUTAR("DPORDPVIEWDEP",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO , .F. ,;
+                                          NIL , .F. )
+     aLine:=ATAIL(oDp:aData)
+     oEjp:aData:=ACLONE(oDp:aData)
+
+     cCodDep:=aLine[1]
+
+     oEjp:EOP_CODDEP:=cCodDep
+     oEjp:EOP_DEPORG:=cCodDep
+
+     oEjp:oEOP_DEPDES:VarPut(cCodDep,.T.)
+     oEjp:oDEP_DEPDES:Refresh(.T.)
+
+     IF oEjp:nOption=1
+        oEjp:oEOP_CANTID:VarPut(aLine[5],.T.)
+     ENDIF
+
+   ENDIF
+
+   IF oEjp:cTipo="A"
+
+      cCodDep:=EJECUTAR("DPORDPVIEWDEP",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO,.F.,;
+                                       " SUM(EOP_CANTID*EOP_ACT)>0 " , .T. )
+      IF Empty(cCodDep)
+         RETURN .F.
+      ENDIF
+
+      IF oEjp:nOption=1
+         oEjp:oEOP_CANTID:VarPut(oDp:aLine[5],.T.)
+      ENDIF
+
+      oEjp:oEOP_DEPORG:VarPut(cCodDep,.T.)
+      oEjp:oDEP_DEPORG:Refresh(.T.)
+     // oEjp:EOP_DEPORG:=cCodDep
+
+      oEjp:lDepOrg     :=.F.
+      oEjp:oDEP_DEPORG:ForWhen(.T.)
+
+
+      // Busco el Siguiente Dpto
+      
+      cCodDep:=SQLGET("DPCOMPPRODUCCION","COM_CODDEP","COM_CODDEP"+GetWhere(">",cCodDep)+ " AND "+;
+                                                      "COM_CODFOR"+GetWhere("=",oEjp:cCodFor))
+      // JN 
+   /*   IF !Empty(cCodDep)
+         oEjp:EOP_DEPORG:=cCodDep
+         oEjp:oEOP_CODDEP:VarPut(cCodDep,.T.)
+         oEjp:oDEP_CODDEP:Refresh(.T.)
+
+         oEjp:lDepDes     :=.F.
+         oEjp:oDEP_CODDEP:ForWhen(.T.)
+
+        IF oEjp:EOP_DEPORG=oEjp:EOP_CODDEP .AND. !oEjp:cTipo="C"
+          MensajeErr("Orden de Producción Requiere Culminación")
+          RETURN .F.
+       ENDIF
+       */
+
+// ? "AQUI SE BUSCA EL SIGUIENTE DPTO",cCodDep
+
+/* 
+// ? "ESTE ES EL SIGUIENTE",cCodDep
+
+      oDP:aData:=EJECUTAR("DPORDPVIEWDEP",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO , .F. ,;
+                                          NIL , .F. )
+
+      nAt:=ASCAN(oDp:aData,{|a,n|a[1]=cCodDep })
+
+      IF LEN(oDp:aData)=nAt+1
+         // Busca el Siguiente Dpto 
+      ENDIF
+
+      oEjp:aData:=ACLONE(oDp:aData)
+
+      cCodDep:=oDp:aData[nAt+1,1] 
+*/
+
+      oEjp:oEOP_DEPDES:VarPut(cCodDep,.T.)
+      oEjp:oDEP_DEPDES:Refresh(.T.)
+
+      oEjp:lDepDes     :=.F.
+      oEjp:oDEP_DEPDES:ForWhen(.T.)
+
+      IF oEjp:EOP_DEPORG=oEjp:EOP_CODDEP .AND. !oEjp:cTipo="C"
+         MensajeErr("Orden de Producci¾n Requiere Culminaci¾n")
+         RETURN .F.
+      ENDIF
+
+      DPFOCUS(oEjp:oEOP_CANTID)
+
+   ENDIF
+
+   IF oEjp:EOP_CANTID=0 .AND. oEjp:cTipo="I"
+      MensajeErr("No hay Productos en Proceso en "+oDp:xDPDPTOPRODUCC+":"+oEjp:EOP_CODDEP)
+      RETURN .F.
+   ENDIF
+
+RETURN .T.
+
+FUNCTION EOPCANTID()
+   LOCAL lOk:=.T.
+
+   // DR20111220a. Si ya el Grid está generado, no accede a la fórmula.
+   IF oEjp:EOP_CANTID=0 .OR. oEjp:cTipo="C" .OR. oEjp:nGridCant<>0
+      RETURN .T.
+   ENDIF
+
+   IF oEjp:oEOP_CANTID:nLastKey=13
+
+     // Debe Verificar que en el Dpto Origen no queda existencia.
+     IF !oEjp:VALCANTDPTO()
+        RETURN .F.
+     ENDIF
+
+     EVAL(oEjp:oEOP_CANTID:bLostFocus)
+
+     oEjp:aGrids[1]:lImport  :=.T. // Si está importando MP
+
+     lOk:=EJECUTAR("TECPRDEJECINI",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO,oEjp:cTipo ,;
+                                  oEjp:EOP_CODDEP,oEjp:EOP_CODDEP,oEjp:EOP_CANTID,oEjp)
+
+
+
+
+      oEjp:aGrids[1]:lImport  :=.F. // No está importando MP
+
+     IF oEjp:nGridCant<>0 .AND. lOk
+
+       oEjp:oEOP_CANTID:ForWhen(.T.)
+       EVAL(oEjp:oEOP_CANTID:bLostFocus)
+       DPFOCUS(oEjp:aGrids[1]:oBrw)
+       oEjp:oEOP_CANTID:ForWhen(.T.)
+
+     ELSE
+
+       DPFOCUS(oEjp:oEOP_CANTID)
+
+     ENDIF
+
+   ENDIF
+
+
+RETURN lOk
+/*
+// Verifica Cantidad por Dpto
+*/
+FUNCTION VALCANTDPTO()
+   LOCAL nAt,cCodDep:=oEjp:EOP_DEPORG,nSaldo:=0
+
+   nAt:=ASCAN(oEjp:aData,{|a,n|a[1]=cCodDep })
+
+   IF oEjp:EOP_DEPORG=oEjp:EOP_CODDEP .AND. oEjp:cTipo="A"
+      MensajeErr("Orden de Producción Requiere Culminación")
+      RETURN .F.
+   ENDIF
+
+RETURN .T.
+
+FUNCTION BUILDNUMERO()
+
+   oEjp:EOP_NUMERO:=SQLINCREMENTAL("DPEJECUCIONPROD","EOP_NUMERO","EOP_CODSUC"+GetWhere("=",oDp:cSucursal ))
+   oEjp:oEOP_NUMERO:Refresh(.T.)
+
+RETURN .T.
+
+FUNCTION EOPDEPORG()
+
+   oEjp:oDEP_DEPORG:Refresh(.T.)
+
+   IF !ISSQLGET("DPDPTOPRODUCC","DEP_CODIGO",oEjp:EOP_DEPORG)
+      oEjp:oEOP_DEPORG:KeyBoard(VK_F6)
+      RETURN .T.
+   ENDIF
+
+RETURN .T.
+
+
+FUNCTION EOPDEPDES()
+
+   IF !ISSQLGET("DPDPTOPRODUCC","DEP_CODIGO",oEjp:EOP_CODDEP)
+      oEjp:oEOP_DEPDES:KeyBoard(VK_F6)
+      RETURN .T.
+   ENDIF
+
+   oEjp:oDEP_DEPDES:Refresh(.T.)
+
+RETURN .T.
+
+FUNCTION MOVALMACE(cCodAlm)
+
+   IF SQLGET("DPALMACEN","ALM_CODIGO","ALM_CODIGO"+GetWhere("=",cCodAlm))!=cCodAlm
+      RETURN .F.
+   ENDIF
+
+   oGrid:cAlmacen:=cCodAlm
+   oEjp:GETCODTRAN(oDp:cSucursal,cCodAlm)
+
+  // oEjp:oProducto:SetText(oEjp:cNameAlm+":"+MYSQLGET("DPALMACEN","ALM_DESCRI","ALM_CODIGO"+GetWhere("=",cCodAlm)))
+
+RETURN .T.
+
+
+/*
+// Valida Transacción
+*/
+FUNCTION MOVCODTRA(cCodOpe)
+  LOCAL nExiste:=1,aSeriales,nCant:=0
+  LOCAL oGridP:=oEjp:aGrids[1]
+
+  IF MYSQLGET("DPINVTRAN","TAB_CODIGO","TAB_CODIGO"+GetWhere("=",cCodOpe))!=cCodOpe
+     RETURN .F.
+  ENDIF
+
+  nExiste:=IIF(Left(cCodOpe,1)="E",1,-1)
+
+  oGridP:MOV_CONTAB:=nExiste
+  oGridP:MOV_LOGICO:=nExiste
+  oGridP:MOV_FISICO:=nExiste
+
+  oGridP:GRID_EXISTENCIA(.T.)
+
+  IF oGridP:cMetodo="S" 
+
+     aSeriales:=EJECUTAR(IIF(Left(cCodOpe,1)="E","SERENTRADA","SERSALIDA"),oGridP)
+
+     oGridP:aSeriales:=aSeriales
+
+     IF Empty(oGridP:aSeriales)
+        // oGrid:GetCol("MOV_CODTRA"):VarPut(cCodOpe)
+        oGridP:GetCol("MOV_CODTRA"):lListBox:=.F.
+        RETURN .F.
+     ENDIF
+
+     oGridP:GetCol("MOV_CANTID"):VarPut(LEN(oGridP:aSeriales))
+     oGridP:SET("MOV_CANTID",LEN(oGridP:aSeriales),.T.)
+
+     IF LEFT(oGridP:MOV_CODTRA,1)="S"
+
+        oGridP:Set("MOV_COSTO",oGridP:MOV_COSTO,.T.)
+//        oGrid:IsFinish(.T.)
+
+     ENDIF
+
+      RETURN .T.
+
+  ENDIF
+
+  IF oGridP:cMetodo="C"  // Capas o Costos
+
+      IF !EJECUTAR(IIF(Left(cCodOpe,1)="E","DPLOTE_ENT","DPLOTE_SAL"),oGridP)
+         RETURN .F.
+      ENDIF
+
+      oGridP:Set("MOV_COSTO",oGridP:MOV_COSTO,.T.)
+
+  ENDIF
+
+  IF oGridP:lTallas
+
+     nCant:=EJECUTAR("DPTALLASGET", oGridP ,  Left(cCodOpe,1)="E" )
+
+     IF Left(cCodOpe,1)="S" .AND. !(nCant<oGridP:nExiste)
+       oGridP:GetCol("MOV_CODTRA"):lListBox:=.F.
+       RETURN .F.
+     ENDIF
+
+  ENDIF
+
+RETURN .T.
+
+
+/*
+// Valida Cantidad
+*/
+FUNCTION MOVCANTID()
+  LOCAL nExi:=0
+  LOCAL oGridT:=oEjp:aGrids[1]
+
+  IF !oGridT:MOV_CANTID>0
+      RETURN .F.
+  ENDIF
+
+  IF oGridT:cMetodo="C" .AND. Left(oGridT:MOV_CODTRA,1)="S"
+
+    nExi:=oGridT:nLotes
+    oGridT:SET("MOV_COSTO",oGrid:nCostoLote,.T.)
+
+  ELSE
+
+    nExi:=oEjp:GRID_EXISTENCIA(.T.)
+    nExi:=oGridT:nExiste
+    oGridT:GRID_COSTO()
+
+  ENDIF
+
+// ? nExi,oEjp:GRID_EXISTENCIA(.T.),oGridT:MOV_CANTID,oGridT:MOV_UNDMED,oGridT:GRID_COSTO(),"GRID_COSTO"
+// ? "GRID_COSTO",oGridT:GRID_COSTO()
+
+  IF Left(oGridT:MOV_CODTRA,1)="S" .AND. nExi<oGridT:MOV_CANTID 
+     oGridT:GetCol("MOV_CANTID"):MensajeErr("Existencia no Cubre la Cantidad Requerida")
+     RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+
+FUNCTION GETCODTRAN(cCodSuc,cCodAlm)
+   LOCAL cCodTra
+   LOCAL oGridP:=oEjp:aGrids[1]
+
+   cCodTra:=MYSQLGET("DPALMACEN","ALM_P_S","ALM_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                           "ALM_CODIGO"+GetWhere("=",cCodAlm))
+
+   oGridP:Set("MOV_CODTRA" , cCodTra, .T.)
+
+RETURN .T.
+
+FUNCTION IMPORTAR()
+
+    EJECUTAR("TECPRDEJECINI",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO,oEjp:cTipo ,;
+                           oEjp:EOP_DEPORG ,oEjp:EOP_CODDEP,oEjp:EOP_CANTID,oEjp)
+
+RETURN .T.
+
+/*
+// Obtiene los Departamentos por Orden
+*/
+FUNCTION GETDEPTOORDER()
+    LOCAL aDpto:={},cSql
+
+    cSql:=" SELECT COM_CODDEP FROM DPORDENPRODUCC "+;
+          " INNER JOIN DPCOMPPRODUCCION ON ORP_CODINV=COM_CODINV AND ORP_CODFOR=COM_CODFOR "+;
+          " INNER JOIN DPDPTOPRODUCC    ON COM_CODDEP=DEP_CODIGO "+;
+          " GROUP BY COM_CODDEP,DEP_DESCRI "+;
+          " ORDER BY COM_CODDEP "
+
+    aDpto:=ATABLE(cSql)
+
+//? LEN(aDpto),"GETDETORDER"
+
+RETURN aDpto
+
+/*
+// Visualizar Ord/Prod
+*/
+FUNCTION ViewOrdPro()
+  LOCAL cSql,cWhere,aTitle,cOrdPro:=oEjp:EOP_ORDPRO,cTitle,cFields
+
+  cWhere:=" LEFT JOIN DPEJECUCIONPROD ON ORP_CODSUC=EOP_CODSUC AND EOP_ORDPRO=ORP_NUMERO AND EOP_TIPO='I' AND EOP_ESTADO='P' "+;
+          " INNER JOIN DPINV ON ORP_CODINV=INV_CODIGO "+;
+          " WHERE ORP_CODSUC"+GetWhere("=",oDp:cSucursal) + " AND ORP_ESTADO='P' "+;
+          " GROUP BY ORP_NUMERO,ORP_FECHA,ORP_CODINV,INV_DESCRI "+;
+          " HAVING PEDTE>0 "
+
+  IF oEjp:cTipo="A" .OR. oEjp:cTipo="C"
+
+     // DR20111206c. Solo se buscan las no anuladas
+     cWhere:=" INNER JOIN DPEJECUCIONPROD ON ORP_CODSUC=EOP_CODSUC AND EOP_ORDPRO=ORP_NUMERO AND EOP_ESTADO='E' AND EOP_TIPO='I' AND EOP_ACT=1 "+;
+             " INNER JOIN DPINV ON ORP_CODINV=INV_CODIGO "+;
+             " WHERE ORP_CODSUC"+GetWhere("=",oDp:cSucursal) + " AND ORP_ESTADO='E' "+;
+             " GROUP BY ORP_NUMERO,ORP_FECHA,ORP_CODINV,INV_DESCRI "+;
+             " "
+
+  ENDIF
+
+
+
+  aData:=ASQL( cSql )
+  aTitle:="Número,Fecha,Código,Producto,Ordenada,Iniciada,Pendiente"
+  cTitle:=oDp:xDPORDENPRODUCC
+ 
+  oDp:nClrPane1Brw:=14155775
+  oDp:nClrPane2Brw:=9240575
+  
+  cFields:=" ORP_NUMERO,ORP_FECHA,ORP_CODINV,INV_DESCRI,ORP_CANTID AS CANTID, "+;
+           " SUM(IF(EOP_CANTID IS NULL , 0 , EOP_CANTID)) AS INICIADA, "+;
+           " ORP_CANTID-SUM(IF(EOP_CANTID IS NULL , 0 , EOP_CANTID)) AS PEDTE "+;
+           " "
+
+  IF oEjp:cTipo="C"
+
+     aTitle :="Número,Fecha,Código,Producto,Ordenada,Finalizada,Pendiente"
+
+     cFields:=" EOP_ORDPRO,ORP_FECHA,ORP_CODINV,INV_DESCRI,"+;
+              " ORP_CANTID,SUM(EOP_CANTID*EOP_ACT) AS EOP_PENDTE, "+;
+              " ORP_CANTID-SUM(EOP_CANTID*EOP_ACT) AS PDTE "
+
+     cWhere:=" INNER JOIN DPEJECUCIONPROD ON ORP_CODSUC=EOP_CODSUC AND EOP_ORDPRO=ORP_NUMERO AND ORP_DPTFIN=EOP_CODDEP AND EOP_ESTADO='P' "+;
+             " INNER JOIN DPINV          ON ORP_CODINV=INV_CODIGO "+;
+             " WHERE ORP_CODSUC"+GetWhere("=",oDp:cSucursal) + " AND ORP_ESTADO='E' AND EOP_ESTADO='P' "+;
+             " GROUP BY EOP_ORDPRO,ORP_FECHA,ORP_CODINV,INV_DESCRI "+;
+             " HAVING SUM(EOP_CANTID*EOP_ACT)>0 "+;
+             " "
+  ENDIF
+
+
+  cOrdPro:=EJECUTAR("REPBDLIST","DPORDENPRODUCC",cFields,;
+                       .F. , cWhere, cTitle , aTitle , NIL , "a[4]>0")
+
+// ? CLPCOPY(oDp:cSql)
+
+  IF !Empty(cOrdPro)
+     oEjp:oEOP_ORDPRO:VarPut(cOrdPro)
+     oEjp:oEOP_ORDPRO:KeyBoard(13)
+  ENDIF
+
+RETURN .T.
+
+
+/*
+// Obtiene la Existencia del Grid
+*/
+FUNCION GRID_EXISTENCIA(lShow)
+  LOCAL nExiste:=0,dFecha,cHora,oGridP
+
+  dFecha:=oEjp:EOP_FECHA
+  cHora :=NIL // TIME() // oEjp:DOC_HORA 
+
+  DEFAULT lShow:=.F.
+
+  oGridP:=oEjp:aGrids[1]
+
+  IF oGridP:nOption=3 .AND. !oEjp:nOption=1
+     dFecha:=oGridP:MOV_FECHA
+     cHora :=oGridP:MOV_HORA
+  ENDIF
+
+  nExiste:=EJECUTAR("INVGETEXI" , oGridP:MOV_CODIGO , oGridP:MOV_UNDMED , oGridP:MOV_CODALM , oEjp:EOP_CODSUC, dFecha, cHora,"MOV_FISICO")
+
+  IF oGridP:nOption=3 // Modificar
+    nExiste:=nExiste-(oGridP:XMOV_CANTID*oGridP:MOV_INVACT)
+  ENDIF
+
+  oGridP:nExiste:=nExiste
+
+  IF lShow
+
+   // oEjp:oProducto:SetText(oDp:xDPINV+": "+;
+                            MYSQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGridP:MOV_CODIGO))+CRLF+;
+                            "Disponible ["+ALLTRIM(TRAN(nExiste,oEjp:cPicture))+"]")
+
+  ENDIF
+
+
+RETURN nExiste
+
+/*
+// Debe Mostrar y Colocar el Costo
+*/
+FUNCTION GRID_COSTO()
+
+   LOCAL nCosto:=0,cHora
+
+   LOCAL oGridT:=oEjp:aGrids[1]
+
+   IF LEFT(oGridT:MOV_CODTRA,1)="S" .AND. oDp:cCostoEje="P" // DR20120413a. Se agrega condición de tipo de costo
+      nCosto:=EJECUTAR("INVGETCOSTO"   ,oGridT:MOV_CODIGO ,oGridT:MOV_UNDMED    , oEjp:EOP_CODSUC, oEjp:EOP_FECHA , cHora , oGridT:MOV_CANTID  )
+
+   ELSE
+
+      nCosto:=EJECUTAR("INVGETULTCOS" , oGridT:MOV_CODIGO , oGridT:MOV_UNDMED   , oEjp:EOP_CODSUC , oEjp:EOP_FECHA , cHora )
+
+   ENDIF
+
+   oGridT:Set("MOV_COSTO",nCosto,.T.)
+
+RETURN nCosto
+
+FUNCTION ALMACEN()
+LOCAL cNombre:=""
+
+   IF EMPTY(SQLGET("DPALMACEN","ALM_CODIGO","ALM_CODIGO"+GetWhere("=",oEjp:EOP_ALMPRI)))
+      MSGINFO("El Almacen no existe")
+      RETURN .F.
+   ENDIF
+
+   cNombre:=SQLGET("DPALMACEN","ALM_DESCRI","ALM_CODIGO"+GetWhere("=",oEjp:EOP_ALMPRI))
+   oEjp:oALM_DESCRI:SETTEXT(cNombre)
+   
+RETURN .T.
+
+FUNCTION ALMACEN2()
+LOCAL cNombre:=""
+
+   IF EMPTY(SQLGET("DPALMACEN","ALM_CODIGO","ALM_CODIGO"+GetWhere("=",oEjp:EOP_ALMSEG)))
+      MSGINFO("El Almacen no existe")
+      RETURN .F.
+   ENDIF
+
+   cNombre:=SQLGET("DPALMACEN","ALM_DESCRI","ALM_CODIGO"+GetWhere("=",oEjp:EOP_ALMSEG))
+   oEjp:oALM_DESCRI2:SETTEXT(cNombre)
+   
+RETURN .T.
+
+FUNCTION ALMACEN3()
+LOCAL cNombre:=""
+
+   IF EMPTY(SQLGET("DPALMACEN","ALM_CODIGO","ALM_CODIGO"+GetWhere("=",oEjp:EOP_ALMDES)))
+      MSGINFO("El Almacen no existe")
+      RETURN .F.
+   ENDIF
+
+   cNombre:=SQLGET("DPALMACEN","ALM_DESCRI","ALM_CODIGO"+GetWhere("=",oEjp:EOP_ALMDES))
+   oEjp:oALM_DESCRI3:SETTEXT(cNombre)
+   
+RETURN .T.
+
+
+FUNCTION EOPNUMMEZ()
+   IF oEjp:EOP_NUMMEZ<=0
+      MSGINFO("Las mezclas debe ser mayor a cero")
+      RETURN .F.
+   ENDIF
+RETURN .T.
+
+// EOF

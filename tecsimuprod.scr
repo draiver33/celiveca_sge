@@ -1,0 +1,607 @@
+// Programa   : TECSIMUPROD
+// Fecha/Hora : 24/08/2022 10:59:09
+// Propósito  : 
+// Aplicación : Produccion
+// Creado Por : 
+// Observación:
+
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN()
+LOCAL I,aData:={},oFontG,oBrwO,oBrwP,oCol,cSql,oFontB,cScope,oFont,oSayRef
+LOCAL aCaja2:={},aEtqt:={},aPlaza:={},oBtn,oBrwD
+LOCAL aFormulas:={"Ninguna"} // DR20120413a
+
+DEFINE FONT oFont NAME "Arial" SIZE 0, -12 BOLD ITALIC
+DEFINE FONT oFontB NAME "Arial" SIZE 0, -12 BOLD
+
+  AUDITAR("SIMU" , NIL , "DPCOMPPRODUCCION", "Simulación de Producción ")
+
+  AADD(aEtqt,{"","",0,0,0,0,0,0})
+
+  oSIMU:=DPEDIT():New("Simulacion de Costos Producto Terminado","TECSIMUPROD.EDT","oSIMU",.T.)
+
+  oSIMU:lBrwO:=.F.
+  oSIMU:aDataO:={}
+  oSIMU:cCodInv:=SPACE(20)
+  oSIMU:nCantid:=1
+  oSIMU:cFormula:=SPACE(20) // DR20120420a
+  oSIMU:aFormulas:=aFormulas // DR20120420a
+
+  oSIMU:nSuCoTo:=0
+  oSIMU:nManObr:=0
+  oSIMU:nTotCos:=0
+  oSIMU:nTCxUnd:=0
+  oSIMU:nCosDor:=0
+  oSIMU:nManDor:=0
+  oSIMU:nTCoDor:=0
+  oSIMU:nTCUDor:=0
+
+  oSIMU:nValMon:=EJECUTAR("DPGETVALCAM",oDp:cMonedaExt,oDp:dFecha,TIME())
+
+  oSIMU:lCostoOtra:=.T. // DR20150727a
+
+  @ 2.4, 0.0 BMPGET oSIMU:oCodInv VAR oSIMU:cCodInv;
+             VALID (oSIMU:VALCODINV());
+             NAME "BITMAPS\FIND.BMP"; 
+             ACTION (oDpLbx:=DpLbx("DPINVCOMP"), oDpLbx:GetValue("INV_CODIGO",oSIMU:oCodInv)); 
+             FONT oFont;
+             SIZE 24,10
+
+    oSIMU:oCodInv:cMsg:="Producto"
+    oSIMU:oCodInv:cToolTip:="Producto"
+
+  @ 0,0 SAY "Producto"
+
+  @ oSIMU:oCodInv:nTop,oSIMU:oCodInv:nRight+5 SAY oSIMU:oPRO_NOMBRE;
+                            PROMPT "Seleccione producto" PIXEL;
+                            SIZE NIL,12 FONT oFont COLOR 16777215,16711680 BORDER 
+
+  @ 10,10 GET oSIMU:oCantid VAR oSIMU:nCantid PICTURE "99,999,999,999,999,999.99" RIGHT;
+          VALID (oSIMU:VALCANTID())
+
+  @ 10,10 SAY "Cantidad a Elaborar"
+
+  @ 10,10 GET oSIMU:oSuCoTo VAR oSIMU:nSuCoTo PICTURE "99,999,999,999,999,999.99" RIGHT WHEN (.F.)
+
+  @ 10,10 SAY "Subtotal por Costo"
+
+  // DR20111220a. Se rebaja el PICTURE
+  @ 10,10 GET oSIMU:oManObr VAR oSIMU:nManObr PICTURE "99,999,999.99" RIGHT;
+          VALID (oSIMU:VALMANOBR())
+
+  @ 10,10 SAY "Mano de Obra"
+
+  @ 10,10 GET oSIMU:oTotCos VAR oSIMU:nTotCos PICTURE "99,999,999,999,999,999.99" RIGHT WHEN (.F.)
+  @ 10,10 SAY "Total por Costo"
+
+  @ 10,10 GET oSIMU:oTCxUnd VAR oSIMU:nTCxUnd PICTURE "99,999,999,999,999,999.99" RIGHT WHEN (.F.)
+  @ 10,10 SAY "Total por Costo por Unid."
+
+  @ 10,10 GET oSIMU:oCosDor VAR oSIMU:nCosDor PICTURE "99,999,999,999,999,999.99" RIGHT WHEN (.F.)
+  @ 10,10 SAY "Costo en $"
+
+  // DR20111220a. Se rebaja el PICTURE
+  @ 10,10 GET oSIMU:oManDor VAR oSIMU:nManDor PICTURE "99,999,999.99" RIGHT;
+          VALID (oSIMU:VALMANOBRD())
+
+  @ 10,10 SAY "Mano de Obra $"
+
+  @ 10,10 GET oSIMU:oTCoDor VAR oSIMU:nTCoDor PICTURE "99,999,999,999,999,999.99" RIGHT WHEN (.F.)
+  @ 10,10 SAY "Total por Costo $"
+
+  @ 10,10 GET oSIMU:oTCUDor VAR oSIMU:nTCUDor PICTURE "99,999,999,999,999,999.99" RIGHT WHEN (.F.)
+  @ 10,10 SAY "Total por Costo por Unid. $"
+
+  // DR20120330a
+  @ 10,10 GET oSIMU:oValMon VAR oSIMU:nValMon PICTURE "99,999,999.99" VALID oSIMU:nValMon>0 .AND. oSIMU:VALCANTID()
+  @ 10,10 SAY "Valor Otra Moneda: "  
+
+  @ 2.0,3 COMBOBOX oSIMU:oFormula VAR oSIMU:cFormula ITEMS oSIMU:aFormulas
+  @ 2.0,10 SAY "Fórmula: "  
+  // DR20150727a. Posibilidad de buscar còdigos equivalentes en otra empresas
+  @ 5,1 CHECKBOX oSIMU:oCostoOtra VAR oSIMU:lCostoOtra PROMPT ANSITOOEM("Buscar costos de códigos equivalentes en empresas asociadas") 
+
+
+	@09, 33  SBUTTON oBtn ;
+             SIZE 45, 20 FONT oFont;
+             FILE "BITMAPS\xrun.BMP" NOBORDER;
+             LEFT PROMPT "Formula";
+             COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+             ACTION (oSIMU:CARGAR())
+
+    	oBtn:cToolTip:="Aceptar"
+    	oBtn:cMsg    :=oBtn:cToolTip
+
+	@09, 33  SBUTTON oBtn ;
+             SIZE 45, 20 FONT oFont;
+             FILE "BITMAPS\xNEW.BMP" NOBORDER;
+             LEFT PROMPT "";
+             COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+             ACTION (oSIMU:AGREGAR())
+
+    	oBtn:cToolTip:="Aceptar"
+    	oBtn:cMsg    :=oBtn:cToolTip
+
+	@09, 33  SBUTTON oBtn ;
+             SIZE 45, 20 FONT oFont;
+             FILE "BITMAPS\xDELETE.BMP" NOBORDER;
+             LEFT PROMPT "";
+             COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+             ACTION (oSIMU:QUITAR())
+
+    	oBtn:cToolTip:="Aceptar"
+    	oBtn:cMsg    :=oBtn:cToolTip
+
+	@09, 33  SBUTTON oBtn ;
+             SIZE 45, 20 FONT oFont;
+             FILE "BITMAPS\XSAVE.BMP" NOBORDER;
+             LEFT PROMPT "Generar";
+             COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+             ACTION (oSIMU:VALIDAR())
+
+    	oBtn:cToolTip:="Aceptar"
+    	oBtn:cMsg    :=oBtn:cToolTip
+
+    	@09, 43 SBUTTON oBtn ;
+            SIZE 45, 20 FONT oFont;
+            FILE "BITMAPS\XCANCEL.BMP" NOBORDER;
+            LEFT PROMPT "Cerrar";
+            COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+            ACTION (oSIMU:CLOSE())
+
+    	oBtn:lCancel :=.T.
+    	oBtn:cToolTip:="Cerrar Formulario "
+    	oBtn:cMsg    :=oBtn:cToolTip
+
+
+  oBrwO:=TXBrowse():New(oSIMU:oDlg )
+
+  oBrwO:SetArray(aEtqt ,.F.)
+  oBrwO:lFooter:=.T.
+  oBrwO:lVScroll:=.T.
+  oBrwO:lHScroll:=.F.
+  oBrwO:l3D:=.F.
+  oBrwO:lRecordSelector:=.F.
+  oBrwO:oFont:=oFontB
+  oBrwO:lDownAuto:=.F.
+  oBrwO:nHeaderLines:= 1
+
+  oSIMU:oBrwO:=oBrwO
+
+  oCol:=oSIMU:oBrwO:aCols[1]
+  oCol:cHeader      :="Componente"
+  oCol:nWidth       :=120
+  oCol:nEditType    :=EDIT_GET_BUTTON
+  oCol:bOnPostEdit  :={|o, uValue|oSIMU:VALINV() }
+  oCol:bEditBlock   :={||oSIMU:LISTINV()}
+
+  oCol:=oSIMU:oBrwO:aCols[2]
+  oCol:cHeader      :="Descripcion"
+  oCol:nWidth       :=200
+
+  oCol:=oSIMU:oBrwO:aCols[3]
+  oCol:cHeader      :="Cantidad"
+  oCol:nWidth       :=100
+  oCol:cEditPicture :="99,999,999,999,999,999.999999"
+  oCol:bStrData     :={|oBrw|oBrw:=oSIMU:oBrwO,TRAN(oBrw:aArrayData[oBrw:nArrayAt,3],"99,999,999,999,999,999.999999")}
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:nHeadStrAlign:= AL_RIGHT
+  oCol:nFootStrAlign:= AL_RIGHT
+  oCol:nEditType    :=1
+  oCol:bOnPostEdit  :={|oCol, uValue| oSIMU:VALCAN(oCol,uValue,3) }
+
+  oCol:=oSIMU:oBrwO:aCols[4]
+  oCol:cHeader      :="Cost. Act."
+  oCol:nWidth       :=100
+  oCol:cEditPicture :="99,999,999,999,999,999.999999"
+  oCol:bStrData     :={|oBrw|oBrw:=oSIMU:oBrwO,TRAN(oBrw:aArrayData[oBrw:nArrayAt,4],"99,999,999,999,999,999.999999")}
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:nHeadStrAlign:= AL_RIGHT
+  oCol:nFootStrAlign:= AL_RIGHT
+  oCol:nEditType    :=1
+  oCol:bOnPostEdit  :={|oCol, uValue| oSIMU:VALCAN(oCol,uValue,4) }
+
+  oCol:=oSIMU:oBrwO:aCols[5]
+  oCol:cHeader      :="Total Costo"
+  oCol:nWidth       :=100
+  oCol:cEditPicture :="99,999,999,999,999,999.999999"
+  oCol:bStrData     :={|oBrw|oBrw:=oSIMU:oBrwO,TRAN(oBrw:aArrayData[oBrw:nArrayAt,5],"99,999,999,999,999,999.999999")}
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:nHeadStrAlign:= AL_RIGHT
+  oCol:nFootStrAlign:= AL_RIGHT
+
+  oCol:=oSIMU:oBrwO:aCols[6]
+  oCol:cHeader      :="Costo $"
+  oCol:nWidth       :=100
+  oCol:cEditPicture :="99,999,999,999,999,999.999999"
+  oCol:bStrData     :={|oBrw|oBrw:=oSIMU:oBrwO,TRAN(oBrw:aArrayData[oBrw:nArrayAt,6],"99,999,999,999,999,999.999999")}
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:nHeadStrAlign:= AL_RIGHT
+  oCol:nFootStrAlign:= AL_RIGHT
+  oCol:nEditType    :=1
+  oCol:bOnPostEdit  :={|oCol, uValue| oSIMU:VALCAN(oCol,uValue,6) }
+
+  oCol:=oSIMU:oBrwO:aCols[7]
+  oCol:cHeader      :="Total Costo $"
+  oCol:nWidth       :=100
+  oCol:cEditPicture :="99,999,999,999,999,999.999999"
+  oCol:bStrData     :={|oBrw|oBrw:=oSIMU:oBrwO,TRAN(oBrw:aArrayData[oBrw:nArrayAt,7],"99,999,999,999,999,999.999999")}
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:nHeadStrAlign:= AL_RIGHT
+  oCol:nFootStrAlign:= AL_RIGHT
+
+  oBrwO:DelCol(8)
+
+  oBrwO:bClrStd      := {|oBrwO|oBrwO:=oSIMU:oBrwO,{CLR_BLACK, iif( oBrwO:nArrayAt%2=0,14612478,13104638 ) } }
+
+  oBrwO:bClrFooter   := {||{CLR_GREEN,8580861}}
+
+  AEVAL(oBrwO:aCols,{|oCol,n|oCol:bClrHeader   := {|oBrwO|oBrwO:=oSIMU:oBrwO,{CLR_BLACK,12582911}},;
+                            oCol:oFooterFont  :=oFontB,;
+                            oCol:oHeaderFont  :=oFontB})
+
+  oBrwO:CreateFromCode()
+
+  oSIMU:Activate()
+
+RETURN .T.
+
+FUNCTION VALIDAR()
+
+   IF LEN(oSIMU:oBrwO:aArrayData)=1 .AND. EMPTY(oSIMU:oBrwO:aArrayData[1,1])
+      MSGINFO("Debe indicar la materia prima para calcular los costos")
+      RETURN .F.
+   ENDIF
+
+   IF EMPTY(oSIMU:cCodInv)
+      MSGINFO("Debe indicar el producto a simular")
+      RETURN .F.
+   ENDIF
+
+   IF oSIMU:nCantid<=0
+      MSGINFO("Debe indicar la cantidad a elaborar")
+      RETURN .F.
+   ENDIF
+
+   oSIMU:REPORTE()
+
+RETURN .T.
+
+FUNCTION VALCAN(oCol,uValue,nCol)
+LOCAL nTotal:=0,I,nMonto:=0,nFisi:=0,nDife:=0,nImp:=0
+
+DEFAULT lNext:=.T.
+
+   IF uValue<0
+      MSGINFO("Debe ser mayor a cero")
+      RETURN .F.
+   ENDIF
+
+   IF nCol=3
+      oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,8]:=uValue/oSIMU:nCantid
+   ENDIF
+
+   IF nCol=4
+      oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,6]:=ROUND(uValue/oSIMU:nValMon) // DR20120330a oDp:nCamDef)
+   ENDIF
+
+   IF nCol=6
+      oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,4]:=ROUND(uValue*oSIMU:nValMon) // DR20120330a oDp:nCamDef)
+   ENDIF
+
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,nCol]:=uValue
+
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,5]:=oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,3]*oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,4]
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,7]:=oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,3]*oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,6]
+ 
+   oSIMU:oBrwO:GoRight()
+   oSIMU:oBrwO:Refresh()
+   oSIMU:CALCULAR()
+
+RETURN uValue
+
+FUNCTION CARGAR()
+LOCAL oTable,cSql:="",aData:={},cWhere:="",cWhere2:="",cSerie:=""
+LOCAL I,,nMonto:=0,nFisi:=0,nDife:=0,nImp:=0
+LOCAL cSql2,oTable2,cWhere2:="",oTable3,cWhere3:="",aData2:={},nTotCos:=0,nCantid:=0,nCosDor:=0,nTotDor:=0
+LOCAL cSql3,oOdcbInt,oTable,cSqlCos,cUltFch,oSqlCos,nCostoX // DR20150727a
+
+
+   // DR20120413a. Se agrega condición de la fórmula
+   // DR20141031a. Se toman los ajustes
+   cSql2:="SELECT COM_CODCOM,INV_DESCRI,COM_CANTID,"+;
+          "(SELECT MOV_COSTO FROM DPMOVINV "+;
+          "WHERE MOV_CODIGO=COM_CODCOM AND MOV_INVACT=1 AND (MOV_FISICO=1 OR LEFT(MOV_CODTRA,1)='A') AND MOV_APLORG<>'V' "+;
+          "ORDER BY MOV_FECHA DESC,MOV_HORA DESC LIMIT 1) AS COSTO "+;
+          "FROM DPCOMPPRODUCCION INNER JOIN DPINV ON COM_CODCOM=INV_CODIGO "+;
+          "WHERE COM_CODINV='"+oSIMU:cCodInv+"'"+" AND COM_CODFOR"+GetWhere("=",oSimu:cFormula)
+
+// MsgInfo(ClpCopy(cSql2))
+// _CODFOR
+   oTable2:=OPENTABLE(cSql2,.T.)
+
+
+      WHILE !oTable2:Eof()
+
+           nCantid:=oTable2:COM_CANTID*oSIMU:nCantid
+           nCostoX:=oTable2:COSTO
+           // DR20150727a.
+           IF oSIMU:lCostoOtra
+              nCostoX:=EJECUTAR("INVGETULTCOS",oTable2:COM_CODCOM,,,,,,.T.)
+           ENDIF
+           // DR20150727a. Fin.
+           // DR20150727a No es oTable2:COSTO sino nCostoX
+           nTotCos:=nCantid*nCostoX
+           nCosDor:=ROUND(nCostoX/oSIMU:nValMon,2) // DR20120330a oDp:nCamDef,2)
+           nTotDor:=nCantid*nCosDor
+           AADD(aData,{oTable2:COM_CODCOM,oTable2:INV_DESCRI,nCantid,nCostoX,nTotCos,nCosDor,nTotDor,oTable2:COM_CANTID})
+
+           oTable2:DbSkip()
+      ENDDO
+
+
+   oTable2:End()
+
+   IF EMPTY(aData)
+      AADD(aData,{"","",0,0,0,0,0,0})
+   ENDIF
+
+   oSIMU:oBrwO:aArrayData:=ACLONE(aData)
+
+   oSIMU:oBrwO:Refresh()
+   oSIMU:CALCULAR()
+
+RETURN .T.
+
+FUNCTION REPORTE()
+LOCAL aStructP:={},I,cNombre:=SQLGET("DPINV","INV_DESCRI","INV_CODIGO='"+oSIMU:cCodInv+"'")
+
+  AADD(aStructP,{"INV_CODIGO","C",20,0})
+  AADD(aStructP,{"INV_DESCRI","C",40,0})
+  AADD(aStructP,{"INV_CANTID","N",16,2})
+  AADD(aStructP,{"COM_CODINV","C",20,0})
+  AADD(aStructP,{"COM_DESCRI","C",40,0})
+  AADD(aStructP,{"COM_CANTID","N",16,6})
+  AADD(aStructP,{"COM_COSTOB","N",16,5})
+  AADD(aStructP,{"COM_TOCOSB","N",16,5})
+  AADD(aStructP,{"COM_COSTOD","N",16,5})
+  AADD(aStructP,{"COM_TOCOSD","N",16,5})
+  AADD(aStructP,{"SUB_SUCOSB","N",16,2})
+  AADD(aStructP,{"SUB_MANOBB","N",16,2})
+  AADD(aStructP,{"SUB_TOCOSB","N",16,2})
+  AADD(aStructP,{"SUB_TCOSUB","N",16,2})
+  AADD(aStructP,{"SUB_COSTOD","N",16,2})
+  AADD(aStructP,{"SUB_MANOBD","N",16,2})
+  AADD(aStructP,{"SUB_TOCOSD","N",16,2})
+  AADD(aStructP,{"SUB_TCOSUD","N",16,2})
+  AADD(aStructP,{"EMPRESA","C",40,0})
+
+  FERASE("CRYSTAL\TECSIMUPROD.DBF")
+
+  IF FILE("CRYSTAL\TECSIMUPROD.DBF")
+    MensajeErr("CRYSTAL\TECSIMUPROD.DBF"+" está  Abierto")
+  ENDIF
+
+  DBCREATE("CRYSTAL\TECSIMUPROD.DBF",aStructP)
+
+  SELECT 2
+  USE ("CRYSTAL\TECSIMUPROD.DBF") EXCLU
+
+  FOR I:=1 TO LEN(oSIMU:oBrwO:aArrayData)
+    IF !EMPTY(oSIMU:oBrwO:aArrayData[I,1])
+       APPEND BLANK
+
+       REPLACE INV_CODIGO WITH oSIMU:cCodInv
+       REPLACE INV_DESCRI WITH cNombre
+       REPLACE INV_CANTID WITH oSIMU:nCantid
+       REPLACE COM_CODINV WITH oSIMU:oBrwO:aArrayData[I,1]
+       REPLACE COM_DESCRI WITH oSIMU:oBrwO:aArrayData[I,2]
+       REPLACE COM_CANTID WITH oSIMU:oBrwO:aArrayData[I,3]
+       REPLACE COM_COSTOB WITH oSIMU:oBrwO:aArrayData[I,4]
+       REPLACE COM_TOCOSB WITH oSIMU:oBrwO:aArrayData[I,5]
+       REPLACE COM_COSTOD WITH oSIMU:oBrwO:aArrayData[I,6]
+       REPLACE COM_TOCOSD WITH oSIMU:oBrwO:aArrayData[I,7]
+       REPLACE SUB_SUCOSB WITH oSIMU:nSuCoTo
+       REPLACE SUB_MANOBB WITH oSIMU:nManObr
+       REPLACE SUB_TOCOSB WITH oSIMU:nTotCos
+       REPLACE SUB_TCOSUB WITH oSIMU:nTCxUnd
+       REPLACE SUB_COSTOD WITH oSIMU:nCosDor
+       REPLACE SUB_MANOBD WITH oSIMU:nManDor
+       REPLACE SUB_TOCOSD WITH oSIMU:nTCoDor
+       REPLACE SUB_TCOSUD WITH oSIMU:nTCUDor
+       REPLACE EMPRESA WITH oDp:cEmpresa
+    ENDIF
+  NEXT I
+  
+  CLOSE ALL
+
+  RUNRPT("CRYSTAL\TECSIMUPROD.RPT",{"CRYSTAL\TECSIMUPROD.DBF"},1,"Simulacion de costos de Produccion")
+
+RETURN .T.
+
+FUNCTION VALCODINV()
+LOCAL cNombre
+LOCAL nAt // DR20120413a
+
+   IF EMPTY(oSIMU:cCodInv)
+      RETURN .F.
+   ENDIF
+
+  AUDITAR("SIMU" , NIL , "DPCOMPPRODUCCION", "Simulación de Producción "+oSimu:cCodInv)
+
+   IF EMPTY(SQLGET("DPINV","INV_CODIGO,INV_DESCRI","INV_CODIGO='"+oSIMU:cCodInv+"'"))
+      MSGINFO("El producto no existe")
+      RETURN .F.
+   ENDIF
+
+   oSIMU:oPRO_NOMBRE:SetText(oDp:aRow[2])
+
+   // DR20120413a
+   oSIMU:aFormulas:=ASQL("SELECT FOR_CODIGO FROM DPFORMULASPROD WHERE FOR_CODINV"+GetWhere("=",oSimu:cCodInv))
+
+   AEVAL(oSIMU:aFormulas,{|a,n|oSIMU:aFormulas[n]:=a[1]})
+
+   IF EMPTY(oSIMU:aFormulas)
+     oSIMU:aFormulas:={"Ninguna"}
+   ENDIF
+
+   nAt:=MAX(ASCAN(oSimu:oFormula:aItems,oSimu:cFormula),1)
+
+   oSIMU:oFormula:SetItems(oSimu:aFormulas)
+   oSIMU:oFormula:ForWhen(.T.)
+
+   oSIMU:oFormula:Set(oSimu:aFormulas[nAt])
+   oSIMU:oFormula:Select(nAt)
+   oSIMU:oFormula:Refresh(.T.)
+   oSIMU:cFormula:=oSimu:aFormulas[nAt]
+
+   COMBOINI(oSimu:oFormula)
+   // DR20120413a. Fin.
+
+RETURN .T.
+
+FUNCTION CALCULAR()
+LOCAL aTotal:=ATOTALES(oSIMU:oBrwO:aArrayData)
+
+  oSIMU:nSuCoTo:=aTotal[5]
+// DR20111220a. Lo cambiamos por el de abajo  oSIMU:nTotCos:=oSIMU:nSuCoTo+oSIMU:nManObr
+  oSIMU:nTotCos:=oSIMU:nSuCoTo*(1+DIV(oSIMU:nManObr,100)) // DR20111220a.Tipo factor.
+
+  oSIMU:nCosDor:=aTotal[7]
+// DR20111220A. Lo cambiamos por el de abajo  oSIMU:nTCoDor:=oSIMU:nCosDor+oSIMU:nManDor
+  oSIMU:nTCoDor:=oSIMU:nCosDor*(1+DIV(oSIMU:nManDor,100)) // DR20111220a.Tipo factor.
+
+  oSIMU:nTCxUnd:=ROUND(oSIMU:nTotCos/oSIMU:nCantid,2)
+  oSIMU:nTCUDor:=ROUND(oSIMU:nTCoDor/oSIMU:nCantid,2)
+
+  oSIMU:oSuCoTo:Refresh()
+  oSIMU:oTotCos:Refresh()
+  oSIMU:oCosDor:Refresh()
+  oSIMU:oTCoDor:Refresh()
+  oSIMU:oTCxUnd:Refresh()
+  oSIMU:oTCUDor:Refresh()
+
+RETURN .T.
+
+FUNCTION VALMANOBR()
+
+   IF oSIMU:nManObr<0
+      MSGINFO("El monto debe ser mayor o igual a cero")
+      RETURN .F.
+   ENDIF
+
+   oSIMU:nManDor:=oSIMU:nManObr // DR20111220a. Es lo mismo porque es un factor ROUND(oSIMU:nManObr/oDp:nCamDef,2)
+   oSIMU:oManDor:Refresh()
+
+   oSIMU:CALCULAR()
+RETURN .T.
+
+FUNCTION VALMANOBRD()
+
+   IF oSIMU:nManDor<0
+      MSGINFO("El monto debe ser mayor o igual a cero")
+      RETURN .F.
+   ENDIF
+
+   oSIMU:nManObr:=oSIMU:nManDor // DR20111220a. Es lo mismo porque es un factorROUND(oSIMU:nManDor*oDp:nCamDef,2)
+   oSIMU:oManObr:Refresh()
+
+   oSIMU:CALCULAR()
+RETURN .T.
+
+FUNCTION VALCANTID()
+LOCAL I,nCosDor:=0,nTotDor:=0
+   IF oSIMU:nCantid<0
+      MSGINFO("LA cantidad debe ser mayor o igual a cero")
+      RETURN .F.
+   ENDIF
+
+   IF !EMPTY(oSIMU:oBrwO:aArrayData[1,1])
+      FOR I:=1 TO LEN(oSIMU:oBrwO:aArrayData)
+          // DR20120330a
+          nCosDor:=ROUND(oSIMU:oBrwO:aArrayData[I,4]/oSIMU:nValMon,2)
+          nTotDor:=oSIMU:oBrwO:aArrayData[I,3]*nCosDor
+
+          oSIMU:oBrwO:aArrayData[I,6]:=nCosDor // DR20120330a
+          oSIMU:oBrwO:aArrayData[I,7]:=nTotDor // DR20120330a
+          oSIMU:oBrwO:aArrayData[I,3]:=oSIMU:oBrwO:aArrayData[I,8]*oSIMU:nCantid
+          oSIMU:oBrwO:aArrayData[I,5]:=oSIMU:oBrwO:aArrayData[I,3]*oSIMU:oBrwO:aArrayData[I,4]
+          oSIMU:oBrwO:aArrayData[I,7]:=oSIMU:oBrwO:aArrayData[I,3]*oSIMU:oBrwO:aArrayData[I,6]
+      NEXT I
+   ENDIF
+
+   oSIMU:oBrwO:Refresh()
+
+   oSIMU:CALCULAR()
+
+RETURN .T.
+
+FUNCTION AGREGAR()
+LOCAL nLen:=LEN(oSIMU:oBrwO:aArrayData)
+
+   IF !EMPTY(oSIMU:oBrwO:aArrayData[nLen,1])
+      AADD(oSIMU:oBrwO:aArrayData,{"","",0,0,0,0,0,0})
+      oSIMU:oBrwO:Refresh()
+   ENDIF
+RETURN .T.
+
+FUNCTION QUITAR()
+LOCAL aData:={},I
+
+   FOR I:=1 TO LEN(oSIMU:oBrwO:aArrayData)
+       IF oSIMU:oBrwO:nArrayAt<>I
+          AADD(aData,oSIMU:oBrwO:aArrayData[I])
+       ENDIF
+   NEXT I
+
+   IF EMPTY(aData)
+      AADD(aData,{"","",0,0,0,0,0,0})
+   ENDIF
+
+   oSIMU:oBrwO:aArrayData:=ACLONE(aData)
+   oSIMU:oBrwO:Refresh()
+   oSIMU:CALCULAR()
+
+RETURN .T.
+
+FUNCTION LISTINV()
+LOCAL cTable:="DPINV",aFields:={"INV_CODIGO","INV_DESCRI"}
+LOCAL cWhere:="INV_UTILIZ='M' AND INV_ESTADO='A'",cTitle:="Materia Prima"
+LOCAL aTitle:={"Componente","Descripcion"},cCodInv:=""
+
+   cCodInv:=EJECUTAR("REPBDLIST",cTable,aFields,.F.,cWhere,cTitle,aTitle)
+   
+   IF !EMPTY(cCodInv)
+      oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,1]:=cCodInv
+   ENDIF
+RETURN .T.
+
+FUNCTION VALINV()
+LOCAL cDescri:="",nCosto:=0
+LOCAL cCodInv:=oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,1]
+
+   IF EMPTY(cCodInv)
+      RETURN .F.
+   ENDIF
+
+   IF EMPTY(SQLGET("DPINV","INV_CODIGO","INV_UTILIZ='M' AND INV_ESTADO='A' AND INV_CODIGO='"+cCodInv+"'"))
+      MSGINFO("La materia prima no existe")
+      RETURN .F.
+   ENDIF
+
+   cDescri:=SQLGET("DPINV","INV_DESCRI","INV_CODIGO='"+cCodInv+"'")
+   nCosto:=EJECUTAR("INVGETULTCOS",cCodInv,"UND",oDp:cSucursal,,,,oSIMU:lCostoOtra)
+
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,1]:=cCodInv
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,2]:=cDescri
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,3]:=0
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,4]:=nCosto
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,5]:=0
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,6]:=ROUND(nCosto/oSIMU:nValMon,2) // DR20120330a oDp:nCamDef,2)
+   oSIMU:oBrwO:aArrayData[oSIMU:oBrwO:nArrayAt,7]:=0
+   oSIMU:oBrwO:Refresh()
+   oSIMU:CALCULAR()
+RETURN .T.
+

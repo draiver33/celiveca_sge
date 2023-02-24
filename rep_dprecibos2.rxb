@@ -1,0 +1,64 @@
+FUNCTION MAINoGenRep
+ 17cSql,oCursor,cMsg:="",oFont1,oFont2
+ 17oReport,nLineas:=0
+  4oGenRep=NIL
+  2.F.
+ 14
+  1CursorWait()
+  1oGenRep:cWhere :=oGenRep:BuildWhere()
+  1cSql :=oGenRep:BuildSql()
+  4!ChkSql(cSql,@cMsg)
+  1MensajeErr(cMsg,"Reporte <REPORTE>")
+  2.F.
+ 14
+  1EJECUTAR("DPRECIBOSCLIRE1",oGenRep,cSql)
+  4!oGenRep:OutPut(.T.)
+  2.F.
+ 14
+  1oCursor:=OpenTable(cSql,.T.)
+  4oCursor:RecCount()=0
+  1MensajeErr("No fué posible Encontrar Información","Consulta Vacia Reporte <REPORTE>")
+  1oCursor:End()
+  2.F.
+ 14
+  1oCursor:GoTop()
+  1oFont1 := TFont():New("ARIAL",0,-10,,,,,,,,,,,,,,)
+  1oFont2 := TFont():New("ARIAL",0,-10,,.T.,,,,,,,,,,,,)
+  1oReport := DpRptBegin({{||"Recibos de Ingreso"},{||"Fecha: "+dtoc(Date())+" Hora: "+TIME()}},{},{{||"Página: "+str(oReport:nPage,3)+" Registros: "+alltrim(str(nLineas,5))}},{oFont1,oFont2},{},.F.,,,,.T.,,,"Recibos de Ingreso",,,UPPER("CENTER") )
+  1oGenRep:SetDevice(oReport)
+  1DpRptAddColumn({{||"Número"}},,{{||oCursor:REC_NUMERO}},8,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Cliente"}},,{{||oCursor:REC_CODIGO}},10,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Nombre"}},,{{||oCursor:CLI_NOMBRE}},40,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Fecha"}},,{{||oCursor:REC_FECHA}},8,{"99/99/9999"},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptEnd()
+  1oReport:bSkip:={||oCursor:DbSkip()}
+  1oReport:Activate(,{||!oCursor:Eof()},,,{||RepBitmap()},,{|oGrp|oReport:NewLine()},,,,{||ONCHANGE()},,,)
+  1oGenRep:OutPut(.F.)
+  1oFont1:End()
+  1oFont2:End()
+  2NIL
+FUNCTION ONCHANGE
+  1nLineas:=nLineas+1
+  2.T.
+FUNCTION PRINTMEMOcMemo,nCol,lData,nIni
+ 17nFor,aLines
+  4Empty(cMemo)
+  2""
+ 14
+  1nIni := If(nIni == nil,1,nIni )
+  1cMemo :=STRTRAN(cMemo,CHR(10),"")
+  1aLines:=_VECTOR(cMemo,CHR(13))
+  4lData
+  2aLines[1]
+ 14
+ 10nFor := nIni TO LEN(aLines)
+  1oReport:StartLine()
+  1oReport:Say(nCol,aLines[nFor])
+  1oReport:EndLine()
+ 11
+  1oReport:Newline()
+  2""
+FUNCTION REPBITMAP
+  1oDp:cLogoBmp := If(oDp:cLogoBmp == nil,"BITMAPS\LOGO.BMP",oDp:cLogoBmp )
+  1oReport:SayBitmap(.3,.3,oDp:cLogoBmp,.5,.5)
+  2NIL

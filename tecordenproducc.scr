@@ -1,0 +1,657 @@
+// Programa   : TECORDENPRODUCC
+// Fecha/Hora : 04/05/2006 13:50:46
+// Propósito  : Documento DPORDENPRODUCC
+// Creado Por : DpXbase
+// Llamado por: DPORDENPRODUCC.LBX
+// Aplicación : Producción                              
+// Tabla      : DPORDENPRODUCC
+
+#INCLUDE "DPXBASE.CH"
+#INCLUDE "TSBUTTON.CH"
+#INCLUDE "IMAGE.CH"
+
+FUNCTION DPORDENPRODUCC(nOption,cCodigo)
+  LOCAL oBtn,oTable,oGet,oFont,oFontB,oFontG
+  LOCAL cSql,cFile,cExcluye:=""
+  LOCAL nClrText,aItems1:={"Ninguno"}
+  LOCAL oBrw,cSqlCuerpo,oCuerpo,oCol,oCursorC
+  LOCAL cTitle:="Ordenes de Producción"
+
+  cExcluye:="ORP_CODINV,;
+             ORP_NUMERO,;
+             ORP_FECHA,;
+             ORP_ESTADO,;
+             ORP_CODFOR,;
+             ORP_CODALM,;
+             ORP_CANTID,;
+             ORP_FCHENT,;
+             ORP_HORAE"
+
+  DEFAULT cCodigo:="1234",;
+          nOption:=0
+
+
+  oDp:lDpxBase:=.F.
+
+  IF MYCOUNT("DPINV"," INNER  JOIN DPFORMULASPROD ON INV_CODIGO = FOR_CODINV WHERE LEFT(INV_UTILIZ,1)='F'")=0
+     MensajeErr("No hay Productos Definidos para la Fabricación"+CRLF+;
+                "Utilización del Producto debe ser FABRICACION."+CRLF+;
+                "y asociarle Fórmulas para Producción")
+     RETURN .F.
+  ENDIF
+
+ 
+  DEFINE FONT oFont  NAME "Verdana" SIZE 0, -10 BOLD
+  DEFINE FONT oFontB NAME "Arial"   SIZE 0, -12 BOLD ITALIC
+  DEFINE FONT oFontG NAME "Arial"   SIZE 0, -11
+
+  nClrText:=10485760 // Color del texto
+
+  cTitle   :=" {oDp:DPORDENPRODUCC}"
+
+  cSql  :=[SELECT * FROM DPORDENPRODUCC]
+  oTable:=OpenTable(cSql,.F.) // nOption!=1)
+  oTable:cPrimary:="ORP_NUMERO" // Clave de Validación de Registro
+
+  oORDENPRODUCC:=DPEDIT():New(cTitle,"DPORDENPRODUCC.edt","oORDENPRODUCC" , .F. )
+
+  oORDENPRODUCC:lDlg :=.T.            // Formulario Sin Dialog
+  oORDENPRODUCC:nMode:=1              // Formulario Tipo de Documento
+  oORDENPRODUCC:nClrPane:=oDp:nGris
+  oORDENPRODUCC:nOption  :=nOption
+  oORDENPRODUCC:SetTable( oTable , .F. ) // Asocia la tabla <cTabla> con el formulario oORDENPRODUCC
+  oORDENPRODUCC:SetScript()        // Asigna Funciones DpXbase como Metodos de oORDENPRODUCC
+  oORDENPRODUCC:SetDefault()       // Asume valores standar por Defecto, CANCEL,PRESAVE,POSTSAVE,ORDERBY
+  oORDENPRODUCC:cList  :="forms\DPORDENPRODUCC.BRW"
+  oORDENPRODUCC:cView  :="DPORDPRODCCON" 
+
+  //Tablas Relacionadas con los Controles del Formulario
+  oORDENPRODUCC:SetMemo("ORP_NUMMEM","Comentarios para "+GetFromVar("{oDp:xDPORDENPRODUCC}"))
+
+  oORDENPRODUCC:OpcButtons("Menú de Opciones","MENU.BMP",[EJECUTAR("TECORPRODMNU",oORDENPRODUCC)])
+
+
+  oORDENPRODUCC:CreateWindow()        // Presenta la Ventana
+
+  
+  oORDENPRODUCC:ViewTable("DPINV"    ,"INV_DESCRI","INV_CODIGO","ORP_CODINV")
+  oORDENPRODUCC:ViewTable("DPALMACEN","ALM_DESCRI","ALM_CODIGO","ORP_CODALM")
+
+  
+  //
+  // Campo : ORP_CODINV
+  // Uso   : Producto                                
+  //
+  @ 3.0, 1.0 BMPGET oORDENPRODUCC:oORP_CODINV  VAR oORDENPRODUCC:ORP_CODINV ;
+                VALID oORDENPRODUCC:oDPINV:SeekTable("INV_CODIGO",oORDENPRODUCC:oORP_CODINV,NIL,oORDENPRODUCC:oINV_DESCRI);
+                      .AND. oORDENPRODUCC:VALCODINV();
+                    NAME "BITMAPS\FIND.BMP"; 
+                     ACTION (oDpLbx:=DpLbx("DPINVCOMP"), oDpLbx:GetValue("INV_CODIGO",oORDENPRODUCC:oORP_CODINV)); 
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_CODINV",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    SIZE 80,10
+
+    oORDENPRODUCC:oORP_CODINV:cMsg    :="Producto"
+    oORDENPRODUCC:oORP_CODINV:cToolTip:="Producto"
+
+  @ 0,0 SAY oORDENPRODUCC:oSayInv PROMPT oDp:xDPINV PIXEL;
+        SIZE NIL,7 FONT oFont COLOR nClrText,15724527
+
+  SayAction(oORDENPRODUCC:oSayInv ,{|| EJECUTAR("DPINVCON",oORDENPRODUCC:ORP_CODINV) })
+
+
+  @ oORDENPRODUCC:oORP_CODINV:nTop,oORDENPRODUCC:oORP_CODINV:nRight+5 SAY oORDENPRODUCC:oINV_DESCRI;
+                            PROMPT oORDENPRODUCC:oDPINV:INV_DESCRI PIXEL;
+                            SIZE NIL,12 FONT oFont COLOR 16777215,16711680 BORDER 
+
+
+  //
+  // Campo : ORP_NUMERO
+  // Uso   : Número                                  
+  //
+  @ 4.8, 1.0 GET oORDENPRODUCC:oORP_NUMERO  VAR oORDENPRODUCC:ORP_NUMERO  VALID CERO(oORDENPRODUCC:ORP_NUMERO) .AND.; 
+                 oORDENPRODUCC:ValUnique(oORDENPRODUCC:ORP_NUMERO);
+                   .AND. !VACIO(oORDENPRODUCC:ORP_NUMERO,NIL);
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_NUMERO",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    SIZE 32,10
+
+    oORDENPRODUCC:oORP_NUMERO:cMsg    :="Número"
+    oORDENPRODUCC:oORP_NUMERO:cToolTip:="Número"
+
+  @ oORDENPRODUCC:oORP_NUMERO:nTop-08,oORDENPRODUCC:oORP_NUMERO:nLeft SAY "Número" PIXEL;
+                            SIZE NIL,7 FONT oFont COLOR nClrText,15724527
+
+
+  //
+  // Campo : ORP_FECHA 
+  // Uso   : Fecha de Registro                       
+  //
+  @ 6.6, 1.0 BMPGET oORDENPRODUCC:oORP_FECHA   VAR oORDENPRODUCC:ORP_FECHA   PICTURE "99/99/9999";
+          NAME "BITMAPS\Calendar.bmp";
+          ACTION LbxDate(oORDENPRODUCC:oORP_FECHA,oORDENPRODUCC:ORP_FECHA);
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_FECHA",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    SIZE 32,10
+
+    oORDENPRODUCC:oORP_FECHA :cMsg    :="Fecha de Registro"
+    oORDENPRODUCC:oORP_FECHA :cToolTip:="Fecha de Registro"
+
+  @ oORDENPRODUCC:oORP_FECHA :nTop-08,oORDENPRODUCC:oORP_FECHA :nLeft SAY "Fecha" PIXEL;
+                            SIZE NIL,7 FONT oFont COLOR nClrText,15724527
+
+
+  //
+  // Campo : ORP_ESTADO
+  // Uso   : Estatus                                 
+  //
+  @ 8.4, 1.0 SAY oORDENPRODUCC:oORP_ESTADO; 
+                 PROMPT SAYOPTIONS("DPORDENPRODUCC","ORP_ESTADO",oORDENPRODUCC:ORP_ESTADO);
+                 BORDER ;
+                 FONT oFontG;
+                 SIZE 4,10
+
+  @ oORDENPRODUCC:oORP_ESTADO:nTop-08,oORDENPRODUCC:oORP_ESTADO:nLeft SAY "Estatus" PIXEL;
+                            SIZE NIL,7 FONT oFont COLOR nClrText,15724527
+
+  @ 5.0,21.0 FOLDER oORDENPRODUCC:oFolder ITEMS "Básicos","Adicionales";
+                      FONT oFontG
+
+  SETFOLDER( 1)
+
+  //
+  // Campo : ORP_CODFOR
+  // Uso   : Forma de Producción                     
+  //
+  @ 0.6, 0.0 COMBOBOX oORDENPRODUCC:oORP_CODFOR VAR oORDENPRODUCC:ORP_CODFOR ITEMS aItems1;
+                      WHEN  ((AccessField("DPORDENPRODUCC","ORP_CODFOR",oORDENPRODUCC:nOption);
+                        .AND. oORDENPRODUCC:nOption!=0) .AND. !Empty(oORDENPRODUCC:ORP_CODINV);
+                        .AND. LEN(oORDENPRODUCC:oORP_CODFOR:aItems)>1);
+                      FONT oFontG;
+                      VALID oORDENPRODUCC:VALCOMPONENTE()
+
+  ComboIni(oORDENPRODUCC:oORP_CODFOR)
+
+  oORDENPRODUCC:oORP_CODFOR:cMsg    :="Forma de Producción"
+  oORDENPRODUCC:oORP_CODFOR:cToolTip:="Forma de Producción"
+
+  @ oORDENPRODUCC:oORP_CODFOR:nTop-08,oORDENPRODUCC:oORP_CODFOR:nLeft SAY "Forma de Producción" PIXEL;
+                            SIZE NIL,7 FONT oFont COLOR nClrText,15724527
+
+
+  //
+  // Campo : ORP_CODALM
+  // Uso   : Almacén                                 
+  //
+  @ 2.4, 0.0 BMPGET oORDENPRODUCC:oORP_CODALM  VAR oORDENPRODUCC:ORP_CODALM  VALID CERO(oORDENPRODUCC:ORP_CODALM);
+                   .AND. oORDENPRODUCC:oDPALMACEN:SeekTable("ALM_CODIGO",oORDENPRODUCC:oORP_CODALM,NIL,oORDENPRODUCC:oALM_DESCRI);
+                    NAME "BITMAPS\FIND.BMP"; 
+                     ACTION (oDpLbx:=DpLbx("DPALMACEN"), oDpLbx:GetValue("ALM_CODIGO",oORDENPRODUCC:oORP_CODALM)); 
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_CODALM",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    SIZE 24,10
+
+    oORDENPRODUCC:oORP_CODALM:cMsg    :="Almacén"
+    oORDENPRODUCC:oORP_CODALM:cToolTip:="Almacén"
+
+  @ 0,0 SAY oDp:xDPALMACEN+" Materias Primas"
+
+
+//GetFromVar("{oDp:xDPALMACEN}")
+
+  @ oORDENPRODUCC:oORP_CODALM:nTop,oORDENPRODUCC:oORP_CODALM:nRight+5 SAY oORDENPRODUCC:oALM_DESCRI;
+                            PROMPT oORDENPRODUCC:oDPALMACEN:ALM_DESCRI PIXEL;
+                            SIZE NIL,12 FONT oFont COLOR 16777215,16711680 BORDER 
+
+
+  //
+  // Campo : ORP_CANTID
+  // Uso   : Cantidad                                
+  //
+  @ 4.2, 0.0 GET oORDENPRODUCC:oORP_CANTID  VAR oORDENPRODUCC:ORP_CANTID  PICTURE "999999999999.999";
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_CANTID",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    SIZE 64,10;
+                    RIGHT
+
+
+    oORDENPRODUCC:oORP_CANTID:cMsg    :="Cantidad"
+    oORDENPRODUCC:oORP_CANTID:cToolTip:="Cantidad"
+
+  @ oORDENPRODUCC:oORP_CANTID:nTop-08,oORDENPRODUCC:oORP_CANTID:nLeft SAY "Cantidad" PIXEL;
+                            SIZE NIL,7 FONT oFont COLOR nClrText,15724527
+
+  @ 6.0, 0.0 GROUP oORDENPRODUCC:oGroup TO 11.0,5 PROMPT "Entrega";
+                      FONT oFontG
+
+  //
+  // Campo : ORP_FCHENT
+  // Uso   : Fecha de Entrega                        
+  //
+  @ 6.0, 0.0 BMPGET oORDENPRODUCC:oORP_FCHENT  VAR oORDENPRODUCC:ORP_FCHENT  PICTURE "99/99/9999";
+          NAME "BITMAPS\Calendar.bmp";
+          ACTION LbxDate(oORDENPRODUCC:oORP_FCHENT,oORDENPRODUCC:ORP_FCHENT);
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_FCHENT",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    SIZE 32,10
+
+    oORDENPRODUCC:oORP_FCHENT:cMsg    :="Fecha de Entrega"
+    oORDENPRODUCC:oORP_FCHENT:cToolTip:="Fecha de Entrega"
+
+
+  //
+  // Campo : ORP_HORAE
+  // Uso   : Hora de Entrega                         
+  //
+  @ 7.8, 0.0 GET oORDENPRODUCC:oORP_HORAE  VAR oORDENPRODUCC:ORP_HORAE ;
+                 VALID VALHORA_AP(oORDENPRODUCC:ORP_HORAE,.T.);
+                    WHEN (AccessField("DPORDENPRODUCC","ORP_HORAE",oORDENPRODUCC:nOption);
+                    .AND. oORDENPRODUCC:nOption!=0);
+                    FONT oFontG;
+                    PICTURE "99:99:X";
+                    SIZE 32,10
+
+    oORDENPRODUCC:oORP_HORAE:cMsg    :="Hora de Entrega"
+    oORDENPRODUCC:oORP_HORAE:cToolTip:="Hora de Entrega"
+
+  @ 1,1 SAY "Unidad de Medida:" 
+
+  @ 2,1 SAY oORDENPRODUCC:oUndMed PROMPT SQLGET("DPFORMULASPROD","FOR_UNDMED",;
+                                  "FOR_CODINV"+GetWhere("=",oORDENPRODUCC:ORP_CODINV)+ " AND "+;
+                                  "FOR_CODIGO"+GetWhere("=",oORDENPRODUCC:ORP_CODFOR))
+
+
+
+@1.3,30  SBUTTON oBtn ;
+          SIZE 40, 18 FONT oFontB;
+          LEFT PROMPT "Solicitudes";
+          NOBORDER;
+          COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+          ACTION (EJECUTAR("TECBRWPEDPRO",oORDENPRODUCC:ORP_CODINV,oORDENPRODUCC:ORP_CODCLI,oORDENPRODUCC)) ;
+          WHEN (oORDENPRODUCC:nOption!=0)
+          oBtn:cMsg:="Solicitudes de Produccion"
+          oBtn:cToolTip:="Solicitudes de Produccion"
+
+
+  @ 3.4,20 SAY "Numero de Mezclas:" 
+  //
+  // Campo : ORP_NUMMEZ
+  // Uso   : NUMERO DE MEZCLAS 
+  //
+
+  @ 5,16 GET oORDENPRODUCC:oORP_NUMMEZ VAR oORDENPRODUCC:ORP_NUMMEZ;
+                 VALID oORDENPRODUCC:VALMEZCLA();
+                 WHEN (AccessField("DPORDENPRODUCC","ORP_NUMMEZ",oORDENPRODUCC:nOption);
+                       .AND. oORDENPRODUCC:nOption!=0);
+                 FONT oFontG;
+                 PICTURE "999,999";
+                 SIZE 32,10 RIGHT
+
+    oORDENPRODUCC:oORP_NUMMEZ:cMsg:="Numero de Mezclas"
+    oORDENPRODUCC:oORP_NUMMEZ:cToolTip:="Numero de Mezclas"
+
+
+  AEVAL(oORDENPRODUCC:oFolder:aDialogs[1],{|oGet| IIF("TBMPGET"$oGet:ClassName() , BMPGETKEYDOWN(oGet) , NIL )})
+
+  SETFOLDER( 2)
+  oORDENPRODUCC:oScroll:=oORDENPRODUCC:SCROLLGET("DPORDENPRODUCC","DPORDENPRODUCC.SCG",cExcluye)
+  SETFOLDER(0)
+
+  IF oORDENPRODUCC:oScroll<>NIL
+    oORDENPRODUCC:oScroll:SetEdit(.F.)
+  ENDIF
+
+  oORDENPRODUCC:SetEdit(!oORDENPRODUCC:nOption=0)
+
+  oORDENPRODUCC:Activate( {|| oORDENPRODUCC:INICIO() })
+
+  STORE NIL TO oTable,oGet,oFont,oGetB,oFontG
+
+RETURN oORDENPRODUCC
+
+FUNCTION INICIO()
+
+  oORDENPRODUCC:oScroll:oBrw:SetColor(NIL , 14613246 )
+  oORDENPRODUCC:oDlg:oBar:SetColor(CLR_WHITE,oDp:nGris)
+  AEVAL(oORDENPRODUCC:oDlg:oBar:aControls,{|oBtn|oBtn:SetColor(CLR_WHITE,oDp:nGris)})
+
+  IF oORDENPRODUCC:nOption=1
+     oORDENPRODUCC:LOAD(1)
+  ELSE
+     oORDENPRODUCC:LOAD(0)
+  ENDIF
+
+RETURN .T.
+
+
+/*
+// Carga de los Datos
+*/
+FUNCTION LOAD()
+LOCAL cSql:="",oTable
+LOCAL cTime // DR20111110a
+
+  IF oORDENPRODUCC:nOption=0 // Incluir en caso de ser Incremental
+
+     oORDENPRODUCC:SetEdit(.F.) // Inactiva la Edicion
+     oORDENPRODUCC:oORP_CODFOR:SetItems({oORDENPRODUCC:ORP_CODFOR})
+     oORDENPRODUCC:oORP_CODFOR:Select(1)
+
+     COMBOINI(oORDENPRODUCC:oORP_CODFOR)
+
+     oORDENPRODUCC:oORP_CODFOR:Refresh(.t.)
+
+     oORDENPRODUCC:oORP_ESTADO:Refresh(.T.)
+	//oORDENPRODUCC:ORP_CANTID:=ORP_CANTID
+
+	oORDENPRODUCC:oORP_CANTID:Refresh(.T.)
+
+     oORDENPRODUCC:aPedidos:={}
+
+     oORDENPRODUCC:oORP_NUMMEZ:Refresh(.T.)
+
+  ELSE
+
+     cSql:="SELECT PED_NUMPED,PED_CANTID,PED_ITEM FROM "+;
+           "TECPEDORDEN INNER JOIN DPDOCCLI ON DOC_NUMERO=PED_NUMPED AND DOC_TIPDOC='PED' "+;
+           "INNER JOIN DPCLIENTES ON DOC_CODIGO=CLI_CODIGO "+;
+           "WHERE DOC_TIPDOC='SDP' AND PED_NUMORD"+GETWHERE("=",oORDENPRODUCC:ORP_NUMERO)+;
+           " AND DOC_ESTADO='AC'"
+
+	oTable:=OpenTable(cSql,.T.)
+
+     IF oTable:RecCount()>0
+        oORDENPRODUCC:aPedidos:=ACLONE(oTable:aDataFill)
+     ENDIF
+
+     oORDENPRODUCC:SetEdit(.T.) // Activa la Edicion
+
+  ENDIF
+
+  IF oORDENPRODUCC:nOption=1 // Incluir en caso de ser Incremental "AGREGAR"
+     oORDENPRODUCC:ORP_ESTADO:="P"
+     oORDENPRODUCC:ORP_CODALM:=SPACE(3)
+     oORDENPRODUCC:ORP_CANTID:=1
+     oORDENPRODUCC:ORP_FECHA :=oDp:dFecha
+     oORDENPRODUCC:ORP_NUMERO:=oORDENPRODUCC:Incremental("ORP_NUMERO",.T.)
+     oORDENPRODUCC:ORP_CODSUC:=oDp:cSucursal
+     // DR20111110a. Cálculo inicial de la hora
+     cTime:=LEFT(Time(),6)
+     IF LEFT(cTime,2)>="12"
+        cTime:=cTime+"P"
+     ELSE
+        cTime:=cTime+"A"
+     ENDIF
+     cTime:=IIF(LEFT(cTime,2)>"12",STRZERO(VAL(LEFT(cTime,2))-12,2),LEFT(cTime,2))+SUBS(cTime,3)
+     oORDENPRODUCC:ORP_HORAE:=cTime // DR20111110a
+     oORDENPRODUCC:oORP_HORAE:Refresh(.T.) // DR20111110a
+  ENDIF
+
+  IF oORDENPRODUCC:oScroll<>NIL
+    oORDENPRODUCC:oScroll:SetEdit(oORDENPRODUCC:nOption=1.OR.oORDENPRODUCC:nOption=3)
+  ENDIF
+
+  oORDENPRODUCC:oUndMed:Refresh(.T.)
+
+  IF oORDENPRODUCC:nOption>1 // 
+
+      IF oORDENPRODUCC:ORP_ESTADO!="P"
+         MensajeErr("Orden de Producción no está Pendiente")
+         RETURN .F.
+      ENDIF
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Ejecuta Cancelar
+*/
+FUNCTION CANCEL()
+RETURN .T.
+
+/*
+// Ejecución PreGrabar
+*/
+FUNCTION PRESAVE()
+  LOCAL lResp:=.T.
+  LOCAL aData:={},nCosto:=0,nValorAg:=0
+
+  lResp:=oORDENPRODUCC:ValUnique(oORDENPRODUCC:ORP_NUMERO)
+
+  IF !lResp
+      MsgAlert("Registro "+CTOO(oORDENPRODUCC:ORP_NUMERO),"Ya Existe")
+  ENDIF
+  
+ IF !oORDENPRODUCC:VALMEZCLA()
+     RETURN .F.
+  ENDIF
+
+  MsgRun("Calculando Costos de Materias Primar y Valor Agregado","Por favor Espere",;
+         {|| aData:=EJECUTAR("DPCOMPRODCON",oORDENPRODUCC:ORP_CODINV , oORDENPRODUCC:ORP_CODFOR , oORDENPRODUCC:ORP_FECHA , NIL, .T.) })
+
+  AEVAL( aData , { |a,n| nCosto  :=nCosto   + IIF( a[5]<>"V" , a[3] , 0 ) ,;
+                         nValorAg:=nValorAg + IIF( a[5]=="V" , a[3] , 0 ) } )
+
+  // Costo y Valor Agregado
+  oORDENPRODUCC:ORP_COSMAT:=nCosto
+  oORDENPRODUCC:ORP_COSVAA:=nValorAg
+
+  // Determinar Ultimo Dpto
+  oORDENPRODUCC:ORP_DPTFIN:=SQLGET("DPCOMPPRODUCCION","COM_CODDEP"," INNER JOIN DPDPTOPRODUCC ON COM_CODDEP=DEP_CODIGO "+;
+                                                                   " WHERE COM_CODINV"+GetWhere("=",oORDENPRODUCC:ORP_CODINV)+;
+                                                                   "   AND COM_CODFOR"+GetWhere("=",oORDENPRODUCC:ORP_CODFOR)+;
+                                                                   " ORDER BY COM_CODDEP DESC LIMIT 1 ")
+
+
+RETURN lResp
+
+/*
+// Ejecución despues de Grabar
+*/
+FUNCTION POSTSAVE()
+LOCAL nIa
+LOCAL cSql,oTable
+LOCAL cWhereP1:="",cWhereP2:="",oTable,cSql:="",aPed:={},I
+
+   IF !EMPTY(oORDENPRODUCC:aPedidos)
+
+      SQLDELETE("TECPEDORDEN","PED_NUMORD='"+oORDENPRODUCC:ORP_NUMERO+"'")
+
+      FOR nIa:=1 TO len(oORDENPRODUCC:aPedidos)	
+          oTable:=OPENTABLE("SELECT * FROM TECPEDORDEN",.F.)
+          oTable:Append()
+          oTable:Replace("PED_NUMPED",oORDENPRODUCC:aPedidos[nIa,1])
+          oTable:Replace("PED_CANTID",oORDENPRODUCC:aPedidos[nIa,2])
+          oTable:Replace("PED_NUMORD",oORDENPRODUCC:ORP_NUMERO)
+          oTable:Replace("PED_ITEM",oORDENPRODUCC:aPedidos[nIa,3])
+          oTable:Replace("PED_CODIGO",oORDENPRODUCC:ORP_CODINV)
+          oTable:Commit()
+          oTable:End()
+      NEXT nIa
+   ENDIF
+
+   // Genera los Departamentos por Producción
+   EJECUTAR("DPGENDEPTOPROD",oORDENPRODUCC:ORP_CODSUC,oORDENPRODUCC:ORP_NUMERO)
+   EJECUTAR("TECORPRODMNU",oORDENPRODUCC)
+
+RETURN .T.
+
+
+FUNCTION VALCODINV()
+   LOCAL aFormas:={},cCodFor:=oORDENPRODUCC:ORP_CODFOR
+
+   IF EMPTY(oORDENPRODUCC:ORP_CODINV) .OR. !ISSQLGET("DPINV","INV_CODIGO",oORDENPRODUCC:ORP_CODINV) 
+      RETURN .F.
+   ENDIF
+
+   aFormas:=ATABLE("SELECT FOR_CODIGO FROM DPFORMULASPROD WHERE FOR_CODINV"+GetWhere("=",oORDENPRODUCC:ORP_CODINV))
+
+   IF Empty(aFormas)
+      MensajeErr("Producto "+ALLTRIM(oORDENPRODUCC:ORP_CODINV)+" no Posee "+GetFromVar("{oDp:DPFORMULASPROD}"))
+      RETURN .F.
+   ENDIF
+
+//   AEVAL(aFormas,{|a,n|aFormas[n]:=a[1]})
+// oORDENPRODUCC:ORP_CODFOR:=aFormas[1]
+
+   oORDENPRODUCC:oORP_CODFOR:SetItems(aFormas)
+
+   IF oORDENPRODUCC:nOption=1
+     oORDENPRODUCC:oORP_CODFOR:Select(1)
+   ELSE
+     oORDENPRODUCC:ORP_CODFOR:=cCodFor
+   ENDIF
+
+   COMBOINI(oORDENPRODUCC:oORP_CODFOR)
+
+   oORDENPRODUCC:oORP_CODFOR:ForWhen(.T.)
+
+   oORDENPRODUCC:oUndMed:Refresh(.T.)
+
+   IF LEN(aFormas)=1 .AND. !Eval(oORDENPRODUCC:oORP_CODFOR:bValid)
+      RETURN .F.      
+   ENDIF
+
+RETURN .T.
+
+FUNCTION PRINT()
+    LOCAL oRep
+
+    oRep:=REPORTE("DPORDPROD")
+    oRep:SetRango(1,oORDENPRODUCC:ORP_NUMERO,oORDENPRODUCC:ORP_NUMERO)
+
+RETURN .T.
+
+/*
+// Valida los Componentes
+*/
+FUNCTION VALCOMPONENTE()
+   LOCAL lResp,cWhere
+
+  oORDENPRODUCC:oORP_CODFOR:nAt:=MAX(1,oORDENPRODUCC:oORP_CODFOR:nAt)
+  oORDENPRODUCC:ORP_CODFOR:=oORDENPRODUCC:oORP_CODFOR:aItems[oORDENPRODUCC:oORP_CODFOR:nAt]
+
+   oORDENPRODUCC:oUndMed:Refresh(.T.)
+   oORDENPRODUCC:cUndMed:=oORDENPRODUCC:oUndMed:GetText()
+
+   cWhere:="COM_CODINV"+GetWhere("=",oORDENPRODUCC:ORP_CODINV)+" AND "+;
+           "COM_CODFOR"+GetWhere("=",oORDENPRODUCC:ORP_CODFOR)
+
+  IF COUNT("DPCOMPPRODUCCION",cWhere)=0
+     MensajeErr("Producto no posee Componentes para la Fórmula "+oORDENPRODUCC:ORP_CODFOR)
+     RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+
+
+
+
+
+/*
+// Consulta del Documento
+*/
+
+
+FUNCTION DELETE()
+
+   IF oORDENPRODUCC:ORP_ESTADO="A"
+      MSGINFO("La orden de produccion esta anulada")
+      RETURN .F.
+   ENDIF
+
+   IF !MSGNOYES("¿Desea anular la orden de produccion?")
+      RETURN .F.
+   ENDIF
+
+   SQLUPDATE("DPORDENPRODUCC","ORP_ESTADO","A","ORP_NUMERO='"+oORDENPRODUCC:ORP_NUMERO+"'")
+   SQLDELETE("TECPEDORDEN","PED_NUMORD='"+oORDENPRODUCC:ORP_NUMERO+"'")
+   oORDENPRODUCC:oORP_ESTADO:Refresh()
+
+RETURN .F.
+
+FUNCTION CANTIDAD()
+LOCAL nI,nCant:=0
+	FOR nI:=1 TO len(oORDENPRODUCC:aPedidos)
+		nCant:=nCant+oORDENPRODUCC:aPedidos[nI,2]
+      NEXT nI
+
+	oORDENPRODUCC:ORP_CANTID:=nCant
+	oORDENPRODUCC:oORP_CANTID:REFRESH()
+
+RETURN .T.
+
+FUNCTION VALCODCLI()
+LOCAL cNombre:=""
+
+   IF oDp:lCliAlm
+      IF EMPTY(SQLGET("TECEMPCLIPRO","ECP_CODCLI,ECP_CODALM","ECP_CODCLI='"+oORDENPRODUCC:ORP_CODCLI+"'"))
+         MSGINFO("El Codigo no pertenece a una empresa-cliente")
+         RETURN .F.
+      ENDIF
+      oORDENPRODUCC:ORP_CODALM:=oDp:aRow[2]
+   ELSE
+      IF EMPTY(SQLGET("DPCLIENTES","CLI_CODIGO","CLI_CODIGO='"+oORDENPRODUCC:ORP_CODCLI+"'"))
+         MSGINFO("El cliente no esta registrado")
+         RETURN .F.
+      ENDIF
+      oORDENPRODUCC:ORP_CODALM:=oDp:cAlmacen
+   ENDIF
+
+   oORDENPRODUCC:oORP_CODALM:Refresh()
+
+   cNombre:=SQLGET("DPCLIENTES","CLI_NOMBRE","CLI_CODIGO='"+oORDENPRODUCC:ORP_CODCLI+"'")
+   oORDENPRODUCC:oCLI_NOMBRE:SetText(cNombre)
+
+RETURN .T.
+
+FUNCTION LISTCLI()
+LOCAL cCodCli:=""
+LOCAL cTable:="TECEMPCLIPRO INNER JOIN DPCLIENTES ON ECP_CODCLI=CLI_CODIGO"
+LOCAL aFields:={"ECP_CODCLI","CLI_NOMBRE"}
+LOCAL cWhere:="",cTitle:="Clientes",aTitle:={"CODIGO","NOMBRE"}
+
+   IF !oDp:lCliAlm
+      cTable:="DPCLIENTES"
+      aFields:={"CLI_CODIGO","CLI_NOMBRE"}
+      cWhere:="CLI_SITUAC='A'",cTitle:="Clientes",aTitle:={"CODIGO","NOMBRE"}
+   ENDIF
+
+   cCodCli:=EJECUTAR("REPBDLIST",cTable,aFields,.F.,cWhere,cTitle,aTitle)
+
+   IF !EMPTY(cCodCli)
+      oORDENPRODUCC:ORP_CODCLI:=cCodCli
+      oORDENPRODUCC:oORP_CODCLI:Refresh()
+      oORDENPRODUCC:VALCODCLI()
+   ENDIF
+
+RETURN .T. 
+
+FUNCTION VALMEZCLA()
+
+   IF oORDENPRODUCC:ORP_NUMMEZ<=0
+      MSGINFO("La cantidad de mezclas debe ser mayor a cero")
+      RETURN .F.
+   ENDIF
+RETURN .T.
+/*
+FUNCTION VIEW()
+
+   EJECUTAR("DPORDPRODCCON",oORDENPRODUCC:ORP_CODSUC, oORDENPRODUCC:ORP_NUMERO )
+
+RETURN 
+*/
+
+/*
+<LISTA:ORP_CODINV:N:BMPGETL:N:N:Y:Producto,ORP_NUMERO:Y:GET:Y:N:N:Número,ORP_FECHA:N:BMPGET:N:N:Y:Fecha,ORP_ESTADO:N:SAY:N:N:Y:Estatus
+,Pestaña01:N:GET:N:N:N:Básicos,ORP_CODFOR:N:COMBO:N:N:Y:Forma de Producción,ORP_CODALM:N:BMPGETL:N:N:Y:Almacén Destino,ORP_CANTID:N:GET:N:N:Y:Cantidad
+,@Grupo01:N:GET:N:N:N:Entrega,ORP_FCHENT:N:BMPGET:N:N:Y:,ORP_HORAE:N:GET:N:N:Y:,Pestaña02:N:GET:N:N:N:Adicionales,SCROLLGET:N:GET:N:N:N:Para Diversos Campos>
+*/

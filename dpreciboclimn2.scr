@@ -1,0 +1,241 @@
+// Programa   : DPRECIBOCLIMNU2
+// Fecha/Hora : 07/06/2005 15:43:33
+// Prop¢sito  : Menú de Impresión
+// Creado Por : Juan Navas
+// Llamado por: DPRECIBOSCLI2
+// Aplicación : Ventas
+// Tabla      : DPRECIBOSCLI2
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cCodSuc,cNumero,oForm)
+   LOCAL oBtn,oFontB,nAlto:=24-4,nAncho:=120,aBtn:={},I,nLin:=0,nHeight,cTipDoc
+   LOCAL oTable,cNumDoc,cActual:="",lContab
+
+   DEFAULT cCodSuc:=oDp:cSucursal,;
+           cNumero:=STRZERO(2,8)
+
+   AADD(aBtn,{"Recibo"  ,"RECPAGO.BMP"       ,"REC" })
+
+   IF !EMPTY(SQLGET("DPRECIBOSCLI2","REC_TIPDOC,REC_NUMDOC","REC_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+                                   "REC_CODSUC"+GetWhere("=",cCodSuc)))
+
+     cTipDoc:=oDp:aRow[1]
+     cNumDoc:=oDp:aRow[2]
+
+     IF cTipDoc<>"ANT"
+
+        oTable:=OpenTable("SELECT TDC_TIPO,TDC_DESCRI,TDC_FILBMP FROM DPTIPDOCCLI "+;
+                          "WHERE TDC_TIPO"+GetWhere("=",cTipDoc),.T.)
+
+        AADD(aBtn,{ALLTRIM(oTable:TDC_DESCRI),CFILENOPATH(oTable:TDC_FILBMP),"TDOC"  })
+
+        oTable:End()
+
+     ENDIF
+
+   ENDIF
+
+/*
+   IF ValType(oForm)="O" .AND. !Empty(oForm:REC_CBTNUM) 
+      cActual:=EJECUTAR("DPPAGVIEWCON",oForm:REC_CODSUC,oForm:REC_NUMERO,.T.,.F.,.F.)
+   ENDIF
+
+//   IF !Empty(oForm:REC_NUMERO)
+//     AADD(aBtn,{"Ver Asientos", "CONTABILIZAR.BMP","VERASIENTOS"})
+//   ENDIF
+
+   IF cActual<>"S" .AND. oForm:lRecContSel
+     AADD(aBtn,{"Contabilizar", "CONTABILIZAR.BMP","CONTAB"})
+   ENDIF
+
+
+   IF oDp:nVersion>=5
+     AADD(aBtn,{"Digitalización" ,"ADJUNTAR.BMP"     ,"DIGITALIZAR" })
+  ENDIF
+
+   AADD(aBtn,{"Documentos","documentocxc.bmp","DOCS"  })
+*/
+   AADD(aBtn,{"Salir"  , "XSALIR.BMP"     ,"EXIT"  })
+
+   DEFINE FONT oFontB  NAME "MS Sans Serif" SIZE 0, -10 BOLD
+
+   oDpRecMnu:=DPEDIT():New("Recibo ["+cNumero+"]",NIL,"oDpRecMnu",.F.)
+   oDpRecMnu:cCodSuc:=cCodSuc
+   oDpRecMnu:cNumero:=cNumero
+   oDpRecMnu:oForm  :=oForm
+   oDpRecMnu:lMsgBar:=.F.
+   oDpRecMnu:aBtn   :=ACLONE(aBtn)
+   oDpRecMnu:nCrlPane:=16772810
+
+   nHeight:=370
+   nHeight:=0+((Len(aBtn)+1)*(nAlto*2))
+   oDpRecMnu:CreateWindow(nil,70,1,nHeight,(nAncho*2)+12)
+   oDpRecMnu:oDlg:SetColor(NIL,oDpRecMnu:nCrlPane)
+
+   nLin   :=nAlto-nAlto
+
+   FOR I=1 TO LEN(aBtn)
+ 
+     @nLin, 01 SBUTTON oBtn OF oDpRecMnu:oDlg;
+               SIZE nAncho,nAlto-1.5;
+               FONT oFontB;	
+               FILE "BITMAPS\"+aBtn[I,2] ;
+               PROMPT PADR(aBtn[I,1],20);
+               NOBORDER;
+               ACTION 1=1;
+               PIXEL;
+               COLORS CLR_BLUE, {CLR_WHITE, oDpRecMnu:nCrlPane, 1 }
+
+      oBtn:bAction:=BloqueCod("oDpRecMnu:DOCPRORUN(["+aBtn[I,3]+"])")
+
+      nLin:=nLin+nAlto
+
+   NEXT I
+
+   oDpRecMnu:Activate({||DOCPROMNUINI()})
+
+RETURN .T.
+
+/*
+// Iniciaci¢n
+*/
+FUNCTION DOCPROMNUINI()
+
+    oBtn:=oDpRecMnu:oDlg:aControls[1]
+    DPFOCUS(oBtn)
+
+RETURN .T.
+/*
+// Ejecutar
+*/
+FUNCTION DOCPRORUN(cAction)
+  LOCAL oForm:=oDpRecMnu:oForm,oRep
+  LOCAL cScope:="REC_CODSUC"+GetWhere("=",oDpRecMnu:cCodSuc)
+
+  IF cAction="EXIT"
+
+     oDpRecMnu:Close()
+
+     IF ValType(oForm)="O" .AND. ValType(oForm:oDlg)="O" .AND. oForm:oDlg:hWnd>0
+        DpFocus(oForm:oDlg)
+     ENDIF
+
+     RETURN .T.
+
+  ENDIF
+
+  IF cAction="REC"
+
+    oDp:cReciboIni:=oDpRecMnu:cNumero
+    oDp:cReciboFin:=oDpRecMnu:cNumero
+
+    oRep:=REPORTE("DPRECIBOS2",cScope)
+    oRep:SetCriterio(1,oDpRecMnu:cCodSuc)
+    RETURN oRep
+
+  ENDIF
+
+  IF cAction="TOTAL"
+
+      EJECUTAR("DOCTOTAL",{oDpRecMnu:cTipDoc,;
+                           oDpRecMnu:cCodSuc,;
+                           oDpRecMnu:cNumero,;
+                           oDpRecMnu:cCodigo,;
+                           oDpRecMnu:cNomDoc},.T.,NIL,NIL,.T.)
+
+
+     // Verifica que la factura Anterior es la Misma
+     IF (ValType(oDpRecMnu:oForm)="O" .AND. oDpRecMnu:oForm:oWnd:hWnd>0 .AND. ;
+         oDpRecMnu:oForm:nOption<>1 .AND.;
+         oDpRecMnu:cNumero=oDpRecMnu:oForm:DOC_NUMERO)
+
+        oDpRecMnu:oForm:DOC_NETO:=oDp:nNeto
+        oDpRecMnu:oForm:DOC_DCTO:=oDp:nDesc  
+        oDpRecMnu:oForm:oNeto:Refresh(.T.)
+        oDpRecMnu:oForm:oDOC_DCTO:Refresh(.T.)
+       
+     ENDIF
+
+     RETURN .T.
+
+  ENDIF
+
+  IF cAction="PRINT"
+
+      oDp:cDocNumIni:=oDpRecMnu:cNumero
+      oDp:cDocNumFin:=oDpRecMnu:cNumero
+      oRep:=REPORTE("DOCCLI"+oDpRecMnu:cTipDoc)
+ 
+      oDp:oGenRep:aCargo:=oDpRecMnu:cTipDoc
+
+  ENDIF
+
+  IF cAction="EXP"
+
+     RETURN EJECUTAR("DPDOCCLIEXP",NIL,oDpRecMnu:cCodSuc,;
+                                       oDpRecMnu:cTipDoc,;
+                                       oDpRecMnu:cCodigo,;
+                                       oDpRecMnu:cNumero,;
+                                       oDpRecMnu:cNomDoc)
+  ENDIF
+
+
+  IF cAction="CONTAB"
+
+      RETURN EJECUTAR("DPRECIBOCONT",oDpRecMnu:cCodSuc,;
+                                     oDpRecMnu:cNumero,;
+                                     oDpRecMnu:cNumero,;
+                                     NIL,.T.,.T.)
+
+   ENDIF
+
+
+  /*
+  // Digitalizacion
+  */
+  IF cAction="DIGITALIZAR"
+
+     EJECUTAR("DPDOCRECDIG",oDpRecMnu:cCodSuc,oDpRecMnu:cNumero)
+
+  ENDIF
+   
+
+/*
+  IF cAction="OTROS"
+
+     RETURN EJECUTAR("DPDOCCLIOTR",{oDpRecMnu:cTipDoc,;
+                                    oDpRecMnu:cCodSuc,;
+                                    oDpRecMnu:cNumero,;
+                                    oDpRecMnu:cCodigo,;
+                                    oDpRecMnu:cNomDoc},.T.,)
+  ENDIF
+*/
+ 
+RETURN .T.
+
+FUNCTION MNUCERRAR()
+   LOCAL oForm:=oDpRecMnu:oForm
+
+   oDpRecMnu:Close()
+
+   IF ValType(oForm)="O" .AND. ValType(oForm:oDlg)="O" .AND. oForm:oDlg:hWnd>0
+      DpFocus(oForm:oDlg)
+   ENDIF
+
+RETURN .T.
+
+FUNCTION TOTALIZAR()
+RETURN .T.
+
+
+FUNCTION OTROSDATOS()
+RETURN NIL
+
+// EOF
+
+
+
+
+
+

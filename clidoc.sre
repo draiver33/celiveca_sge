@@ -1,0 +1,235 @@
+// Reporte Creado Autom ticamente por Datapro 
+// Fecha      : 19/02/2006 Hora: 16:49:21
+// Aplicaci¢n : 01t
+// Tabla      : DPDOCCLI            
+
+#include "dpxBase.CH"
+#include "DpxReport.ch"
+
+PROCE MAIN(oGenRep)
+     LOCAL cSql,oCursor,cMsg:="",oFont1,oFont2
+
+     PRIVATE oReport,nLineas:=0
+
+     IF oGenRep=NIL
+       RETURN .F.
+     ENDIF
+
+     CursorWait()
+/*
+     // Aqui puede Personalizar la Consulta <QUERY>
+     oGenRep:cSqlSelect    :="SELECT XCAMPO FROM DPDOCCLI"          // Nuevo Select
+     oGenRep:cSqlInnerJoin:=" INNER JOIN TABLAB ON CAMPOA=CAMPOB " // Nuevo Inner Join
+     oGenRep:cSqlOrderBy  :="ORDER BY XCAMPO"                      // Nuevo Order By
+*/
+     oGenRep:cWhere  :=oGenRep:BuildWhere()          // Where Según RANGO/CRITERIO
+
+     oGenRep:cWhere  :=oGenRep:cWhere+;
+                       IIF( Empty(oGenRep:cWhere)," WHERE "," AND ")+;
+                       " DOC_CXC<>0 AND DOC_ACT=1 AND DOC_TIPDOC NOT IN('ODE','ITD','AOD') "
+
+//+;
+//                       IIF( UPPE(RGO_C4)="S" , " AND DOC_ACT<>0 ", "")
+
+
+     cSql   :=oGenRep:BuildSql() // Genera Código SQL
+//? clpcopy(cSql)
+
+     IF !ChkSql(cSql,@cMsg)      // Revisa Posible Ejecución SQL
+        MensajeErr(cMsg,"Reporte <REPORTE>")
+        Return .F.
+     ENDIF
+
+     oCursor:=EJECUTAR("CLIDOCREP",oGenRep)
+
+     IF !oGenRep:OutPut(.T.) // Verifica el Dispositivo de Salida Inicial
+         RETURN .F.
+     ENDIF
+
+     //OpenTable(cSql,.T.)
+
+     IF oCursor:RecCount()=0
+        MensajeErr("No fué posible Encontrar Información","Consulta Vacia Reporte <REPORTE>")
+        oCursor:End()
+        Return .F.
+     ENDIF
+
+     oCursor:GoTop()
+
+     DEFINE FONT oFont1 NAME "ARIAL" SIZE 0,-10
+     DEFINE FONT oFont2 NAME "ARIAL" SIZE 0,-10 BOLD
+
+     REPORT oReport TITLE  "Documentos con Saldos por Cliente",;
+            "Fecha: "+dtoc(Date())+" Hora: "+TIME();
+            CAPTION "Documentos con Saldos por Cliente" ;
+            FOOTER "Página: "+str(oReport:nPage,3)+" Registros: "+alltrim(str(nLineas,5)) CENTER ;
+            FONT oFont1,oFont2;
+            PREVIEW
+
+     oGenRep:SetDevice(oReport) // Asigna parámetros
+
+     
+     COLUMN TITLE "Tipo de Documento";
+            DATA oCursor:DOC_TIPDOC;
+            SIZE 3;
+            LEFT 
+
+     COLUMN TITLE "Número";
+            DATA oCursor:DOC_NUMERO;
+            SIZE 10;
+            LEFT 
+
+     COLUMN TITLE "Fecha","Emisión";
+            DATA F8(oCursor:DOC_FECHA);
+            SIZE 8;
+            LEFT 
+
+     COLUMN TITLE "Monto","Neto";
+            DATA oCursor:DOC_NETO;
+            PICTURE "@E 99,999,999,999.99";
+            TOTAL ;
+            FONT 2 ;
+            SIZE 17;
+            RIGHT  
+
+     COLUMN TITLE "Monto","Pagado";
+            DATA oCursor:DOC_PAGOS;
+            PICTURE "@E 99,999,999,999.99";
+            TOTAL ;
+            FONT 2 ;
+            SIZE 17;
+            RIGHT  
+
+     COLUMN TITLE "Saldo";
+            DATA oCursor:DOC_SALDO;
+            PICTURE "@E 99,999,999,999.99";
+            TOTAL ;
+            FONT 2 ;
+            SIZE 17;
+            RIGHT  
+
+     COLUMN TITLE "Fecha","Vence";
+            DATA F8(oCursor:DOC_FCHVEN);
+            SIZE 8;
+            LEFT 
+
+     COLUMN TITLE "Días","Venc";
+            DATA IIF(oCursor:DOC_SALDO>0,DATE()-oCursor:DOC_FCHVEN,0);
+            PICTURE "9999";
+            SIZE 4;
+            LEFT 
+
+      COLUMN TITLE "Edo";
+            DATA oCursor:DOC_ESTADO;
+            SIZE 3;
+            LEFT 
+
+      GROUP ON oCursor:DOC_CODIGO;
+            FONT 2;
+            HEADER GROUP01();
+            FOOTER ENDGRP01()
+
+     END REPORT
+
+     oReport:bSkip:={||oCursor:DbSkip()}
+
+     ACTIVATE REPORT oReport ;
+              WHILE !oCursor:Eof();
+              ON STARTGROUP oReport:NewLine();
+              ON STARTPAGE  RepBitmap();
+              ON CHANGE ONCHANGE()
+
+     oGenRep:OutPut(.F.) // Verifica el Dispositivo de Salida Final
+
+     oFont1:End()
+     oFont2:End()
+
+RETURN NIL
+
+/*
+// En Cada Registro se puede Aplicar Fórmulas
+// Es llamado por Skip()
+*/
+FUNCTION ONCHANGE()
+
+   nLineas:=nLineas+1 // Es Posible Aplicar Fórmulas
+
+/*
+// Si Desea Imprimir lineas Adicionales que no esten vacias
+  
+*/
+   
+ // PrintMemo(CAMPOMEMO,1,.F.,1) // Imprimir Campo Memo
+
+
+RETURN .T.
+
+/*
+// Imprime Campos Memos
+*/
+FUNCTION PrintMemo(cMemo,nCol,lData,nIni)
+     LOCAL nFor,aLines
+
+     IF Empty(cMemo)
+        RETURN ""
+     ENDIF
+
+     // Inicio del Línea
+     DEFAULT nIni:=1
+
+     cMemo :=STRTRAN(cMemo,CHR(10),"") // Convierte el Campo Memo en Arreglos
+     aLines:=_VECTOR(cMemo,CHR(13))
+
+     IF lData // Requiera la Primera Línea de Datos
+        Return aLines[1]
+     ENDIF
+
+//   oReport:BackLine(1) // Retroceder una Línea
+//   oReport:Newline()   // Adelanta una Línea
+     FOR nFor := nIni TO LEN(aLines)
+         oReport:StartLine()
+         oReport:Say(nCol,aLines[nFor])
+         oReport:EndLine()
+     NEXT
+     oReport:Newline()
+
+RETURN ""
+
+/*
+// Inicio en Cada Página
+*/
+STATIC FUNCTION RepBitMap()
+
+  DEFAULT oDp:cLogoBmp:="BITMAPS\LOGO.BMP"
+
+  oReport:SayBitmap(.3,.3, oDp:cLogoBmp,.5,.5)
+
+RETURN NIL
+/*
+oRun : objeto de Ejecución
+*/
+
+/*
+ Encabezado Grupo : Cliente
+*/
+FUNCTION GROUP01()
+   LOCAL cExp:="",uValue:=""
+   cExp  :="Cliente: "
+   uValue:=oCursor:DOC_CODIGO
+   uValue:=cValtoChar(uValue)+" "+cValToChar(oCursor:CLI_NOMBRE)
+RETURN cExp+uValue
+
+/*
+ Finalizar Grupo : Cliente
+*/
+FUNCTION ENDGRP01()
+   LOCAL cExp:="",uValue:="",cLines:=""
+   cExp  :="Total Cliente:  "
+   uValue:=oReport:aGroups[1]:cValue
+   uValue:=uValue
+   uValue:=cValtoChar(uValue)
+   cLines:=ltrim(str(oReport:aGroups[1]:nCounter))
+   cLines:=" ("+cLines+")"
+RETURN cExp+uValue+cLines
+
+// EOF 

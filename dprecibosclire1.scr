@@ -1,0 +1,378 @@
+// Programa   : DPRECIBOSCLIRE1
+// Fecha/Hora : 12/06/2005 12:29:55
+// Propósito  : Comprobante de Pago
+// Creado Por : Juan Navas
+// Llamado por: REPORTE: DPCBTEPAGO
+// Aplicación : Recibos de InGreso
+// Tabla      : DPRECIBOCLI2
+
+// 12-04-2008  Eliminado mesaje de depuracion dejado olvidado.  Reportado por Yajaira Yanez
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(oGenRep,cSql,lContab)
+   LOCAL oRun,oTable,aRecOpa:={}
+   LOCAL cSql,cWhere,cAlias:=ALIAS(),cSqlCli:="",I,aCaja:={},aLine:={},aBancos:={}
+   LOCAL oCuenta,nMonto:=0
+   LOCAL nAt,aRecibos:={} // Número de Cotizaciones
+   LOCAL cFileDbf  :="",cSqlDir:="",cFilePag2,cFileCon,cNum,cSqlCta,cCodSuc:=oDp:cSucursal
+   LOCAL cFileDoc  :=""
+   LOCAL cFilePag  :=""
+   LOCAL nDcto     :=0
+   LOCAL nRecarg   :=0
+   LOCAL nOtros    :=0
+   LOCAL nRata     :=0
+   LOCAL nMonto    :=0
+ 
+   cFileDbf :=oDp:cPathCrp+"DPRECIBOS"     // Recibo de Pago
+   cFileDoc :=oDp:cPathCrp+"DPRECIBOSDOC"  // Documentos Pagados
+   cFilePag :=oDp:cPathCrp+"DPRECIBOSPAG"  // Pagos en Líneas
+   cFilePag2:=oDp:cPathCrp+"DPRECIBOSPAG2" // Pagos en Columnas
+   cFileCon :=oDp:cPathCrp+"DPRECIBOSCONT" // Asientos Contables
+
+
+   IF oGenRep=NIL .OR. !(oGenRep:oRun:nOut=8 .OR. oGenRep:oRun:nOut=9)  
+      RETURN .F.
+   ENDIF
+
+   // Se Rige por los Asientos Contables
+
+   DEFAULT lContab:=.F.
+ 
+   CLOSE ALL
+
+   cSql    :=oGenRep:cSql
+
+   nAt     :=AT(" FROM ",cSql)
+   cSql    :="SELECT REC_NUMERO "+SUBS(cSql,nAt,LEN(cSql))
+
+   aRecibos:=ATABLE(cSql)
+
+   cSql    :=oGenRep:cSql
+   oGenRep:oRun:lFileDbf:=.T. // ya Existe DBF
+
+
+   nAt     :=AT(" FROM ",cSql)
+   cSql    :="SELECT * "+SUBS(cSql,nAt,LEN(cSql))
+
+
+   oTable:=OpenTable(cSql,.t.)
+
+
+   oTable:Replace("REC_DEBITO" ,0)
+   oTable:Replace("REC_CREDITO",0)
+//   oTable:Replace("REC_MONTO"  ,0)
+   oTable:Replace("REC_LETRAS",PADR("",300))
+   oTable:GoTop()
+
+   WHILE !oTable:Eof()
+
+     cWhere:="DOC_CODSUC"+GetWhere("=",oTable:REC_CODSUC)+" AND "+;
+             "DOC_RECNUM"+GetWhere("=",oTable:REC_NUMERO)+" AND "+;
+             "DOC_TIPTRA='P' AND DOC_ACT=1"
+
+     cCodSuc:=oTable:REC_CODSUC
+
+     oTable:Replace("REC_DEBITO" ,SQLGET("DPDOCCLI","SUM(DOC_NETO*DOC_CXC*-1)",cWhere+" AND DOC_CXC=-1"))
+     oTable:Replace("REC_CREDITO",SQLGET("DPDOCCLI","SUM(DOC_NETO*DOC_CXC*-1)",cWhere+" AND DOC_CXC= 1"))
+//   oTable:Replace("REC_MONTO",oTable:REC_DEBITO-oTable:REC_CREDITO)
+     oTable:Replace("REC_LETRAS",PADR(ENLETRAS(oTable:REC_MONTO),300))
+
+     oTable:DbSkip()
+
+   ENDDO
+   
+   oTable:CTODBF(cFileDbf,"DBFCDX")
+//   oTable:Browse()
+   oTable:End()
+
+   // Lectura de Documentos
+   cSql:="SELECT "+SELECTFROM("DPDOCCLI",.F.)+;
+         ",TDC_DESCRI "+;
+         " FROM DPDOCCLI "+;
+         " INNER JOIN DPTIPDOCCLI ON TDC_TIPO=DOC_TIPDOC "+;
+         " WHERE "+GetWhereOr("DOC_RECNUM",aRecibos)+;
+         "  AND DOC_CODSUC"+GetWhere("=",cCodSuc)+;
+         "  AND DOC_ACT<>0 AND (DOC_TIPTRA='P' OR ( DOC_TIPTRA='D' AND DOC_TIPDOC='ANT' )) "
+
+// DOC_ACT<>0
+// AND ( DOC_TIPTRA='P' OR ( DOC_TIPTRA='D' AND DOC_TIPDOC='ANT' )) "
+
+
+  oTable:=OpenTable(cSql,.T.)
+  oTable:Gotop()
+
+  oTable:Replace("DEBITO" ,0)
+  oTable:Replace("CREDITO",0)
+  oTable:Replace("IVA"    ,0) // Iva Cobrado
+  oTable:Replace("MTODOC" ,0) // Monto del Documento
+
+  // 
+  oTable:Replace("CTA_CODIGO" ,SPACE(20)) // Código
+  oTable:Replace("CTA_DESCRI" ,SPACE(40)) // Descripción
+
+  WHILE !oTable:Eof()
+
+    nDcto  :=0
+    nRecarg:=0
+    nOtros :=0
+
+    oDp:aRow:={}
+
+    oTable:Replace("MTODOC" ,SQLGET("DPDOCCLI","DOC_NETO,DOC_DCTO,DOC_RECARG,DOC_OTROS",cWhere))
+    nRata:=RATA(oTable:DOC_NETO,oTable:MTODOC)
+
+    IF !Empty(oDp:aRow)
+       nDcto  :=oDp:aRow[2]
+       nRecarg:=oDp:aRow[3]
+       nOtros :=oDp:aRow[4]
+    ENDIF
+
+    cWhere:="DOC_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+            "DOC_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+            "DOC_CODIGO"+GetWhere("=",oTable:DOC_CODIGO)+" AND "+;
+            "DOC_NUMERO"+GetWhere("=",oTable:DOC_NUMERO)+" AND "+;
+            "DOC_TIPTRA"+GetWhere("=","D")
+
+    oTable:Replace("DOC_FECHA",SQLGET("DPDOCCLI","DOC_FECHA",cWhere))
+
+    EJECUTAR("DPDOCCLIIMP",oTable:DOC_CODSUC,oTable:DOC_TIPDOC,oTable:DOC_CODIGO,oTable:DOC_NUMERO,;
+                          .F.,nDcto,nRecarg,nOtros)
+
+
+    IF EMPTY(oDp:aArrayIva) // Impuesto de Documentos
+
+          EJECUTAR("DPDOCCLIIVA",oTable:DOC_CODSUC,oTable:DOC_TIPDOC,oTable:DOC_CODIGO,oTable:DOC_NUMERO,.F.,;
+                                 nDcto,nRecarg,nOtros,0)
+
+    ENDIF
+
+    oTable:Replace("DEBITO" ,IIF(oTable:DOC_CXC=-1,oTable:DOC_NETO,0))
+    oTable:Replace("CREDITO",IIF(oTable:DOC_CXC= 1,oTable:DOC_NETO,0))
+    oTable:Replace("IVA"    ,PORCEN(oDp:nIva,nRata)) // Iva Cobrado
+
+    IF oTable:DOC_TIPDOC="OPA"
+      AADD(aRecOpa,oTable:Recno())
+    ENDIF
+
+    oTable:DbSkip()
+
+  ENDDO
+
+  // Agrega los Conceptos de Pago de Cuentas de Egreso
+  oTable:Replace("CTA_CODIGO" ,SPACE(20)) // Código
+  oTable:Replace("CTA_DESCRI" ,SPACE(40)) // Descripción
+
+  oTable:Gotop()
+
+  FOR I=1 TO LEN(aRecOpa)
+
+     oTable:Goto(aRecOpa[I])
+
+     cSqlCta:="SELECT * FROM DPDOCCLICTA WHERE "+;
+              "CCD_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+              "CCD_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+              "CCD_CODIGO"+GetWhere("=",oTable:DOC_CODIGO)+" AND "+;
+              "CCD_NUMERO"+GetWhere("=",oTable:DOC_NUMERO)+" AND "+;
+              "CCD_ACT = 1 "
+
+     // ? CLPCOPY(cSqlCta)
+
+     oCuenta:=OpenTable(cSqlCta,.T.)
+     WHILE !oCuenta:Eof()
+        oTable:AddRecord()
+        oTable:GoBottom()
+        oTable:Replace("DOC_TIPDOC","")
+        oTable:Replace("DOC_NUMERO",oCuenta:CCD_DOCREF)
+        oTable:Replace("TDC_DESCRI",SQLGET("DPCTAEGRESO","CEG_DESCRI","CEG_CODIGO"+GetWhere("=",oCuenta:CCD_CTAEGR)))
+        oTable:Replace("DEBITO" ,IIF(oCuenta:CCD_MONTO>0,oCuenta:CCD_MONTO*+1,0))
+        oTable:Replace("CREDITO",IIF(oCuenta:CCD_MONTO<0,oCuenta:CCD_MONTO*-1,0))
+
+        IF !Empty(oCuenta:CCD_PORIVA)
+           oTable:AddRecord()
+           oTable:GoBottom()
+           oTable:Replace("DOC_NUMERO",oCuenta:CCD_DOCREF)
+           oTable:Replace("DOC_TIPDOC","")
+           oTable:Replace("TDC_DESCRI",ALLTRIM(GetFromVar("{oDp:xDPIVATIP}"))+;
+                                       ALLTRIM(SQLGET("DPIVATIP","TIP_DESCRI","TIP_CODIGO"+GetWhere("=",oCuenta:CCD_TIPIVA)))+;
+                                       " "+LSTR(oCuenta:CCD_PORIVA))
+           nMonto:=PORCEN(oCuenta:CCD_MONTO,oCuenta:CCD_PORIVA)
+           oTable:Replace("DEBITO" ,IIF(nMonto>0,nMonto*+1,0))
+           oTable:Replace("CREDITO",IIF(nMonto<0,nMonto*-1,0))
+        ENDIF
+
+        oCuenta:DbSkip()
+
+     ENDDO
+
+//   oCuenta:Browse()
+     oCuenta:End()
+
+//  oTable:REPLACE("TIP_DESCRI",SQLGET("DPCTAEGRESO","CEG_DESCRI","CEG_CODIGO"+GetWhere("=",
+
+  NEXT I
+
+  AEVAL(aRecOpa,{|a,n|oTable:aDataFill:=ARREDUCE(oTable:aDataFill,a ) })
+
+  oTable:CTODBF(cFileDoc)
+  oTable:End()
+
+  oTable:=OpenTable(" SELECT "+;
+                    " MOB_TIPO   AS COL01,"+;
+                    " BAN_NOMBRE AS COL02,"+;
+                    " MOB_FECHA  AS COL03,"+;
+                    " MOB_DOCUME AS COL04,"+;
+                    " MOB_MONTO  AS COL05,"+;
+                    " MOB_NUMTRA AS COL06,"+;
+                    " TDB_NOMBRE AS COL07,"+;
+                    " MOB_DOCASO AS COL08,"+;
+                    " MOB_CUENTA AS COL09,"+;
+                    " MOB_CODBCO AS COL10 "+;
+                    " FROM DPCTABANCOMOV "+;
+                    " INNER JOIN DPBANCOS   ON DPBANCOS.BAN_CODIGO = MOB_CODBCO "+;
+                    " INNER JOIN DPBANCOTIP ON TDB_CODIGO=MOB_TIPO "+;
+                    " WHERE "+GetWhereOr("MOB_DOCASO",aRecibos)+;
+                    " AND MOB_ORIGEN"+GetWhere("=","REC"  )+;
+                    " AND MOB_CODSUC"+GetWhere("=",cCodSuc)+;
+                    " AND MOB_ACT=1",.T.)
+
+  aLine:={}
+  // oTable:Browse()
+
+  aBancos:=ACLONE(oTable:aDataFill)
+
+  AEVAL(oTable:aFields,{|a,n|AADD(aLine,CTOEMPTY(oTable:FieldGet(n)))})
+
+  aCaja:=ASQL(" SELECT "+;
+              " CAJ_TIPO   AS COL01,"+;
+              " CAJ_BCODIR AS COL02,"+;
+              " CAJ_FECHA  AS COL03,"+;
+              " CAJ_NUMERO AS COL04,"+;
+              " CAJ_MONTO  AS COL05,"+;
+              " CAJ_NUMTRA AS COL06,"+;
+              " ICJ_NOMBRE AS COL07,"+;
+              " CAJ_DOCASO AS COL08,"+;
+              " CAJ_CHQCTA AS COL09 "+;
+              " FROM DPCAJAMOV "+;
+              " INNER JOIN DPCAJAINST ON ICJ_CODIGO=CAJ_TIPO "+;
+              " WHERE "+GetWhereOr("CAJ_DOCASO",aRecibos)+;
+              " AND CAJ_ORIGEN"+GetWhere("=","REC")+;
+              " AND CAJ_ACT=1"+;
+              " AND CAJ_CODSUC"+GetWhere("=",cCodSuc),.T.)
+
+  AEVAL(aBancos,{|a,n|AADD(aCaja,a)})
+
+  IF EMPTY(aCaja)
+    AADD(aCaja,{"","",CTOD(""),"",0,"","","",""})
+  ENDIF
+
+   
+  FOR I=1 TO LEN(aCaja)
+
+    AADD(oTable:aDatafill,aLine)
+
+    oTable:GoBottom()
+    oTable:Replace("REC_TIPO"  ,aCaja[I,01])
+    oTable:Replace("BAN_NOMBRE",aCaja[I,02])
+    oTable:Replace("REC_FECHA" ,aCaja[I,03])
+    oTable:Replace("REC_DOCUME",aCaja[I,04])
+    oTable:Replace("REC_MONTO" ,aCaja[I,05])
+    oTable:Replace("REC_FORMA" ,aCaja[I,07])
+    oTable:Replace("REC_RECIBO",aCaja[I,08])
+
+  NEXT I
+
+  oTable:CTODBF(cFilePag)
+  oTable:End()
+
+
+
+  // Nueva tablas de Pagos en Columnas
+  oTable:=OpenTable("SELECT REC_NUMERO  FROM DPRECIBOSCLI2",.F.)
+  oTable:AddRecord()
+//oTable:Replace("REC_NUMERO",aCaja[1,08])
+  oTable:Goto(1)
+  oTable:Replace("REC_NUMERO",aCaja[1,08])
+
+//ViewArray(aCaja)
+
+  FOR I=1 TO 10
+     cNum:=STRZERO(I,2)
+     oTable:AddField("MONTO"+cNum,"N",19,2)
+     oTable:Replace("TIPO"  +cNum,CTOEMPTY(aCaja[1,01]))
+     oTable:Replace("NOMBRE"+cNum,CTOEMPTY(aCaja[1,02]))
+     oTable:Replace("FECHA" +cNum,CTOEMPTY(aCaja[1,03]))
+     oTable:Replace("DOCUME"+cNum,CTOEMPTY(aCaja[1,04]))
+     oTable:Replace("MONTO" +cNum,CTOEMPTY(aCaja[1,05]))
+     oTable:Replace("FORMA" +cNum,CTOEMPTY(aCaja[1,07]))
+     oTable:Replace("CUENTA"+cNum,CTOEMPTY(aCaja[1,09]))
+  NEXT I
+
+  FOR I=1 TO LEN(aCaja)
+     cNum:=STRZERO(I,2)
+     oTable:Replace("TIPO"  +cNum,aCaja[I,01])
+     oTable:Replace("NOMBRE"+cNum,aCaja[I,02])
+     oTable:Replace("FECHA" +cNum,aCaja[I,03])
+     oTable:Replace("DOCUME"+cNum,aCaja[I,04])
+     oTable:Replace("MONTO" +cNum,aCaja[I,05])
+     oTable:Replace("FORMA" +cNum,aCaja[I,07])
+  // oTable:Replace("RECIBO"+cNum,aCaja[I,08])
+     oTable:Replace("CUENTA"+cNum,aCaja[I,09])
+  NEXT I
+
+  oTable:End()
+  oTable:CTODBF(cFilePag2)
+
+  cWhere:=GetWhereOr("MOC_DOCPAG",aRecibos)
+
+  cSql:=" SELECT MOC_TIPO,MOC_DOCUME,MOC_CUENTA,MOC_DESCRI,"+;
+        " MOC_MONTO AS DEBE,0 AS HABER,0 AS SALDO,CTA_DESCRI,MOC_ACTUAL,MOC_DOCPAG "+;
+        " FROM DPASIENTOS "+;
+        " INNER JOIN DPCTA ON MOC_CUENTA=CTA_CODIGO "+;
+        " WHERE "+;
+        " MOC_ORIGEN"+GetWhere("=","COM"  )+" AND "+;
+        " MOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+         cWhere
+ 
+  // ? cWhere,cSql
+
+  oTable:=OpenTable(cSql,lContab)
+
+  WHILE !oTable:Eof()
+    oTable:Replace("HABER",IIF(oTable:DEBE<0,oTable:DEBE*-1,0))
+    oTable:Replace("DEBE" ,IIF(oTable:DEBE>0,oTable:DEBE   ,0))
+    oTable:DbSkip()
+  ENDDO
+
+  oTable:CTODBF(cFileCon)
+//  oTable:Browse()
+  oTable:End() 
+
+  FERASE(cFileCon+".CDX")
+  USE (cFileCon+".DBF") VIA "DBFCDX" EXCLU NEW
+  // RELACION CON REC_NUMERO
+  INDEX ON MOC_DOCPAG TAG "COMPROBANTE" TO (cFileCon+".CDX")
+
+  // Buscamos los Pagos
+
+  // Ordena por Número de Recibo
+  FERASE(cFileDoc+".CDX")
+  USE (cFileDoc+".DBF") VIA "DBFCDX" EXCLU NEW
+  INDEX ON DOC_RECNUM TAG "RECIBOS" TO (cFileDoc+".CDX")
+
+  // Ordena por Número de Recibo
+  FERASE(cFilePag+".CDX")
+  USE (cFilePag+".DBF") VIA "DBFCDX" EXCLU NEW
+  INDEX ON REC_RECIBO TAG "RECIBOS" TO (cFilePag+".CDX")
+  CLOSE ALL
+
+  // Pagos en Campos
+  FERASE(cFilePag2+".CDX")
+  USE (cFilePag2+".DBF") VIA "DBFCDX" EXCLU NEW
+  INDEX ON REC_NUMERO TAG "PAGOS" TO (cFilePag2+".CDX")
+
+  CLOSE ALL
+
+RETURN .T.
+// EOF
+
+

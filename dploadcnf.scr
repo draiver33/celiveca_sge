@@ -1,0 +1,603 @@
+// Programa   : LOADCNF
+// Fecha/Hora : 06/02/2005 01:29:02
+// Prop½sito  : Carga la Configuraci½n de la Empresa
+// Creado Por : Juan Navas
+// Llamado por: DPINI
+// Aplicaci¢n : Todas
+// Tabla      : Todas
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(lDpConfig)
+  LOCAL oTable,nCantid,oData
+  LOCAL aVarl :={},I,cVar,bValFecha,nMClrPane:=0,I
+  LOCAL dFecha:=FCHANUAL(oDp:dFecha,DPFECHA())
+
+  DEFAULT lDpConfig   :=.T.,;
+          oDp:lRet_Mun:=.F.
+
+  EJECUTAR("DPLOADCNFADDFIELD") // Agregar Campos Nuevos
+
+  // Utilizados por el Programa ISSENIAT Y Proceso Automático ISSENIAT
+  oDp:lIsSeniat :=.T.
+  oDp:cIpSeniat :=""
+  oDp:cUrlSeniat:=""
+  oDp:cCtaIndef :="Indefinida"
+  oDp:cCedulaUs :=""
+  oDp:cCodRmu   :=NIL // Su valor sera reiniciado en DPRETMUNCREA
+
+  oDp:P_LDpCreaPro:=.T.
+
+  oDp:cCedulaUs :=SQLGET("DPUSUARIOS","OPE_CEDULA,OPE_CARGO,OPE_EMAIL,OPE_FIRMA,OPE_TELEFO,OPE_EXT","OPE_NUMERO"+GetWhere("=",oDp:cUsuario))
+  oDp:cUsCargo  :=DPSQLROW(2,"") // Cargo
+  oDp:cUsEmail  :=DPSQLROW(3,"") // Correo Electrónico
+  oDp:cUsFirma  :=DPSQLROW(4,"") // Firma
+  oDp:cUsTelefo :=DPSQLROW(5,"") // Teléfono
+  oDp:cUsExt    :=DPSQLROW(6,"") // Extension
+
+  oDp:cTareaAut:=STRZERO(0,5)
+  oDp:cComPIndef:="Indefinida"
+
+  EJECUTAR("DPDATACREA",.T.) // Carga el Tabulador de Iva si no Existe
+
+  SQLGET("DPCTA","CTA_CODIGO","CTA_CODIGO"+GetWhere("=",oDp:cCtaIndef))
+
+  IF !Empty(oDp:aRow)
+   oDp:cCtaIndef:=oDp:aRow[1]
+  ENDIF
+
+  // Indentifica los Memos para los Grid según Cada Sucursal, necesario para las Replicaciones
+  oDp:cIdMemo  :=oDp:cSucursal 
+ 
+//  EJECUTAR("DPCREATARUTM") ESTA EN DPDATACREA
+  EJECUTAR("DPCOMPCLACREA") // Crea Clasificacion de Componentes Indefinida
+
+  // Mantiene la conexion con MySQL, evitando salidas por falta de conectividad
+  // JN 22/02/2016 
+  DPSETTIMER({||SQLUPDATE("DPUSUARIOS","OPE_ACTIVO",.T.,"OPE_NUMERO"+GetWhere("=",oDp:cUsuario))},"UPDATEUSUARIO",500)
+
+  IF ISFIELD("DPUSUARIOS","OPE_AUDAPP")
+
+     IF SQLGET("DPUSUARIOS","OPE_AUDAPP","OPE_NUMERO"+GetWhere("=",oDp:cUsuario))
+       DPSETTIMER({||EJECUTAR("DPGETTASK")},"DPGETTASK",100*2) 
+     ELSE
+       DPSETTIMER({||.T.},"DPGETTASK",100) 
+     ENDIF
+
+  ENDIF
+
+  // Documentos del Cliente para Imprimir
+  oDp:cDocNumIni:=""
+  oDp:cDocNumFin:=""
+  oDp:cReciboIni:="" // N£mero de Recibo Inicial
+  oDp:cReciboFin:="" // N£mero del Recibo Final
+  oDp:cUndMed   :="UND" // Unidad de Medida
+
+  oDp:cSelUnaOpc:="Seleccione una Opcion"
+
+  oDp:cCbtePagoIni:="" // N£mero Cbte de Pago Inicial
+  oDp:cCbtePagoFin:="" // N£mero Cbte de Pago Final
+
+  DEFAULT oDp:cPictPrecio:=FIELDPICTURE("DPPRECIOS","PRE_PRECIO" ,.T.),;
+          oDp:cPictCanUnd:=FIELDPICTURE("DPMOVINV" ,"MOV_CANTID" ,.T.),;
+          oDp:cPictTotRen:=FIELDPICTURE("DPMOVINV" ,"MOV_TOTAL"  ,.T.),;
+          oDp:cPictCosto :=FIELDPICTURE("DPMOVINV" ,"MOV_COSTO"  ,.T.),;
+          oDp:cPictValCam:=FIELDPICTURE("DPDOCPRO" ,"DOC_VALCAM" ,.T.),;
+          oDp:cPictComCan:=FIELDPICTURE("DPCOMPPRODUCCION","COM_CANTID" ,.T.)
+
+
+
+  oDp:cImpFiscal :=""        // DPPOSLOAD Asigna el Valor
+  oDp:cNumIslr   :=SPACE(10) // Nœmero de ISLR para Imprimir
+//oDp:cCtaIndef  :="Indefinida" // Cuenta Contable no Definida
+
+  // Cantidad Mas Baja
+  nCantid    :=SqlGetMin("DPUNDMED","UND_CANUND") 
+  // Unidad mÿs Baja
+  // oDp:cUndMed:=SQLGET("DPUNDMED"      , "UND_CODIGO" ,  "UND_CANUND "+GetWhere("=",nCantid)) 
+  
+  // oDp:cPrecio:=SqlGetMin("DPPRECIOTIP", "TPP_CODIGO") 
+
+  // Sintaxis para MYSQL 5
+  IF Empty(oDp:cPrecio)
+    EJECUTAR("DPPRECIOACTIVO")
+    oDp:cPrecio:=SqlGet("DPPRECIOTIP", "TPP_CODIGO"," WHERE TPP_ACTIVO ORDER BY TPP_CODIGO LIMIT 1 ") 
+  ENDIF
+
+
+  // Código del Vendedor
+  // JN 15/03/2016
+  oDp:cVendedor:=SQLGET("DPVENDEDOR", "VEN_CODIGO"," WHERE VEN_SITUAC"=+GetWhere("=","A")+" ORDER BY VEN_CODIGO LIMIT 1 ") 
+
+
+  IF Empty(oDp:cPrecio)
+     MensajeErr("Es necesario Registrar Catálogo de Precios")
+  ENDIF
+
+// Zona por Defecto
+//  oDp:cPais     :="Venezuela" // Pais por defecto
+//  oDp:cEstado   :="-Indefinido"
+//  oDp:cMunicipio:="-Indefinido"
+//  oDp:cParroquia:="-Indefinido"
+
+  // Impuestos al Licor
+  oData:=DATACONFIG("LICORES","ALL")
+
+  oDp:nImpProd:=oData:Get("nImpProd"     ,0.0)
+  oDp:nImpExpe:=oData:Get("nImpExpe"     ,0.0)
+  oDp:nImpBand:=oData:Get("nImpBand"     ,0.0)
+
+  oData:End(.F.)
+
+  oData:=DATASET("REGION","ALL")
+
+  oDp:cPais      :=oData:Get("cPais"     ,"-Indefinido")
+  oDp:cEstado    :=oData:Get("cEstado"   ,"-Indefinido")
+  oDp:cMunicipio :=oData:Get("cMunicipio","-Indefinido")
+  oDp:cParroquia :=oData:Get("cParroquia","-Indefinido")
+  oData:End(.F.)
+
+  oData:=DATASET("CONFIG","ALL")
+  oData:LOAD(.T.) // Recarga Valores
+
+  oDp:nMenuItemClrPane:=oData:Get("nMClrPane" ,oDp:nMenuItemClrPane    ) // Color del Menú en Cada Empresa
+  
+  oDp:cCodPer      :=oData:Get("cCodPer"      , DPGETPERSONAL()) // Personal de la Empresa
+  oDp:cMetodoCos   :=oData:Get("cMetodoCos"   , "P"            ) // Por Defecto es Promedio
+  oDp:cCalPrecio   :=oData:Get("cCalPrecio"   , "P"            ) // Precio - Costo
+  oDp:nRedondeo    :=oData:Get("nRedondeo"    , 0              ) // Redondeo de Precios
+  oDp:nDec_0_4     :=oData:Get("nDec_0_4"     , 5              ) // Aproximar Decima del 0-4
+  oDp:lInvConsol   :=oData:Get("lInvConsol"   , .F.            ) // Consolida Inventario
+  oDp:cForInv      :=oData:Get("cForInv"      , "Estandar"     ) // Formularios de Inventario
+  oDp:lInvAut      :=oData:Get("lInvAut"      , .F.            ) // Códigos Automáticos
+  oDp:nInvLen      :=oData:Get("nInvLen"      , 5              ) // Longitud del Código Automático
+  oDp:lCosProCom   :=oData:Get("lCosProCom"   , .T.            ) // Costo Promedio Según Compras
+  oDp:lCosProHis   :=oDaTa:Get("lCosProHis"   , .T.            ) // Costo Promedio Histórico
+
+  oDp:lConFchDec   :=oData:Get("lConFchDec"   , .F.            ) // Contabilizar por Fecha de Declaracion
+  oDp:cUndSer      :=oData:Get("cUndSer"      , "UND"          ) // Unidad de Medida para Seriales
+  oDp:lIdSucMemo   :=oDaTa:Get("lIdSucMemo"   , .F.            ) // Usar Codigo de Sucursal como ID Memo
+  oDp:cUndMed      :=oData:Get("cUndMed"      , "UND"          ) // Unidad de Medida por defecto, cuando se crea un producto
+  oDp:cPrecio      :=oData:Get("cPrecio"      , "A"            ) // Precio de Venta por Defecto
+
+  oDp:lCbteRes  :=oData:Get("lCbteRes"  ,.F.    )  // Asientos Resumidos
+  oDp:lResInv   :=oData:Get("lResInv"   ,.F.    )  // Resumir Inventario
+  oDp:lResCom   :=oData:Get("lResCom"   ,.F.    )  // Resumir Compras
+  oDp:lResVen   :=oData:Get("lResVen"   ,.F.    )  // Resumir Ventas
+  oDp:lResCaj   :=oData:Get("lResCaj"   ,.F.    )  // Resumir Caja
+  oDp:lResBco   :=oData:Get("lResBco"   ,.F.    )  // Resumir Banco
+  oDp:lResAct   :=oData:Get("lResAct"   ,.F.    )  // Resumir Activos
+  oDp:lCbteInc  :=oData:Get("lCbteInc"  ,.F.    )  // Incrementar Comprobante
+  oDp:lVtaPag   :=oData:Get("lVtaPag"   ,.F.    )  // Venta Con pago el Contado
+  oDp:lComPag   :=oData:Get("lComPag"   ,.F.    )  // Compra Con pago el Contado
+
+  //
+  oDp:lRifCli      :=oData:Get("lRifCli"   ,.F.  )    // Rif utilizado para generar codigo del Cliente
+  oDp:lRifPro      :=oData:Get("lRifPro"   ,.F.  )    // Rif utilizado para Generar Codigo del Proveedor
+  oDp:lAutRif      :=oData:Get("lAutRif"   ,.F.  )    // Rif Automático
+
+  // Activos
+  oDp:lActAut      :=oData:Get("lActAut"      , .T.         ) // Códigos Automáticos
+  oDp:nActLen      :=oData:Get("nActLen"      , 5           ) // Longitud del Código Automático
+
+  IF oDp:cForInv="Estandar"
+     oDp:cForInv:=""
+  ENDIF
+
+  //
+  // Retenciones de IVA Automáticas.
+  //
+
+  oDp:lRetIva_A  :=oData:Get("lRetIva_A"  ,.F.            )  // Retención de IVA. Automático
+  oDp:nRetIvaBase:=oData:Get("nRetIvaBase",0              )  // Retención de IVA (Base)
+  oDp:cRetIslr_C :=oData:Get("cRetIslr_C" ,"R"            )  // Cuando se Aplica??? Cuando se Registra o Paga.
+  oDp:cRetIva_C  :=oData:Get("cRetIva_C"  ,"R"            )  // Retención de IVA. Automático
+  oDp:lAutoSeniat:=oData:Get("lAutoSeniat",oDp:nVersion>=5)  // En las Versiones Anteriores no Existia por esto es .F.
+  oDp:lRetIva_M  :=oData:Get("lRetIva_M"  ,.F.            )  // Retenciones de IVA Infinitas o Mensuales
+  //oDp:nUTRetIva  :=oData:Get("nUTRetIva"  ,20             )  // Unidad Tributaria para Aplicar Retenciones deIVA
+  oDp:nRTIUT     :=oData:Get("nRTIUT"     ,20             )  // Unidad Tributaria para Aplicar Retenciones deIVA
+  oDp:lDateSrv   :=oData:Get("lDateSrv"   ,oDp:lDateSrv   )  // Obtener la Fecha desde la Base de Datos
+  oDp:lRetIvaMul :=oData:Get("lRetIvaMul"  ,.F.           )  // Retenciones de IVA Multiples
+  oDp:lRTItodos  :=oData:Get("lRTItodos"  ,.T.            )  // Aplica retencion de IVA, todos los Casos
+  
+  //
+  // Retenciones de ISLR Automáticas
+  // 
+  oDp:lRetIslr_A   :=oData:Get("lRetIslr_A"   ,.F.            )  // Retención de ISLR Automático
+  oDp:lRetIslr_Cer :=oData:Get("lRetIslr_Cer" ,.F.            )  // Retención de ISLR en Cero
+
+  oDp:lLib_Vta_CXC :=oData:Get("lLib_Vta_CXC" ,.F.            )  // Generar libro ventas si no tiene facturas pendientes
+
+  // Origen de Libros Fiscales
+  oDp:cLib_Vta_Org :=oData:Get("cLib_Vta_ORG" ,"Local"        )  // Origen de Libro de Ventas
+  oDp:cLib_Com_Org :=oData:Get("cLib_Com_ORG" ,"Local"        )  // Origen de Compras de Ventas
+  oDp:cLib_Inv_Org :=oData:Get("cLib_Inv_ORG" ,"Local"        )  // Origen de Compras de Inventaris
+  oDp:cRet_Nom_Org :=oData:Get("cRet_Nom_ORG" ,"Local"        )  // Origen de Retenciones de Nómina
+  oDp:cRet_Isr_Org :=oData:Get("cRet_Isr_ORG" ,"Local"        )  // Origen de Retenciones de ISLR
+  oDp:cCaj_Itf_Org :=oData:Get("cCaj_Itf_ORG" ,"Local"        )  // Origen de ITF de Caja
+
+  oDp:cLib_Vta_Xls :=oData:Get("cLib_Vta_Xls" ,SPACE(40)      )  // Modelo XLS,Origen de Libro de Ventas
+  oDp:cLib_Com_Xls :=oData:Get("cLib_Com_Xls" ,SPACE(40)      )  // Modelo XLS,Origen de Compras de Ventas
+  oDp:cLib_Inv_Xls :=oData:Get("cLib_Inv_Xls" ,SPACE(40)      )  // Modelo XLS,Origen de Compras de Inventaris
+  oDp:cRet_Nom_Xls :=oData:Get("cRet_Nom_Xls" ,SPACE(40)      )  // Modelo XLS,Origen de Retenciones de ISLR Nómina
+  oDp:cRet_Isr_Xls :=oData:Get("cRet_Isr_Xls" ,SPACE(40)      )  // Modelo XLS,Origen de Retenciones de ISLR Pagos
+  oDp:cCaj_Itf_Xls :=oData:Get("cCaj_Itf_Xls" ,SPACE(40)      )  // Modelo XLS,Origen de ITF de Caja
+
+  oDp:cRifIva_ISLR :=oData:Get("cRifIva_ISLR" ,"G200000031"   )  // Modelo XLS, Retenciones de XLS
+  oDp:cRifSeniat   :=oDp:cRifIva_ISLR
+
+
+
+
+  // Conteo Físico
+  oDp:cCodEnt   :=oDaTa:Get("cCodEnt"    ,"E001"   ) 
+  oDp:cCodSal   :=oDaTa:Get("cCodSal"    ,"S001"   )
+
+  // Entrega Productos del Personal
+  oDp:cCodEntPer:=oDaTa:Get("cCodEntPer"    ,"E004"   ) 
+  oDp:cCodSalPer:=oDaTa:Get("cCodSalPer"    ,"S004"   )   
+
+  oDp:cMoneda      :=LEFT(oData:Get("cMoneda   ","Bs"),3)  // Moneda Nacional
+  oDp:cMonedaExt   :=LEFT(oData:Get("cMonedaExt","$" ),3)  // Moneda Extranjera
+  oDp:cClaCli      :=oData:Get("cClaCli"   ,STRZERO(1,6))  // Clasificacion de Clientes
+  oDp:cActividad   :=oData:Get("cActividad",STRZERO(1,6))  // Actividad Econ½mina
+  oDp:cActProvee   :=oData:Get("cActProvee",STRZERO(1,6))  // Actividad Proveedor
+
+  oDp:cCaja      :=oData:Get("cCaja"     ,STRZERO(1,6))  // Codigo de Caja por Defecto
+  oDp:cGrupoInv  :=oData:Get("cGrupoInv" ,STRZERO(1,6))  // Grupos
+  oDp:cMarcaInv  :=oData:Get("cMarcaInv" ,STRZERO(1,6))  // Marcas
+  oDp:cBilletes  :=oData:Get("cBilletes" ,PADR("0.10,0.125,0.25,0.50,1,5,10,20,50,100,500,1000,2000,5000,10000,20000,50000",100))  // Marcas
+  oDp:nPorRti    :=oData:Get("nPorRti"   ,75.00) // % Retenci½n de IVA
+  oDp:cTipPer    :=oData:Get("cTipPer"   ,"Jurídica")    // Persona
+  oDp:cTipCon    :=oData:Get("cTipCon"   ,"Ordinario")   // Contribuyente
+
+  oDp:cTipCon    :=LEFT(oDp:cTipCon,1)
+
+  // No puede Hacer Retenciones de IVA Automáticas
+  IF !LEFT(oDp:cTipCon,1)="E"
+     oDp:lRetIva_A  :=.F.
+  ENDIF
+
+  oDp:cOtrosImp  :=oData:Get("cOtrosImp" ,"R")           // Otros Impuestos (Absoluto o Relativo)
+  oDp:cNumCom    :=oData:Get("cNumCom"   ,STRZERO(1,8))  // Comprobante  
+  oDp:cCodTrans  :=oData:Get("cCodTrans" ,STRZERO(1,6))  // Transporte por Defecto
+  oDp:lGuber     :=.F.  // Gubernamental
+
+  IF oDp:cTipPer="Gobierno" //.OR. oDp:cTipPer="Jurídica Corporativa"
+     oDp:lGuber:=.T.
+  ENDIF
+
+
+  // Datos de la Empresa
+  oDp:cDir1         :=oData:Get("cDir1" ,SPACE(40))   // Dir 1
+  oDp:cDir2         :=oData:Get("cDir2" ,SPACE(40))   // Dir 2
+  oDp:cDir3         :=oData:Get("cDir3" ,SPACE(40))   // Dir 3
+  oDp:cDir4         :=oData:Get("cDir4" ,SPACE(40))   // Dir 4
+  oDp:cTel1         :=oData:Get("cTel1" ,SPACE(12))   // Tel 1
+  oDp:cTel2         :=oData:Get("cTel2" ,SPACE(12))   // Tel 2
+  oDp:cTel3         :=oData:Get("cTel3" ,SPACE(12))   // Tel 3
+  oDp:cTel4         :=oData:Get("cTel4" ,SPACE(12))   // Tel 4
+//oDp:cRif          :=oData:Get("cRif"  ,SPACE(10))   // RIF   
+  oDp:cNit          :=oData:Get("cNit"  ,SPACE(10))   // NIT
+  oDp:cMail         :=oData:Get("cMail" ,SPACE(30))   // Mail
+  oDp:cCiudad       :=oData:Get("cCiudad",SPACE(30))  // Ciudad
+  oDp:dFchIniReg    :=oData:Get("dFchIniReg",CTOD(""))    // Fecha Inicio de Registro(constitución) de la Empresa
+  oDp:dFchFinReg    :=oData:Get("dFchFinReg",CTOD(""))    // Fecha de Fin del Registro(constitución) de la Empresa 
+  oDp:dFchInCalF    :=oData:Get("dFchInCalF",CTOD(""))    // Fecha Inicio Calendario Fiscal y Deberes Formales
+  oDp:dFchConEsp    :=oData:Get("dFchConEsp",CTOD(""))    // Fecha de Inicio Contribuyente especial
+
+  oDp:cWeb          :=oData:Get("cWeb"  ,SPACE(30))   // Web
+  oDp:cEntPre       :=oData:Get("cEntPre"  ,SPACE(4))   
+  oDp:cSalPre       :=oData:Get("cSalPre"  ,SPACE(4))    
+  oDp:cAlmPri      :=oData:Get("cAlmPri"  ,SPACE(3))   
+  oDp:cAlmSeg      :=oData:Get("cAlmSeg"  ,SPACE(3))  
+  oDp:cAlmSto      :=oData:Get("cAlmSto"  ,SPACE(3))  
+
+  //Aplicaciones por Sucursal, 5.1 Se define por Sucursal 14/10/2015
+  oDp:lInvXSuc:=.F. // oData:Get("lInvXSuc",.F.)
+  oDp:lProXSuc:=.F. // oData:Get("lProXSuc",.F.)
+  oDp:lCliXSuc:=.F. // oData:Get("lCliXSuc",.F.)
+  oDp:lBcoXSuc:=.F. // Cuentas Bancarias 
+
+  // Reconversión Monetaria
+  oDp:dFchIniRec:=oData:Get("dFchIniRec" , CTOD("  /  /    "))
+  oDp:dFchFinRec:=oData:Get("dFchFinRec" , CTOD("  /  /    "))
+  oDp:cCtaMonRec:=oData:Get("cCtaMonRec" , SPACE(20)         )
+
+  // oDp:lSucComoEmp:=.F. // Sucursal Funciona como Empresa, su valor cambie en DPRUNEMP
+  // Opciones de Men£
+
+  // Debito Bancario
+  oDp:nDebBanc :=oData:Get("nDebBanc" ,0       ,"N" ) // D‚bito Bancario
+  oDp:dIdbIni  :=oData:Get("dIdbIni"  ,CTOD("") ) // Inicio Debito Bancario
+  oDp:dIdbFin  :=oData:Get("dIdbFin"  ,CTOD("") ) // Inicio Debito Bancario
+  oDp:cCtaIdb  :=oData:Get("cCtaIdb"  ,SPACE(20)) // Cuenta D‚bito Bancario
+
+  // Uso de las Cuentas Contables
+
+  oDp:cCtaBg1:=oData:Get("cCtaBg1" ,"1") 
+  oDp:cCtaBg2:=oData:Get("cCtaBg2" ,"2") 
+  oDp:cCtaBg3:=oData:Get("cCtaBg3" ,"3") 
+  oDp:cCtaBg4:=oData:Get("cCtaBg4" ," ") 
+
+
+  oDp:cCtaGp1:=oData:Get("cCtaGp1" ,"4") 
+  oDp:cCtaGp2:=oData:Get("cCtaGp2" ,"5") 
+  oDp:cCtaGp3:=oData:Get("cCtaGp3" ,"6") 
+  oDp:cCtaGp4:=oData:Get("cCtaGp4" ,"7") 
+  oDp:cCtaGp5:=oData:Get("cCtaGp5" ,"") 
+  oDp:cCtaGp6:=oData:Get("cCtaGp6" ,"") 
+
+  oDp:cCtaCo1:=oData:Get("cCtaCo1" ,"")  // Cuentas de Orden Activo
+  oDp:cCtaCo2:=oData:Get("cCtaCo2" ,"")  // Cuentas de Orden Pasivo
+
+  oDp:cBalCre:=oData:Get("cBalCre" ,"-") // Créditos en Balance General
+  oDp:lCenCos:=oData:Get("lCenCos", .F.) // Cuentas con Centros de Costos
+  oDp:lNumCom:=oData:Get("lNumCom", .F.) // Agrupa Asientos por Modulos               
+
+
+  // Datos de los Seriales
+  oDp:cSerialLen :=oData:Get("cSerialLen"  ,  15 )
+  oDp:cSerialCant:=oData:Get("cSerialCant" ,   4 )
+  oDp:cSerialSep :=oData:Get("cSerialSep"  , "," )
+  oDp:lSerialZero:=oData:Get("lSerialZero" , .F. )
+
+  // Color del menu por Empresa
+  oData:End(.F.)
+
+  // Buscadores Iniciales en LBX
+  oData:=DATASET("LBXFIND","ALL")
+
+  oDp:lDPCLIENTES   :=oData:Get("DPCLIENTES"   ,.F.) // Buscador Inicial
+  oDp:lDPINV        :=oData:Get("DPINV"        ,.F.) // Buscador Inicial
+  oDp:lDPPROVEEDOR  :=oData:Get("DPPROVEEDOR"  ,.F.) // Buscador Inicial
+  oDp:lDPCTA        :=oData:Get("DPCTA"        ,.F.) // Buscador Inicial
+  oDp:lDPCTAEGRESO  :=oData:Get("DPCTAEGRESO"  ,.F.) // Buscador Inicial
+
+  oData:End(.F.)
+
+
+  oData:=DATASET("EMPRESA","USER")
+  oDp:cSucursal  :=oData:Get("cSucursal" ,STRZERO(1,6))
+  oDp:cAlmacen   :=oData:Get("cAlmacen"  ,SQLGET("DPALMACEN","ALM_CODIGO"))
+
+  oDp:cCenCos    :=oData:Get("cCenCos"   ,STRZERO(1,8))
+  oDp:cCodCaja   :=oData:Get("cCodCaja  ",SQLGET("DPCAJA","CAJ_CODIGO","CAJ_ACTIVO=1"))
+  oDp:dFchUltima :=oData:Get("dFchUltima",oDp:dFecha ) // Determina la ultima Fecha
+  oDp:cComGav    :=oData:Get("cComGav"   ,""         ) // Gaveta por Usuario
+
+// oDp:dFchUltima
+// ? oDp:cCodCaja,"cCodCaja"
+// ? oDp:cCenCos,"cCenCos",VALTYPE(oDp:cCenCos)
+
+  oData:End(.F.)
+
+  // Permisos por Usuario
+  oDp:lPermisos:=.T. // Si puede Otorgar permisos por Usuario
+  oDp:lCuentas :=.T. // Si puede Asignar Cuentas Contables
+  oDp:lTactil  :=.F. // Indica si Tiene TouchScreen
+
+  // Datos de los Seriales
+//  oDp:cSerialLen :=10
+//  oDp:cSerialCant:=4
+//  oDp:cSerialSep :=","
+
+  // Por Usuario
+
+  oData:=DATASET("MENUFICHA","USER")
+  oDp:lClienteMnu:=oData:Get("lClienteMnu",.T.)   // Menu Cliente
+  oDp:lInveMnu   :=oData:Get("lInvMnu"    ,.T.)   // Productos
+  oDp:lProveeMnu :=oData:Get("lProveeMnu" ,.T.)   // Proveedor
+  oData:End()
+
+  // D¡as de Vencimiento para Clientes y Proveedores
+  oData:=DATASET("DIASVENCE","USER")
+  oDp:nVenceCli1:=oData:Get("CLIVENCE1" ,  0 )       // Vencimiento 1
+  oDp:nVenceCli2:=oData:Get("CLIVENCE2" , 30 )       // Vencimiento 2
+  oDp:nVenceCli3:=oData:Get("CLIVENCE3" , 60 )       // Vencimiento 3
+  oDp:nVenceCli4:=oData:Get("CLIVENCE4" , 90 )       // Vencimiento 4
+  oDp:nVenceCli5:=oData:Get("CLIVENCE5" ,120 )       // Vencimiento 4
+
+  oDp:lRunLoadCnf:=.T.
+
+  // Valores de Producción
+  oDp:cAlmPrd :=oDp:cAlmacen
+
+  EJECUTAR("DPSUCCUANTOS"   ) // Cuenta Cuantas Sucursales y Almacenes estan definidas
+//EJECUTAR("DPRUNSUC"   , NIL , .F.,.F.) // Removido luego de la lectura del RIF
+  EJECUTAR("DPRUNCENCOS", NIL , .F.)
+  EJECUTAR("DPRUNCAJA"  , NIL , .F.)
+
+  // Ejecuta la Sucursal
+  EJECUTAR("IVALOAD")
+  EJECUTAR("DPBUILDWHERE"   ) // Crea las restricciones por usuario, lo hace el Cambio de Usuario
+  EJECUTAR("DPTIPDOCCLILOAD") // Valores de Documentos del Cliente
+  EJECUTAR("DPTIPDOCPROLOAD") // Valores de Documentos del Proveedor
+  EJECUTAR("DPPOSLOAD"      ) // Valores del Display Serial Debe ser Ejecutado desde el Punto de Venta
+  EJECUTAR("FCH_EJER"       ) // Toma la Fecha del Ejercicio
+  EJECUTAR("DPPRIGENLEE"    ) // Privilegios Generales
+  EJECUTAR("DPCREATERCEROS" ) // Crear Tercero (Indefinido)
+
+  EJECUTAR("DPCTAMODCREA"   ) // Crear Cuenta Modelo B6
+
+  IF COUNT("DPCTA","CTA_ACTIVO=0")>COUNT("DPCTA","CTA_ACTIVO=1")
+    SQLUPDATE("DPCTA","CTA_ACTIVO",.T.) // JN Remover 09/11/2016, Activa todas las cuentas Contables
+  ENDIF
+
+//EJECUTAR("DPSUCCUANTOS"   ) // Cuenta Cuantas Sucursales y Almacenes estan definidas
+
+  // Debe Activar la Moneda
+  SQLUPDATE("DPTABMON","MON_ACTIVO",.T.,"MON_CODIGO"+GetWhere("=",oDp:cMoneda))
+
+  oDp:aMonedas:=aTable("SELECT MON_CODIGO,MON_DESCRI FROM DPTABMON WHERE MON_ACTIVO=1",.T.)
+
+  EJECUTAR("MYLOADCNF")       // Para las Adaptaciones del Cliente
+  EJECUTAR("EMPSAVECONF")
+
+
+// Genera las Vistas
+// EJECUTAR("DPLISTATOVISTA")  // Crear Vistas de Precios JN 29/12/2015
+// EJECUTAR("DPTIPIVATOVISTA") // Vista Tributarias
+
+  EJECUTAR("DPVISTASCREAR")
+
+/*
+  IF oDp:cUsuario="01" .OR. oDp:cUsuario="00"
+     EJECUTAR("DPVERREVISION")
+  ENDIF
+*/
+ // EJECUTAR("DPTIMERS")
+
+*********AG20080129
+*********SE AGREGAN ESTAS VARIABLES PARA SER USADAS EN RANGO POR LOS BROWSE DE LOS DOCUMENTOS
+  oDp:dFchIniDoc:=CTOD(SPACE(8))
+  oDp:dFchFinDoc:=CTOD(SPACE(8))
+*********AG20080129
+
+  EJECUTAR("DPDIARIO")
+  EJECUTAR("DPEXPTEMASCREA")
+  // Compromisos del Proveedor Según Ejercicio Económico
+  // Se inactivo mometaneamente ya que cada vez que se ingresa a la empresa vueve a cargar los compromisos TJ
+ // EJECUTAR("DOCPROPROGEJER")
+
+  AUDITAR("CINI" , .F. ,NIL , "Ingresar a Empresa",oDp:cDpAudita)
+
+  // Validar Moneda o Divisa.
+  IF !ISSQLGET("DPTABMON","MON_CODIGO",oDp:cMoneda ) .AND. lDpConfig
+     MensajeErr(oDp:xDPTABMON+" ="+oDp:cMoneda+" no está Registrado")
+     EJECUTAR("DPCONFIG")
+  ENDIF
+
+  EJECUTAR("PLUGIN_EMP")
+
+  // Indica si usuario Graba Datos para el ERP/EMANAGER
+  DEFAULT oDp:lSaveErp:=.F.
+
+ 
+  SQLUPDATE("DPEMPRESA","EMP_FCHULT",oDp:dFecha,"EMP_CODIGO"+GetWhere("=",oDp:cEmpCod))
+
+  oDp:lExcluye:=.F.
+  oDp:cTipFch :=SQLGET("DPEMPRESA","EMP_TIPFCH,EMP_FCHULT,EMP_RIF","EMP_CODIGO"+GetWhere("=",oDp:cEmpCod))
+  oDp:cRif    :=DPSQLROW(3)
+
+  // Asume la Fecha según el Tipo de Empresa
+
+  oDp:cTipFch :=IIF(Empty(oDp:cTipFch),"S", oDp:cTipFch )
+  oDp:dFchUlt :=DPSQLROW(2)
+  oDp:dFchUlt :=IIF(Empty(oDp:dFchUlt),oDp:dFecha,oDp:dFchUlt)
+  oDp:lDateSrv:=(oDp:cTipFch="S")
+
+  IF oDp:cTipFch="U"
+     oDp:dFecha:=oDp:dFchUlt
+  ENDIF
+
+  IF Empty(oDp:cRif) .AND. lDpConfig
+     MsgMemo("Es importante Registrar el RIF de la Empresa "+oDp:cEmpCod)
+     EJECUTAR("DPCONFIG")
+  ENDIF
+
+  // Si la Sucursal es Empresa, asume el RIF de la Sucursal
+  EJECUTAR("DPRUNSUC"   , NIL , .F.,.F.) 
+
+/*
+ 
+  SQLGET("DPSUCURSAL","SUC_EMPRES,SUC_RIF","SUC_CODIGO"+GetWhere("=",oDp:cSucursal))
+
+  IF DPSQLROW(1)
+     oDp:cRif:=DPSQLROW(2)
+  ENDIF
+
+  IF oDp:cTipFch="U"
+     oDp:dFecha:=oDp:dFchUlt
+  ENDIF
+*/
+
+  oDp:lSaveErp:=SQLGET("DPUSUARIOS","OPE_ERPEMN","OPE_NUMERO"+GetWhere("=",oDp:cUsuario))
+
+  IF (Empty(oDp:dFchIniReg) .AND. oDp:cTipPer<>"N") .AND. lDpConfig
+     MsgMemo("Es necesario Registrar El RIF y fecha de Constitución de la Empresa")
+     EJECUTAR("DPCONFIG")
+     RETURN .T.
+  ENDIF
+
+//  oDp:cRif:=ALLTRIM(SQLGET("DPEMPRESA","EMP_RIF","EMP_CODIGO"+GetWhere("=",oDp:cEmpCod)))
+
+  DEFAULT  oDp:lDateSrv:=.T.
+
+  // JN 09/11/2016 Cuando se Activa la Traza de Ejecución no se Ejecuta DPFECHASRV
+  IF oDp:lDateSrv .AND. !Empty(oDp:cFileToScr)
+
+//   oDp:oFrameDp:SetText(oDp:cTimeDB),;
+
+     bValFecha:={|dFecha|dFecha:=oDp:dFecha,;
+                         EJECUTAR("DPFECHASRV"),;
+                         IF(dFecha<>oDp:dFecha,EJECUTAR("DPBARMSG"),NIL) }
+     // Cada Minuto Revisa la Fecha del Servidor
+
+     DPSETTIMER(bValFecha,"FECHADELSERVIDOR",30) 
+
+  ELSE
+
+     bValFecha:=NIL
+     DPSETTIMER(bValFecha,"FECHADELSERVIDOR",0) 
+
+  ENDIF
+
+  // Crea el Calendario de Deberes formales del Ejercicio
+  IF lDpConfig  
+ 
+     EJECUTAR("DPFORMYTAREASCREAPRG")
+
+  ENDIF
+  // Crear Variable oDp:cCodPer
+
+  DPGETPERSONAL()
+
+  EJECUTAR("DPTIPCXPPROGSAVE") // Agrega Planificación DPTIPCXPPROG
+  EJECUTAR("DPDPTOCREA")       // Crea Departamento por Defecto
+  EJECUTAR("DPTABMONVAR")      // Genera Variables para Divisas.
+
+
+  // Determinar Ultima fecha del IPC/INPC
+  oDp:bFchIpc:={|dFecha|dFecha:=SQLGET("DPIPC","CONCAT(IPC_ANO,IPC_MES)","IPC_TASA>0 ORDER BY CONCAT(IPC_ANO,IPC_MES) DESC LIMIT 1"),;
+                              dFecha  :=CTOD("01/"+RIGHT(dFecha,2)+"/"+LEFT(dFecha,4)),dFecha}
+
+  oDp:bFchInpc:={|dFecha|dFecha:=SQLGET("DPIPC","CONCAT(IPC_ANO,IPC_MES)","IPC_INPC>0 ORDER BY CONCAT(IPC_ANO,IPC_MES) DESC LIMIT 1"),;
+                              dFecha  :=CTOD("01/"+RIGHT(dFecha,2)+"/"+LEFT(dFecha,4)),dFecha}
+
+  /*
+  // 22/09/2016
+  */
+  //EJECUTAR("NMLOADCNF")
+  //EJECUTAR("RMULOADCNF") // 01/10/2016 Retenciones Municipales
+
+  EJECUTAR("VIEWCALFIS") // 02/11/2016 Presenta Calendario Fiscal
+
+/*
+  // Solo es Creado con Fecha de Vigencia del Periodo  IVA10%
+  IF oDp:dFecha>=CTOD("24/12/2016") .AND. oDp:dFecha<=CTOD("24/12/2016")+90
+    EJECUTAR("DPIVATIP_CREA","PE","Pago Electrónico",10)
+  ENDIF
+*/
+
+  // oDp:cProv_Exp:="Exporádicos"
+
+RETURN NIL
+/*
+// Determina el Codigo del Personal
+*/
+FUNCTION DPGETPERSONAL()
+
+  DEFAULT oDp:cCodPer:=SQLGET("DPPERSONAL","PER_CODIGO")
+
+ 
+  IF !Empty(oDp:cCedulaUs)
+     oDp:cCodPer:=SQLGET("DPPERSONAL","PER_CODIGO","PER_CEDULA"+GetWhere("=",oDp:cCedulaUs))
+  ENDIF
+
+  IF Empty(oDp:cCodPer)
+     oDp:cCodPer:=SQLGET("DPPERSONAL","PER_CODIGO")
+  ENDIF
+
+RETURN oDp:cCodPer
+// EOF  SGE4

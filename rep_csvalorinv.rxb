@@ -1,0 +1,100 @@
+FUNCTION MAINoGenRep
+ 17cSql,oCursor,cMsg:="",oFont1,oFont2
+ 17cWhere:="",nCosto:=0,cHaving:=""
+ 17oReport,nLineas:=0
+  4oGenRep=NIL
+  2.F.
+ 14
+  1CursorWait()
+  1oGenRep:cWhere :=oGenRep:BuildWhere()
+  1cSql :=oGenRep:BuildSql()
+  4!EMPTY(RGO_I1) .AND. !EMPTY(RGO_F1)
+  1cWhere:=cWhere+" AND (MOV_CODIGO"+GetWhere(">=",RGO_I1)+" AND MOV_CODIGO"+GetWhere("<=",RGO_F1)+")"
+ 14
+  4!EMPTY(RGO_I2) .AND. !EMPTY(RGO_F2)
+  1cWhere:=cWhere+" AND (INV_GRUPO"+GetWhere(">=",RGO_I2)+" AND INV_GRUPO"+GetWhere("<=",RGO_F2)+")"
+ 14
+  4!EMPTY(RGO_C1)
+  1cWhere:=cWhere+" AND MOV_FECHA"+GetWhere("<=",RGO_C1)
+  7
+  1cWhere:=cWhere+" AND MOV_FECHA"+GetWhere("<=",oDp:dFecha)
+ 14
+  4!EMPTY(RGO_C2)
+  1cWhere:=cWhere+" AND MOV_CODALM"+GetWhere("=",RGO_C2)
+ 14
+  4!EMPTY(RGO_C3)
+  1cWhere:=cWhere+" AND MOV_CODSUC"+GetWhere("=",RGO_C3)
+ 14
+  4!EMPTY(RGO_C4)
+  4RGO_C4="S"
+  1cHaving:=" HAVING EXIST>0 "
+ 14
+ 14
+  1cSql:=" SELECT MOV_CODIGO,INV_DESCRI, ROUND(SUM(MOV_CANTID*MOV_CXUND*MOV_FISICO),2) AS EXIST, "+ " MOV_UNDMED,MOV_CODSUC,MOV_CODALM,MOV_DI,INV_GRUPO,GRU_DESCRI FROM DPMOVINV "+ " INNER JOIN DPINV ON INV_CODIGO=MOV_CODIGO "+ " INNER JOIN DPGRU ON INV_GRUPO=GRU_CODIGO "+ " INNER JOIN DPUNDMED ON UND_CODIGO=MOV_UNDMED "+ " WHERE MOV_INVACT=1 AND MOV_FISICO<>0 "+cWhere+" "+ " GROUP BY MOV_CODIGO,MOV_UNDMED "+cHaving
+  1oCursor:=OpenTable(cSql,.T.)
+  1oCursor:Replace("ULT_COSTO",0)
+  1oCursor:Replace("VALOR_INV",0)
+  1oCursor:GoTop()
+  5 !oCursor:Eof()
+  1nCosto:=EJECUTAR("INVGETULTCOS",oCursor:MOV_CODIGO,oCursor:MOV_UNDMED,oCursor:MOV_CODSUC,IIF(!EMPTY(RGO_C1),RGO_C1,oDp:dFecha),"")
+  1oCursor:Replace("ULT_COSTO",ROUND(nCosto,2))
+  4oCursor:EXIST>0
+  1oCursor:Replace("VALOR_INV",ROUND(oCursor:EXIST*nCosto,2))
+  7
+  1oCursor:Replace("VALOR_INV",0)
+ 14
+  1oCursor:Skip()
+  6
+  1oCursor:CTODBF("CRYSTAL\CSVALORINV2.DBF")
+  1oGenRep:oRun:lFileDbf:=.T.
+  4!ChkSql(cSql,@cMsg)
+  1MensajeErr(cMsg,"Reporte <REPORTE>")
+  2.F.
+ 14
+  4!oGenRep:OutPut(.T.)
+  2.F.
+ 14
+  4oCursor:RecCount()=0
+  1MensajeErr("No fué posible Encontrar Información","Consulta Vacia Reporte <REPORTE>")
+  1oCursor:End()
+  2.F.
+ 14
+  1oCursor:GoTop()
+  1oFont1 := TFont():New("ARIAL",0,-10,,,,,,,,,,,,,,)
+  1oFont2 := TFont():New("ARIAL",0,-10,,.T.,,,,,,,,,,,,)
+  1oReport := DpRptBegin({{||"Inventario Valorizado (Ult. Costo)"},{||"Fecha: "+dtoc(Date())+" Hora: "+TIME()}},{},{{||"Página: "+str(oReport:nPage,3)+" Registros: "+alltrim(str(nLineas,5))}},{oFont1,oFont2},{},.F.,,,,.T.,,,"Inventario Valorizado (Ult. Costo)",,,UPPER("CENTER") )
+  1oGenRep:SetDevice(oReport)
+  1DpRptAddColumn({{||"Producto"}},,{{||oCursor:MOV_CODIGO}},20,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Descripción"}},,{{||oCursor:INV_DESCRI}},40,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptEnd()
+  1oReport:bSkip:={||oCursor:DbSkip()}
+  1oReport:Activate(,{||!oCursor:Eof()},,,{||RepBitmap()},,{|oGrp|oReport:NewLine()},,,,{||ONCHANGE()},,,)
+  1oGenRep:OutPut(.F.)
+  1oFont1:End()
+  1oFont2:End()
+  2NIL
+FUNCTION ONCHANGE
+  1nLineas:=nLineas+1
+  2.T.
+FUNCTION PRINTMEMOcMemo,nCol,lData,nIni
+ 17nFor,aLines
+  4Empty(cMemo)
+  2""
+ 14
+  1nIni := If(nIni == nil,1,nIni )
+  1cMemo :=STRTRAN(cMemo,CHR(10),"")
+  1aLines:=_VECTOR(cMemo,CHR(13))
+  4lData
+  2aLines[1]
+ 14
+ 10nFor := nIni TO LEN(aLines)
+  1oReport:StartLine()
+  1oReport:Say(nCol,aLines[nFor])
+  1oReport:EndLine()
+ 11
+  1oReport:Newline()
+  2""
+FUNCTION REPBITMAP
+  1oDp:cLogoBmp := If(oDp:cLogoBmp == nil,"BITMAPS\LOGO.BMP",oDp:cLogoBmp )
+  1oReport:SayBitmap(.3,.3,oDp:cLogoBmp,.5,.5)
+  2NIL

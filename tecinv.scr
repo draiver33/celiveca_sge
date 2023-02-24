@@ -1,0 +1,475 @@
+// Programa   : TECINV
+// Fecha/Hora : 17/10/2004 17:50:07
+// Propósito  : Documento DPINV
+// Creado Por : DpXbase
+// Llamado por: DPINV.LBX
+// Aplicación : Inventario                              
+// Tabla      : DPINV
+
+#INCLUDE "DPXBASE.CH"
+#INCLUDE "TSBUTTON.CH"
+#INCLUDE "IMAGE.CH"
+
+FUNCTION DPINV(nOption,cCodigo,cUtiliz)
+  LOCAL oBtn,oTable,oGet,oFont,oFontB,oFontG
+  LOCAL cSql,cFile,cExcluye:="",bInit
+  LOCAL nClrText
+  LOCAL oBrw,cSqlCuerpo,oCuerpo,oCol,oCursorC,nPrecio:=0,oDpLbx
+  LOCAL cTitle:=oDp:DPINV,;
+        aItems1:=aTable("SELECT TIP_CODIGO,TIP_DESCRI FROM DPIVATIP",.T.)
+
+  cExcluye:="INV_CODIGO,;
+             INV_DESCRI,;
+             INV_IVA"
+
+  DEFAULT cCodigo:="",;
+          nOption:=0
+
+  DEFAULT oDp:cForInv:=""
+
+  // JN 22/12/2015
+  oDpLbx:=GetDpLbx(oDp:nNumLbx)
+
+  oDp:lDpxbase:=.F.
+//? "HOLAAA"
+
+  IF ValType(oDpLbx)="O" .AND. !Empty(oDpLbx:uData1)
+     cUtiliz:=oDpLbx:uData1
+  ENDIF
+
+  IF cUtiliz="Tareas Internas" 
+     RETURN EJECUTAR("DPINVTARINT",nOption,cCodigo)
+  ENDIF
+
+  IF Empty(oDp:cPrecio)
+     MensajeErr("Es necesario Indicar el Catálogo de Precios")
+     oDp:cPrecio:=SqlGetMin("DPPRECIOTIP", "TPP_CODIGO") 
+     RETURN .F.
+  ENDIF
+
+  IF Count("DPUNDMED")=0 
+     MensajeErr("Es Necesario Registrar "+oDP:DPUNDMED)
+     DPLBX("DPUNDMED.LBX")
+     RETURN .T.
+  ENDIF
+
+  DEFINE FONT oFont  NAME "MS Sans Serif" SIZE 0, -14 BOLD
+  DEFINE FONT oFontG NAME "Arial"   SIZE 0, -14
+
+  IF Empty(oDp:cModeVideo)
+    DEFINE FONT oFontB NAME "Arial"   SIZE 0, -12 BOLD ITALIC
+  ELSE
+    DEFINE FONT oFontB NAME "Arial"   SIZE 0, -14 BOLD ITALIC
+  ENDIF
+
+  nClrText:=10485760 // Color del texto
+
+  cTitle   :=" {oDp:DPINV}"
+
+  cSql  :=[SELECT * FROM DPINV ]
+
+  oTable:=OpenTable(cSql,.F.,GETDBSERVER()) // nOption!=1)
+  oTable:cPrimary:="INV_CODIGO" // Clave de Validación de Registro
+
+  oINV:=DPEDIT():New(cTitle ,"DPINV"+oDp:cModeVideo+".edt","oINV" , .F. )
+
+  oINV:lDlg :=.T.                  // Formulario Sin Dialog
+  oINV:nMode:=1                    // Formulario Tipo de Documento
+  oINV:nOption  :=nOption
+  oINV:nPrecio  :=0                // Precio Unitario A
+  oINV:nOpcIni  :=nOption          // Opción Original
+  oINV:lPaste   :=(oDp:nVersion>=4)
+
+  IF (nOption=3 .OR. nOption=1) .AND. !Empty(cCodigo) 
+    oINV:cScope:="INV_CODIGO"+GetWhere("=",cCodigo)
+  ENDIF
+
+  oINV:SetTable( oTable , .F. ) // Asocia la tabla <cTabla> con el formulario oINV
+
+  oINV:SetScript()               // Asigna Funciones DpXbase como Metodos de oINV
+  oINV:SetDefault()              // Asume valores standar por Defecto, CANCEL,PRESAVE,POSTSAVE,ORDERBY
+  oINV:SetMemo("INV_NUMMEM")     // Campo para el Valor Memo
+  oINV:SetBmp("INV_FILBMP" )     // Asignación de Imagen
+
+  IF DPVERSION()>4
+    oINV:SetAdjuntos("INV_FILMAI") // Vinculo con DPFILEEMP
+  ENDIF
+
+  oINV:cList:="DPINV.BRW"       // Visualizar Producto
+
+  IF oDp:nVersion>=5 .AND. oDp:lDPINV // Buscador Inicial
+    oINV:cList:="DPINVBRW"        // Programa DpXBase
+  ENDIF
+
+  oINV:cView:="DPINVCON"        // Programa Consulta
+  oINV:cPrint:="PRINTER"        // Imprimir Ficha
+  oINV:cCodInv:=cCodigo         // Codigo
+  oINV:lPrecio:=AccessField("DPPRECIOS","PRE_PRECIO",oINV:nOption) 
+  oInv:cUndMed:=SQLGET("DPINVMED","IME_UNDMED","IME_CODIGO"+GetWhere("=",oInv:INV_CODIGO))
+  // Acceso por Tabla
+  IF oINV:lPrecio
+     oINV:lPrecio:=IIF(oINV:nOption=1,ISTABINC("DPPRECIOS"),ISTABMOD("DPPRECIOS"))
+  ENDIF
+
+  // oINV:SetKey(VK_F2,{||MsgAlert("F2")})
+  //Tablas Relacionadas con los Controles del Formulario
+
+  oINV:OpcButtons("Precios de Venta"  ,"PRECIOS.BMP"    ,[oINV:PRECIOS(oINV,.T.)])
+  oINV:OpcButtons("Unidades de Medida","RULERS.BMP"     ,[oINV:MEDIDAS(oINV,.T.)])
+  oINV:OpcButtons("Equivalencias"     ,"BARCODE.BMP"    ,[oINV:EQUIVALENCIA(oINV,.T.)])
+  oINV:OpcButtons("Sustitutos",        "SUSTITUTOS.BMP" ,[EJECUTAR("DPSUSTITUTOS",oINV:INV_CODIGO)])
+
+  IF (oDp:cIdApl="9")
+    oINV:OpcButtons("Componentes"     ,"COMPONENTE.BMP" ,[EJECUTAR("DPCOMPONENTES",oINV:INV_CODIGO)])
+  ENDIF
+
+  IF "DATAPRO"$UPPE(oDp:cEmpresa ) .OR. "ADAPTAPRO"$UPPE(oDp:cEmpresa )
+    oINV:OpcButtons("Licencias","LOGODP.BMP"   ,[EJECUTAR("DPLICMENU",oINV:INV_CODIGO)])
+  ENDIF
+
+//  oINV:OpcButtons("Componente Producción","RECETA.BMP" ,[EJECUTAR("DPCOMPPRODUCCIO",oINV:INV_CODIGO)])
+  oINV:OpcButtons("Menú de Opciones"   ,"MENU.BMP"       ,[EJECUTAR("DPINVMNU",oINV:INV_CODIGO,oINV:INV_DESCRI)])
+
+  oINV:CreateWindow()        // Presenta la Ventana
+
+
+  // Opciones del Formulario
+  oINV:nPrecio:=SQLGET("DPPRECIOS", "PRE_PRECIO", "PRE_CODIGO"+GetWhere("=",oINV:INV_CODIGO )+ " AND "+;
+                                                  "PRE_UNDMED"+GetWhere("=",oInv:cUndMed     )+ " AND "+;
+                                                  "PRE_LISTA" +GetWhere("=",oDp:cPrecio     )+ " AND "+;
+                                                  "PRE_CODMON" +GetWhere("=",oDp:cMonedaExt    )) 
+
+  
+  //
+  // Campo : INV_CODIGO
+  // Uso   : C­digo del Producto                     
+  //
+  @ 3.0, 1.0 GET oINV:oINV_CODIGO  VAR oINV:INV_CODIGO;
+                    VALID !Empty(oINV:INV_CODIGO) .AND. oINV:ValUnique(oINV:INV_CODIGO);
+                    WHEN (AccessField("DPINV","INV_CODIGO",oINV:nOption);
+                    .AND. oINV:nOption!=0);
+                    FONT oFontG SIZE NIL,10 
+
+    oINV:oINV_CODIGO:cMsg    :="Código del Producto"
+    oINV:oINV_CODIGO:cToolTip:="Código del Producto"
+
+
+
+
+  @ 0,0 SAY "Código:" PIXEL;
+        SIZE NIL,7 FONT oFont COLOR nClrText,NIL RIGHT
+
+  //
+  // Campo : INV_DESCRI
+  // Uso   : Descripci­n del Producto                
+  //
+  @ 4.8, 1.0 GET oINV:oINV_DESCRI  VAR oINV:INV_DESCRI ;
+                 VALID !Empty(oINV:INV_DESCRI);
+                 WHEN (AccessField("DPINV","INV_DESCRI",oINV:nOption);
+                      .AND. oINV:nOption!=0)
+
+    oINV:oINV_DESCRI:cMsg    :="Descripción del Producto"
+    oINV:oINV_DESCRI:cToolTip:="Descripción del Producto"
+
+  @ 0,0 SAY "Descripción:" PIXEL;
+        SIZE NIL,7 FONT oFont COLOR nClrText,NIL RIGHT
+
+  //
+  // Campo : INV_IVA   
+  // Uso   : Tipo de I.V.A.                          
+  //
+  @ 6.1, 1.0 COMBOBOX oINV:oINV_IVA    VAR oINV:INV_IVA    ITEMS aItems1;
+                      WHEN (AccessField("DPINV","INV_IVA",oINV:nOption);
+                     .AND. oINV:nOption!=0);
+                      FONT oFontG;
+
+
+ ComboIni(oINV:oINV_IVA   )
+
+
+    oINV:oINV_IVA   :cMsg    :="Tipo de I.V.A."
+    oINV:oINV_IVA   :cToolTip:="Tipo de I.V.A."
+
+  @ 0,0 SAY "I.V.A.:" PIXEL;
+        SIZE NIL,7 FONT oFont COLOR nClrText,NIL RIGHT
+
+  //
+  // Campo : PRECIOUA
+  // Uso   : Precio Unitario A
+  //
+
+  @ 4.8, 1.0 GET oINV:oPrecio  VAR oINV:nPrecio ;
+                 PICTURE oDp:cPictPrecio;
+                 WHEN (oINV:lPrecio .AND. oINV:nOption!=0);
+                 RIGHT;
+                 FONT oFontG
+
+
+    oINV:oPrecio:cMsg    :="Precio en ["+oInv:cUndMed+"]"
+    oINV:oPrecio:cToolTip:="Precio en ["+oInv:cUndMed+"]"
+
+  @ 0,0 SAY "Precio ["+oDp:cPrecio+"]:" PIXEL;
+        SIZE NIL,7 FONT oFont COLOR nClrText,NIL RIGHT
+
+  oINV:oScroll:=oINV:SCROLLGET("DPINV","DPINV"+oDp:cForInv+".SCG",cExcluye,,,,0)
+
+  IF Empty(oDp:cModeVideo)
+    oINV:oScroll:SetColSize(200,250+15,240)
+  ELSE
+    oINV:oScroll:SetColSize(200+30,250+50,240+40)
+  ENDIF
+
+  oINV:oScroll:SetColorHead(CLR_WHITE , 16744448,oFont) 
+
+  oINV:oScroll:SetColor(16773862 , CLR_BLUE  , 1 , 16771538 , oFontB) 
+  oINV:oScroll:SetColor(16773862 , CLR_BLACK , 2 , 16771538 , oFont ) 
+  oINV:oScroll:SetColor(16773862 , CLR_GRAY  , 3 , 16771538 , oFont ) 
+
+  IF oINV:IsDef("oScroll")
+    oINV:oScroll:LOADVALUES(.T.)
+  ENDIF
+  
+  bInit:=IIF(oINV:nOption<>0,{||oInv:INICIO(),oINV:LOAD(oINV:nOption)},{||oInv:INICIO()})
+
+  oINV:Activate(bInit)
+
+RETURN oINV
+
+FUNCTION INICIO()
+
+   // Pinta la Barra de Botones
+   oINV:oDlg:oBar:SetColor(CLR_WHITE,oDp:nGris)
+   AEVAL(oINV:oDlg:oBar:aControls,{|oBtn|oBtn:SetColor(CLR_WHITE,oDp:nGris)})
+
+    oInv:cUndMed:=SQLGET("DPINVMED","IME_UNDMED","IME_CODIGO"+GetWhere("=",oInv:INV_CODIGO))
+   oINV:oScroll:oBrw:SetColor(NIL , 16773862 )
+
+   // ViewArray(oINV:oScroll:aData)
+
+RETURN .T.
+
+/*
+// Carga de los Datos
+*/
+FUNCTION LOAD()
+
+  IF oINV:nOption=0 // Incluir en caso de ser Incremental
+     oINV:SetEdit(.F.) // Inactiva la Edicion
+     oInv:cUndMed:=SQLGET("DPINVMED","IME_UNDMED","IME_CODIGO"+GetWhere("=",oInv:INV_CODIGO))
+  ELSE
+     oINV:SetEdit(.T.) // Activa la Edicion
+  ENDIF
+
+  IF oINV:nOption=1 // Incluir en caso de ser Incremental
+
+      // Repetir Valores
+      oINV:INV_APLORG:="ADP"                            // Ingresado por AdaptaPro 
+      oINV:INV_DESCRI:=oTable:INV_DESCRI                // Descripci­n del Producto
+      oINV:INV_IVA   :=oTable:INV_IVA                   // Tipo de I.V.A.
+      oINV:INV_PREREG:="N"                              // No precio Regulado
+
+      IF oDp:lInvAut .AND. oDp:nInvLen>1
+        // Códigos Automáticos de 5 Dígitos
+        oINV:INV_CODIGO:=SQLINCREMENTAL("DPINV","INV_CODIGO")
+        oINV:INV_CODIGO:=PADR(ALLTRIM(RIGHT(oINV:INV_CODIGO,oDp:nInvLen)),LEN(oINV:INV_CODIGO))
+        // AutoIncremental 
+      ENDIF
+
+      oINV:oScroll:Put("INV_ESTADO","Activo")
+      oINV:oScroll:Put("INV_UTILIZ","Venta")
+      oINV:oScroll:Put("INV_ESCOMN","No")
+      oINV:oScroll:Put("INV_APLICA","Todas")
+      oINV:oScroll:Put("INV_PROCED","Nacional")
+      oINV:oScroll:Put("INV_METCOS","Promedio")
+      oInv:cUndMed:=oDp:cUndMed 
+
+
+      oINV:nPrecio   :=0
+
+  ELSE
+     oInv:cUndMed:=SQLGET("DPINVMED","IME_UNDMED","IME_CODIGO"+GetWhere("=",oInv:INV_CODIGO))
+     oINV:nPrecio:=SQLGET("DPPRECIOS", "PRE_PRECIO", "PRE_CODIGO"+GetWhere("=",oINV:INV_CODIGO )+ " AND "+;
+                                                     "PRE_UNDMED"+GetWhere("=",oInv:cUndMed     )+ " AND "+;
+                                                     "PRE_LISTA" +GetWhere("=",oDp:cPrecio)) 
+
+  ENDIF
+
+//  IF oINV:IsDef("oScroll")
+//    oINV:oScroll:SetEdit(oINV:nOption=1.OR.oINV:nOption=3)
+//  ENDIF
+
+  oINV:lPrecio:=AccessField("DPPRECIOS","PRE_PRECIO",oINV:nOption) 
+
+  oINV:oPrecio:ForWhen(.T.)
+
+RETURN .T.
+
+/*
+// Ejecuta Cancelar
+*/
+FUNCTION CANCEL()
+
+//  IF oInv:nOption=3 .AND. !Empty(oInv:cCodInv)
+//     oInv:Close()
+//  ENDIF
+
+RETURN .T.
+
+/*
+// Ejecución PreGrabar
+*/
+FUNCTION PRESAVE()
+  LOCAL lResp:=.T.
+
+  lResp:=oINV:ValUnique(oINV:INV_CODIGO)
+
+  oINV:INV_METCOS:=IIF(Empty(oINV:INV_METCOS),oDp:cMetodoCos,oINV:INV_METCOS)
+  oINV:INV_PROCED:=IIF(Empty(oINV:INV_PROCED),"N"           ,oINV:INV_PROCED)
+  oINV:INV_ESTADO:=IIF(Empty(oINV:INV_ESTADO),"A"           ,oINV:INV_ESTADO)
+  oINV:INV_REQMED:=IIF(Empty(oINV:INV_REQMED),"N"           ,oINV:INV_REQMED)
+  oINV:INV_APLICA:=IIF(Empty(oINV:INV_APLICA),"T"           ,oINV:INV_APLICA)
+  oINV:INV_FCHCRE:=IIF(Empty(oINV:INV_FCHCRE),oDp:dFecha    ,oINV:INV_FCHCRE)
+  oINV:INV_FCHACT:=oDp:dFecha
+
+  IF !lResp
+     MsgAlert("Registro "+CTOO(oINV:INV_CODIGO),"Ya Existe")
+  ENDIF
+
+  IF EMPTY(oINV:INV_CODIGO)
+     MensajeErr("Código no Puede estar Vacio")
+     RETURN .F.
+  ENDIF
+
+  IF !EJECUTAR("VALIDCONTROL",oINV)
+    RETURN .F.
+  ENDIF
+
+  IF lResp
+     lResp:=EJECUTAR("SCROLLGETVALID",oINV:oScroll,oINV:oINV_CODIGO)
+  ENDIF
+
+RETURN lResp
+
+/*
+// Ejecución despues de Grabar
+*/
+FUNCTION POSTSAVE()
+   LOCAL oPrecio, uUndMed,cWhere
+
+/* Antes
+   // Crea Unidad de Medida por Defecto para todos los productos
+   EJECUTAR("DPINVCREAUND",oINV:INV_CODIGO,oDp:cUndMed) 
+*/
+
+   // Se creo esta validacion ya que al ya que si el producto tenia Asignada otra unidad
+   // de medida diferente a UND al modificar el producto y guardar le asignaba la unidad 
+   // de medida que este configurada en definicion del sistema. TJ
+
+   uUndMed:= SQLGET("DPINVMED","IME_UNDMED","IME_CODIGO"+GetWhere("=",oINV:INV_CODIGO))
+
+   IF Empty(uUndMed)
+     EJECUTAR("DPINVCREAUND",oINV:INV_CODIGO,oDp:cUndMed)
+   ENDIF 
+
+   cWhere:="PRE_CODIGO"+GetWhere("=",oINV:INV_CODIGO )+ " AND "+;
+           "PRE_UNDMED"+GetWhere("=",oInv:cUndMed     )+ " AND "+;
+           "PRE_LISTA" +GetWhere("=",oDp:cPrecio     )+ " AND "+;
+           "PRE_CODMON"+GetWhere("=",oDp:cMoneda     )
+
+
+   IF (oINV:nPrecio<>SQLGET("DPPRECIOS", "PRE_PRECIO", cWhere) .AND. oINV:nOption=3);
+       .OR. (oINV:nPrecio>0 .AND. oINV:nOption=1)
+
+   
+     oPrecio:=OpenTable("SELECT * FROM DPPRECIOS WHERE  "+cWhere,.T.)
+
+     IF oPrecio:RecCount()=0
+        oPrecio:AppendBlank()
+        cWhere :=""
+     ENDIF
+
+     EJECUTAR("DPPRECIOSHIS"  ,oINV:INV_CODIGO,oInv:cUndMed,oDp:cPrecio,oDp:cMoneda)
+     EJECUTAR("DPPRECIOPRECIO",oINV:INV_CODIGO,oInv:cUndMed,oDp:cPrecio,oDp:cMoneda,.T.)
+
+     oPrecio:Replace("PRE_CODIGO",oINV:INV_CODIGO)
+     oPrecio:Replace("PRE_UNDMED",oInv:cUndMed    )
+     oPrecio:Replace("PRE_LISTA" ,oDp:cPrecio    )
+     oPrecio:Replace("PRE_PRECIO",oINV:nPrecio   )
+     oPrecio:Replace("PRE_CODMON",oDp:cMoneda    )
+     oPrecio:Replace("PRE_FECHA" ,oDp:dFecha     )
+     oPrecio:Replace("PRE_HORA"  ,TIME()         )
+     oPrecio:Replace("PRE_USUARI",oDp:cUsuario   )
+     oPrecio:Replace("PRE_ORIGEN","F"            )
+     oPrecio:Replace("PRE_IP"    ,GETHOSTBYNAME())
+
+     oPrecio:Commit(cWhere)
+     oPrecio:End()
+
+   ENDIF
+
+   // Debe Cambiar los Componentes
+   IF oINV:nOption=3 .AND. oINV:cCodInv<>oINV:INV_CODIGO
+      SQLUPDATE("DPCOMPONENTES","CPT_COMPON",oINV:INV_CODIGO,"CPT_COMPON"+GetWhere("=",oINV:cCodInv))
+      SQLUPDATE("DPCOMPONENTES","CPT_CODIGO",oINV:INV_CODIGO,"CPT_COMPON"+GetWhere("=",oINV:cCodInv))
+      EJECUTAR("DPTABLEUPLNK","DPINV","INV_CODIGO",oINV:INV_CODIGO,oINV:cCodInv)
+   ENDIF
+
+   IF oInv:INV_UTILIZ="H" .AND. oDp:nVersion>=5
+      EJECUTAR("DPINVTIPDOCCLI",oINV:INV_CODIGO)
+   ENDIF
+
+   EJECUTAR("DPINVMNU",oInv:INV_CODIGO,oINV:INV_DESCRI)
+   EJECUTAR("IME_MEDPRE",oInv:INV_CODIGO) // Asigna la Unidad de Medida de Presentación JN 29/12/2015
+
+
+   IF oInv:INV_UTILIZ="E" .AND. oDp:nVersion>=5
+      EJECUTAR("DPINVEVENTOS",oINV:INV_CODIGO)
+   ENDIF
+
+   EJECUTAR("DPINVSETSUC",oInv:INV_CODIGO)
+
+   IF oINV:nOpcIni=1 .OR. (oInv:nOption=3 .AND. !Empty(oInv:cCodInv))
+      // Incluye desde el ListBox, debe cerrar luego de Incluir
+      oINV:CLOSE()
+   ENDIF
+
+RETURN .T.
+
+FUNCTION PRECIOS(oINV,lSaved)
+  //EJECUTAR("DPPRECIOS",oINV:INV_CODIGO,oINV:INV_DESCRI)
+  EJECUTAR("MINPRECIOS",oINV:INV_CODIGO,oINV:INV_DESCRI)
+RETURN .T.
+
+FUNCTION MEDIDAS(oINV,lSaved)
+   EJECUTAR("DPINVMED",oINV:INV_CODIGO,oINV:INV_DESCRI)
+RETURN .T.
+
+FUNCTION EQUIVALENCIA(oINV,lSaved)
+   EJECUTAR("DPINVEQUIV",oINV:INV_CODIGO,oINV:INV_DESCRI)
+RETURN .T.
+
+
+/*
+// Ejecución para el Borrado 
+*/
+FUNCTION DELETE()
+
+  IF MsgNoYes("Código: "+oINV:INV_CODIGO+CRLF+ALLTRIM(oINV:INV_DESCRI),;
+                        "Eliminar Producto")
+
+    oINV:DelRecord(NIL,.T.)
+
+  ENDIF
+
+RETURN .T.
+
+FUNCTION PRINTER()
+
+   EJECUTAR("DPFICHAINV",oINV:INV_CODIGO )
+
+RETURN .T.
+
+
+/*
+<LISTA:INV_CODIGO:Y:GET:N:N:Y:Código,INV_DESCRI:N:GET:N:Y:Y:Descripción,INV_IVA:N:COMBO:N:Y:Y:I.V.A.,SCROLLGET:N:GET:N:N:N:Para Diversos Campos>
+*/

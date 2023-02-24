@@ -1,0 +1,218 @@
+// Reporte Creado Autom ticamente por Datapro 
+// Fecha      : 08/02/2011 Hora: 10:12:37
+// Aplicaci¢n : 01 Inventario                              
+// Tabla      : DPMOVINV            
+
+#include "dpxBase.CH"
+#include "DpxReport.ch"
+
+PROCE MAIN(oGenRep)
+     LOCAL cSql,oCursor,cMsg:="",oFont1,oFont2
+     LOCAL cWhere:="",nCosto:=0,cHaving:="" // LF20110208
+
+     PRIVATE oReport,nLineas:=0
+
+     IF oGenRep=NIL
+       RETURN .F.
+     ENDIF
+
+     CursorWait()
+/*
+     // Aqui puede Personalizar la Consulta <QUERY>
+     oGenRep:cSqlSelect    :="SELECT XCAMPO FROM DPMOVINV"          // Nuevo Select
+     oGenRep:cSqlInnerJoin:=" INNER JOIN TABLAB ON CAMPOA=CAMPOB " // Nuevo Inner Join
+     oGenRep:cSqlOrderBy  :="ORDER BY XCAMPO"                      // Nuevo Order By
+*/
+     oGenRep:cWhere  :=oGenRep:BuildWhere()          // Where Según RANGO/CRITERIO
+     cSql   :=oGenRep:BuildSql() // Genera Código SQL
+
+     IF !EMPTY(RGO_I1) .AND. !EMPTY(RGO_F1)
+         cWhere:=cWhere+" AND (MOV_CODIGO"+GetWhere(">=",RGO_I1)+" AND MOV_CODIGO"+GetWhere("<=",RGO_F1)+")"
+     ENDIF
+
+     IF !EMPTY(RGO_I2) .AND. !EMPTY(RGO_F2)
+         cWhere:=cWhere+" AND (INV_GRUPO"+GetWhere(">=",RGO_I2)+" AND INV_GRUPO"+GetWhere("<=",RGO_F2)+")"
+     ENDIF
+
+     IF !EMPTY(RGO_C1)
+         cWhere:=cWhere+" AND MOV_FECHA"+GetWhere("<=",RGO_C1)
+     ELSE
+         cWhere:=cWhere+" AND MOV_FECHA"+GetWhere("<=",oDp:dFecha)
+     ENDIF
+
+     IF !EMPTY(RGO_C2)
+         cWhere:=cWhere+" AND MOV_CODALM"+GetWhere("=",RGO_C2)
+     ENDIF
+
+     IF !EMPTY(RGO_C3)
+         cWhere:=cWhere+" AND MOV_CODSUC"+GetWhere("=",RGO_C3)
+     ENDIF
+
+
+     IF !EMPTY(RGO_C4)
+         IF RGO_C4="S"
+            cHaving:=" HAVING EXIST>0 "
+         ENDIF
+     ENDIF	
+
+//EJECUTAR("INVGETULTCOS" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oDpDocMov:DOC_CODSUC, dHasta, cHoraMax )
+
+     cSql:=" SELECT MOV_CODIGO,INV_DESCRI, ROUND(SUM(MOV_CANTID*MOV_CXUND*MOV_FISICO),2) AS EXIST, "+;
+           " MOV_UNDMED,MOV_CODSUC,MOV_CODALM,MOV_DI,INV_GRUPO,GRU_DESCRI FROM DPMOVINV "+;
+           " INNER JOIN DPINV ON INV_CODIGO=MOV_CODIGO "+;
+           " INNER JOIN DPGRU ON INV_GRUPO=GRU_CODIGO "+;
+           " INNER JOIN DPUNDMED ON UND_CODIGO=MOV_UNDMED "+;
+           " WHERE MOV_INVACT=1 AND MOV_FISICO<>0 "+cWhere+" "+;
+           " GROUP BY MOV_CODIGO,MOV_UNDMED "+cHaving
+
+//?? CLPCOPY(CSQL)
+  
+     oCursor:=OpenTable(cSql,.T.)
+  
+     oCursor:Replace("ULT_COSTO",0)
+     oCursor:Replace("VALOR_INV",0)
+     oCursor:GoTop()
+
+     WHILE !oCursor:Eof()
+          nCosto:=EJECUTAR("INVGETULTCOS" ,oCursor:MOV_CODIGO,oCursor:MOV_UNDMED,oCursor:MOV_CODSUC, ;
+                                          IIF(!EMPTY(RGO_C1),RGO_C1,oDp:dFecha),"")
+
+          oCursor:Replace("ULT_COSTO",ROUND(nCosto,2))
+          
+          IF oCursor:EXIST>0
+             oCursor:Replace("VALOR_INV",ROUND(oCursor:EXIST*nCosto,2))
+          ELSE
+             oCursor:Replace("VALOR_INV",0)
+          ENDIF
+
+     oCursor:Skip()
+     ENDDO
+
+//     oCursor:Browse()
+
+     oCursor:CTODBF("CRYSTAL\CSVALORINV2.DBF")
+     oGenRep:oRun:lFileDbf:=.T.
+
+     IF !ChkSql(cSql,@cMsg)      // Revisa Posible Ejecución SQL
+        MensajeErr(cMsg,"Reporte <REPORTE>")
+        Return .F.
+     ENDIF
+
+     IF !oGenRep:OutPut(.T.) // Verifica el Dispositivo de Salida Inicial
+         RETURN .F.
+     ENDIF
+
+     IF oCursor:RecCount()=0
+        MensajeErr("No fué posible Encontrar Información","Consulta Vacia Reporte <REPORTE>")
+        oCursor:End()
+        Return .F.
+     ENDIF
+
+     oCursor:GoTop()
+
+     DEFINE FONT oFont1 NAME "ARIAL" SIZE 0,-10
+     DEFINE FONT oFont2 NAME "ARIAL" SIZE 0,-10 BOLD
+
+     REPORT oReport TITLE  "Inventario Valorizado (Ult. Costo)",;
+            "Fecha: "+dtoc(Date())+" Hora: "+TIME();
+            CAPTION "Inventario Valorizado (Ult. Costo)" ;
+            FOOTER "Página: "+str(oReport:nPage,3)+" Registros: "+alltrim(str(nLineas,5)) CENTER ;
+            FONT oFont1,oFont2;
+            PREVIEW
+
+     oGenRep:SetDevice(oReport) // Asigna parámetros
+
+     
+     COLUMN TITLE "Producto";
+            DATA oCursor:MOV_CODIGO;
+            SIZE 20;
+            LEFT 
+
+     COLUMN TITLE "Descripción";
+            DATA oCursor:INV_DESCRI;
+            SIZE 40;
+            LEFT 
+
+     
+     END REPORT
+
+     oReport:bSkip:={||oCursor:DbSkip()}
+
+     ACTIVATE REPORT oReport ;
+              WHILE !oCursor:Eof();
+              ON STARTGROUP oReport:NewLine();
+              ON STARTPAGE  RepBitmap();
+              ON CHANGE ONCHANGE()
+
+     oGenRep:OutPut(.F.) // Verifica el Dispositivo de Salida Final
+
+     oFont1:End()
+     oFont2:End()
+
+RETURN NIL
+
+/*
+// En Cada Registro se puede Aplicar Fórmulas
+// Es llamado por Skip()
+*/
+FUNCTION ONCHANGE()
+
+   nLineas:=nLineas+1 // Es Posible Aplicar Fórmulas
+
+/*
+// Si Desea Imprimir lineas Adicionales que no esten vacias
+  
+*/
+   
+ // PrintMemo(CAMPOMEMO,1,.F.,1) // Imprimir Campo Memo
+
+
+RETURN .T.
+
+/*
+// Imprime Campos Memos
+*/
+FUNCTION PrintMemo(cMemo,nCol,lData,nIni)
+     LOCAL nFor,aLines
+
+     IF Empty(cMemo)
+        RETURN ""
+     ENDIF
+
+     // Inicio del Línea
+     DEFAULT nIni:=1
+
+     cMemo :=STRTRAN(cMemo,CHR(10),"") // Convierte el Campo Memo en Arreglos
+     aLines:=_VECTOR(cMemo,CHR(13))
+
+     IF lData // Requiera la Primera Línea de Datos
+        Return aLines[1]
+     ENDIF
+
+//   oReport:BackLine(1) // Retroceder una Línea
+//   oReport:Newline()   // Adelanta una Línea
+     FOR nFor := nIni TO LEN(aLines)
+         oReport:StartLine()
+         oReport:Say(nCol,aLines[nFor])
+         oReport:EndLine()
+     NEXT
+     oReport:Newline()
+
+RETURN ""
+
+/*
+// Inicio en Cada Página
+*/
+STATIC FUNCTION RepBitMap()
+
+  DEFAULT oDp:cLogoBmp:="BITMAPS\LOGO.BMP"
+
+  oReport:SayBitmap(.3,.3, oDp:cLogoBmp,.5,.5)
+
+RETURN NIL
+/*
+oRun : objeto de Ejecución
+*/
+
+// EOF 
+

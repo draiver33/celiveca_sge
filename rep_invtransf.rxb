@@ -1,0 +1,84 @@
+FUNCTION MAINoGenRep
+ 17cSql,oCursor,cMsg:="",oFont1,oFont2
+ 17oReport,nLineas:=0
+  4oGenRep=NIL
+  2.F.
+ 14
+  1CursorWait()
+  1oGenRep:cWhere :=oGenRep:BuildWhere()
+  1oGenRep:cWhere :=oGenRep:cWhere + IIF(Empty(oGenRep:cWhere)," WHERE "," AND ")+ " MOV_FISICO=-1"
+  1cSql :=oGenRep:BuildSql()
+  4!ChkSql(cSql,@cMsg)
+  1MensajeErr(cMsg,"Reporte <REPORTE>")
+  2.F.
+ 14
+  4(oGenRep:oRun:nOut=7 .OR. oGenRep:oRun:nOut=8)
+  1EJECUTAR("TECINVTRANSREP",oGenRep)
+ 14
+  4!oGenRep:OutPut(.T.)
+  2.F.
+ 14
+  1oCursor:=OpenTable(cSql,.T.)
+  4oCursor:RecCount()=0
+  1MensajeErr("No fué posible Encontrar Información","Consulta Vacia Reporte <REPORTE>")
+  1oCursor:End()
+  2.F.
+ 14
+  1oCursor:GoTop()
+  1oFont1 := TFont():New("ARIAL",0,-10,,,,,,,,,,,,,,)
+  1oFont2 := TFont():New("ARIAL",0,-10,,.T.,,,,,,,,,,,,)
+  1oReport := DpRptBegin({{||"Emisión de Transferencia de Productos"},{||"Fecha: "+dtoc(Date())+" Hora: "+TIME()}},{},{{||"Página: "+str(oReport:nPage,3)+" Registros: "+alltrim(str(nLineas,5))}},{oFont1,oFont2},{},.F.,,,,.T.,,,"Emisión de Transferencia de Productos",,,UPPER("CENTER") )
+  1oGenRep:SetDevice(oReport)
+  1DpRptAddColumn({{||"Producto"}},,{{||oCursor:MOV_CODIGO}},20,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Descripción"}},,{{||oCursor:INV_DESCRI}},40,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Cantidad"},{||"Unidades"}},,{{||oCursor:MOV_CANTID}},12,{"9,999,999,999.999"},{||2},.T.,,UPPER("RIGHT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Medida"}},,{{||oCursor:MOV_UNDMED}},8,{},,.F.,,UPPER("LEFT"),.F.,.F.,)
+  1DpRptAddColumn({{||"Costo"}},,{{||oCursor:MOV_COSTO}},14,{"9,999,999,999,999.99"},,.F.,,UPPER("RIGHT"),.F.,.F.,)
+  1DpRptAddGroup({||oCursor:MOV_DOCUME},{||GROUP01()},{||ENDGRP01()},{||2},.F. )
+  1DpRptEnd()
+  1oReport:bSkip:={||oCursor:DbSkip()}
+  1oReport:Activate(,{||!oCursor:Eof()},,,{||RepBitmap()},,{|oGrp|oReport:NewLine()},,,,{||ONCHANGE()},,,)
+  1oGenRep:OutPut(.F.)
+  1oFont1:End()
+  1oFont2:End()
+  2NIL
+FUNCTION ONCHANGE
+  1nLineas:=nLineas+1
+  2.T.
+FUNCTION PRINTMEMOcMemo,nCol,lData,nIni
+ 17nFor,aLines
+  4Empty(cMemo)
+  2""
+ 14
+  1nIni := If(nIni == nil,1,nIni )
+  1cMemo :=STRTRAN(cMemo,CHR(10),"")
+  1aLines:=_VECTOR(cMemo,CHR(13))
+  4lData
+  2aLines[1]
+ 14
+ 10nFor := nIni TO LEN(aLines)
+  1oReport:StartLine()
+  1oReport:Say(nCol,aLines[nFor])
+  1oReport:EndLine()
+ 11
+  1oReport:Newline()
+  2""
+FUNCTION REPBITMAP
+  1oDp:cLogoBmp := If(oDp:cLogoBmp == nil,"BITMAPS\LOGO.BMP",oDp:cLogoBmp )
+  1oReport:SayBitmap(.3,.3,oDp:cLogoBmp,.5,.5)
+  2NIL
+FUNCTION GROUP01
+ 17cExp:="",uValue:=""
+  1cExp :="Documento: "
+  1uValue:=oCursor:MOV_DOCUME
+  1uValue:=cValtoChar(uValue)+" "+cValToChar(oCursor:TNI_FECHA)
+  2cExp+uValue
+FUNCTION ENDGRP01
+ 17cExp:="",uValue:="",cLines:=""
+  1cExp :="Total Documento:  "
+  1uValue:=oReport:aGroups[1]:cValue
+  1uValue:=uValue
+  1uValue:=cValtoChar(uValue)
+  1cLines:=ltrim(str(oReport:aGroups[1]:nCounter))
+  1cLines:=" ("+cLines+")"
+  2cExp+uValue+cLines

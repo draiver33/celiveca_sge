@@ -1,0 +1,765 @@
+// Programa   : DPCOMPPRODUCCIO 
+// Fecha/Hora : 26/01/2005 23:10:42
+// Propósito  : Unidad de Medida por Producto
+// Creado Por : Juan Navas
+// Llamado por: Inventario
+// Aplicación : Inventario
+// Tabla      : DPINVMED
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cCodInv,cDescri,nOption)
+ LOCAL I,aData  :={},oFontG,oGrid,oCol,cSql,oFont,oFontB,oBtn
+ LOCAL cTitle   :=GETFROMVAR("{oDp:DPCOMPPRODUCCION}")
+ LOCAL nMedidas :=0,cCodUnd:=SPACE(4),aMedidas,oBtn,cWhere,lUndMed:=.F.
+ LOCAL nLenUnd  :=SQLFIELDLEN("DPUNDMED","UND_CODIGO")
+ LOCAL nLenMon  :=0,aMonedas,cCodFor,cCodDep,nCodDep
+ LOCAL aFormulas:={},aCodDep:={},aDpto:={}
+
+ nLenMon :=SQLFIELDLEN("DPTABMON","MON_CODIGO")
+ aMonedas:=aTable("SELECT MON_CODIGO,MON_DESCRI FROM DPTABMON",.T.)
+
+ DEFAULT cCodInv:=SQLGET("DPINV","INV_CODIGO"),;
+         cDescri:="",;
+         nOption:=0
+
+ aFormulas:=ASQL("SELECT FOR_CODIGO FROM DPFORMULASPROD WHERE FOR_CODINV"+GetWhere("=",cCodInv))
+
+ IF Empty(aFormulas)
+    CREAFORMULA()
+//    EJECUTAR("DPFORMULASPROD",cCodInv)
+//    RETURN .T.
+ ENDIF
+
+ // Debe Buscar que Formula tiene Productos
+
+ cCodFor:=MYSQLGET("DPCOMPPRODUCCION","COM_CODFOR,COM_CODDEP","COM_CODINV"+GetWhere("=",cCodInv)+" ORDER BY COM_CODDEP")
+
+ IF !Empty(oDp:aRow)
+   cCodDep:=oDp:aRow[2]
+ ENDIF
+
+// ? cCodFor,cCodDep
+
+ AEVAL(aFormulas,{|a,n|aFormulas[n]:=a[1]})
+
+ aCodDep  :=ASQL("SELECT DEP_CODIGO,DEP_DESCRI FROM DPDPTOPRODUCC")
+
+ AEVAL(aCodDep,{|a,n|aCodDep[n]:=a[1],AADD(aDpto,a[2])})
+
+ IF Empty(aCodDep) 
+    MensajeErr("Es necesario Definir: "+GetFromVar("{oDp:DPDPTOPRODUCC}"))
+    DPLBX("DPDPTOPRODUCC.LBX")
+    RETURN .T.
+ ENDIF
+
+ // JN 10/04/2009
+ IF Empty(cCodDep)
+    cCodDep:=aCodDep[1]
+ ENDIF
+   
+ // Cantidad de Medidas por Producto
+ aMedidas:=aTable("SELECT DPUNDMED.UND_CODIGO,DPUNDMED.UND_DESCRI "+;
+                  " FROM DPINVMED "+;
+                  " INNER JOIN DPUNDMED ON IME_UNDMED=UND_CODIGO "+;
+                  " WHERE IME_CODIGO "+GetWhere("=",cCodInv)+;
+                  " ORDER BY IME_CANTID ",.F.)
+
+ // Asume las Medidas Standar
+
+
+ IF EMPTY(aMedidas) 
+
+   lUndMed:=.T.
+
+   aMedidas:=aTable("SELECT UND_CODIGO,UND_DESCRI "+;
+                   " FROM DPUNDMED "+;
+                   " ORDER BY UND_CANUND",.F.)
+
+ ENDIF
+
+ cCodDep:=ALLTRIM(cCodDep)
+ nCodDep:=MAX(ASCAN(aCodDep, {|a| ALLTRIM(a)=cCodDep }),1)
+
+//? nCodDep,cCodDep
+
+ // Font Para el Browse
+ DEFINE FONT oFont  NAME "Times New Roman"   SIZE 0, -12
+ DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -12 BOLD
+
+ oComProd:=DOCENC(cTitle,"oComProd","DPCOMPPRODUCCION.EDT")
+ oComProd:nOpcIni  :=nOption
+ oComProd:cCodInv  :=cCodInv
+ oComProd:cUndMed  :=SPACE(20) // según Formula
+ oComProd:nCantid  :=0.00      // según Formula
+
+ oComProd:cCodFor    :=IIF(Empty(cCodFor),aFormulas[1],cCodFor)
+ oComProd:cCodDep    :=cCodDep // aCodDep[nCodDep]
+ oComProd:cNomDep    :=aDpto[nCodDep]
+ oComProd:nBtnStyle  :=1
+ oComProd:lBar       :=.F.
+ oComProd:lAutoEdit  :=.T.
+ oComProd:aFormulas  :=ACLONE(aFormulas)
+ oComProd:aDpto      :=ACLONE(aDpto)
+ oComProd:aCodDep    :=ACLONE(aCodDep)
+
+ oComProd:SetTable("DPINV","INV_CODIGO"," WHERE INV_CODIGO"+GetWhere("=",cCodInv))
+
+ oComProd:Windows(0,0,450,920)
+
+ @ 2,1 GROUP oGrp TO 4, 21.5 PROMPT oDp:xDPFORMULASPROD
+
+ @ 3,50 SAY oDp:xDPDPTOPRODUCC
+
+ @ 6.1, 1.0 COMBOBOX oComProd:oCodDep VAR oComProd:cNomDep  ITEMS oComProd:aDpto;
+            ON CHANGE oComProd:GridSetScope();
+            WHEN LEN(oComProd:oCodDep:aItems)>1
+
+ ComboIni(oComProd:oCodDep)
+
+ @ 3.1, 1.0 COMBOBOX oComProd:oFormula VAR oComProd:cCodFor  ITEMS oComProd:aFormulas;
+            ON CHANGE oComProd:GridSetScope();
+            WHEN LEN(oComProd:oFormula:aItems)>1
+
+
+ @ 2,40 SAY "Medida:"
+ @ 2,60 SAY "Cantidad:"
+
+ @ 3,40 SAY oComProd:oUndMed PROMPT oComProd:cUndMed
+ @ 3,60 SAY oComProd:oCantid PROMPT TRAN(oComProd:nCantid,oDp:cPictComCan) RIGHT
+
+ ComboIni(oComProd:oFormula)
+
+ cSql :=" SELECT "+SELECTFROM("DPCOMPPRODUCCION",.F.)+;
+        " ,DPINV.INV_DESCRI,DPUNDMED.UND_DESCRI "+;
+        " FROM DPCOMPPRODUCCION"+;
+        " INNER JOIN DPINV ON COM_CODCOM=INV_CODIGO "+;
+        " INNER JOIN DPUNDMED ON DPUNDMED.UND_CODIGO = DPCOMPPRODUCCION.COM_UNDMED"
+
+ cWhere:=" COM_CODFOR "+GetWhere("=",oComProd:cCodFor)+ " AND "+;
+         " COM_CODDEP "+GetWhere("=",oComProd:cCodDep)
+
+  @ 6.8, 1.0 FOLDER oComProd:oFolder ITEMS "Materias Primas","Valores Agregados"
+
+//oComProd:oFolder:bChange:={||oComProd:oGridFocus:=oComProd:aGrids[oComProd:oFolder:nOption]}
+
+  SETFOLDER( 1)
+
+  oGrid:=oComProd:GridEdit( "DPCOMPPRODUCCION" , oComProd:cPrimary , "COM_CODINV" , cSql , cWhere , "INV_CODIGO") 
+
+  oGrid:cScript  :="DPCOMPPRODUCCIO"
+//oGrid:aSize    :={110-26+40,0,765+12,160+78}
+//oGrid:aSize    :={1,0,765+12-5,160+78-20}
+  oGrid:aSize    :={1,0,865+12-5,160+45}
+  oGrid:lTotal   :=.T.
+
+
+//oGrid:oFont    :=oFontB
+  oGrid:bValid   :=".T."
+  oGrid:lBar     :=.F.
+  oGrid:cMetodo  :=""
+  oGrid:oDlg     :=oComProd:oFolder:aDialogs[1]
+  oGrid:cItem    :="COM_ITEM"
+
+
+  oGrid:cPostSave:="GRIDPOSTSAVE"
+  oGrid:cLoad    :="GRIDLOAD"
+  oGrid:cTotal   :="GRIDTOTAL" 
+  oGrid:cPreSave :="GRIDPRESAVE"
+  oGrid:oFontH   :=oFontB // Fuente para los Encabezados
+  oGrid:oFont    :=oFont  // Fuente para los Encabezados
+  oGrid:nClrPane1:=16773345
+  oGrid:nClrPane2:=16770764 // 8957695
+  oGrid:nRecSelColor:=13619151 // 15116898
+
+  oGrid:nClrPaneH:=13619151 // 15116898 //12615680
+  oGrid:nClrTextH:=CLR_BLACK
+  oGrid:AddBtn("xprint.bmp","imprimir Precios","oGrid:nOption=0","oGrid:GridPrint()")
+
+  IF oDp:nVersion>=4.1
+  
+    oGrid:AddBtn("PRODUCTO.BMP",oDp:cDPINV,"oGrid:nOption=0",;
+                               "EJECUTAR([DPINV],3,oGrid:COM_CODCOM)","CLI")
+
+  ENDIF
+
+
+
+  // Lista
+  oCol:=oGrid:AddCol("COM_CODCOM")
+  oCol:cTitle   :="Producto"
+  oCol:bValid   :={||oGrid:VCOM_CODCOM(oGrid:COM_CODCOM)}
+  oCol:cMsgValid:="Producto no Existe"
+  oCol:nWidth   :=160
+  oCol:cListBox :="DPINV.LBX"
+  oCol:lPrimary :=.F. 
+  oCol:bPostEdit:='oGrid:ColCalc("INV_DESCRI")'
+  oCol:lRepeat  :=.F.
+  oCol:nEditType:=EDIT_GET_BUTTON
+
+  // Descripción
+  oCol:=oGrid:AddCol("INV_DESCRI")
+  oCol:cTitle:="Descripción del Producto"
+  oCol:nWidth:=240+145
+  oCol:bWhen :=".F."
+  oCol:bCalc :={||SQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGrid:COM_CODCOM))}
+
+  oCol:=oGrid:AddCol("COM_UNDMED")
+  oCol:cTitle    :="Medida"
+  oCol:nWidth    :=60+5
+  oCol:aItems    :={||oGrid:BuildUndMed(.T.)}
+  oCol:aItemsData:={||oGrid:BuildUndMed(.F.)}
+  oCol:bValid    :={||oGrid:VCOM_UNDMED(oGrid:COM_UNDMED)}
+  oCol:bWhen    :="!EMPTY(oGrid:COM_CODCOM) .AND. oGrid:cMetodo<>'S'"
+
+  // Cantidad Requerida
+  oCol:=oGrid:AddCol("COM_CANTID")
+  oCol:cTitle  :="Cantidad Req"
+  oCol:nWidth  :=60
+  //oCol:cPicture:=oDp:cPictComCan
+  oCol:cPicture:='99,999,999.99999'
+  oCol:lTotal:=.T.
+  oCol:=oGrid:AddCol("COM_COMPO")
+  oCol:cTitle    :="Componente"
+  oCol:nWidth    :=150
+  oCol:bWhen    :="!EMPTY(oGrid:COM_CODCOM)"
+
+  oComProd:oFocus:=oGrid:oBrw
+
+  // VALORES AGREGADOS
+  // ErrorSys(.T.)
+
+  SETFOLDER( 1)
+
+  cWhere:=" CVA_CODFOR "+GetWhere("=",oComProd:cCodFor)+" AND CVA_CODDEP"+GetWhere("=",cCodDep)
+
+
+  cSql :=" SELECT "+SELECTFROM("DPCOMPVALORAGRE",.F.)+;
+         " ,DPVALAGREGADO.VAA_DESCRI "+;
+         " FROM DPCOMPVALORAGRE "+;
+         " INNER JOIN DPVALAGREGADO  ON VAA_CODIGO=CVA_CODVAL  "
+
+  oGrid:=oComProd:GridEdit( "DPCOMPVALORAGRE   " , oComProd:cPrimary , "CVA_CODINV" , cSql , cWhere , "CVA_CODVAL") 
+
+  oGrid:cScript  :="DPCOMPPRODUCCIO"
+
+
+//oGrid:aSize    :={110-26+40,0,765+12,160+78}
+  oGrid:aSize    :={1,0,765+12-5,160+45}
+
+//oGrid:oFont    :=oFontB
+  oGrid:bValid   :=".T."
+  oGrid:lBar     :=.F.
+  oGrid:cMetodo  :=""
+  oGrid:oDlg     :=oComProd:oFolder:aDialogs[2]
+
+
+  oGrid:cPostSave:="VGRIDPOSTSAVE"
+  oGrid:cLoad    :="VGRIDLOAD"
+  oGrid:cPreSave :="VGRIDPRESAVE"
+  oGrid:oFontH   :=oFontB // Fuente para los Encabezados
+  oGrid:oFont    :=oFont  // Fuente para los Encabezados
+  oGrid:nClrPane1:=14089973
+  oGrid:nClrPane2:=11271917 // 8957695
+  oGrid:nRecSelColor:=14675422 // 8584661
+
+//oGrid:nHeaderLines:=65535
+
+  oGrid:nClrPaneH:=14675422 // 8584661
+  oGrid:nClrTextH:=CLR_BLACK
+  oGrid:AddBtn("xprint.bmp","imprimir Precios","oGrid:nOption=0","oGrid:GridPrint()")
+
+  // ? CLPCOPY(oGrid:cSql)
+  // Valor Agregado
+  oCol:=oGrid:AddCol("CVA_CODVAL")
+  oCol:cTitle   :="Código"
+  oCol:bValid   :={||oGrid:VCVA_CODVAL(oGrid:CVA_CODVAL)}
+  oCol:cMsgValid:="Producto no Existe"
+  oCol:nWidth   :=160
+  oCol:cListBox :="DPVALAGREGADO.LBX"
+  oCol:lPrimary :=.T. // No puede Repetirse
+  oCol:bPostEdit:='oGrid:ColCalc("VAA_DESCRI")'
+  oCol:lRepeat  :=.F.
+  oCol:nEditType:=EDIT_GET_BUTTON
+
+  // Descripción
+  oCol:=oGrid:AddCol("VAA_DESCRI")
+  oCol:cTitle:="Descripción "
+  oCol:nWidth:=240+145
+  oCol:bWhen :=".F."
+  oCol:bCalc :={||SQLGET("DPVALAGREGADO","VAA_DESCRI","VAA_CODIGO"+GetWhere("=",oGrid:CVA_CODVAL))}
+
+  oCol:=oGrid:AddCol("CVA_MODO")
+  oCol:cTitle    :="Medida"
+  oCol:nWidth    :=60+5
+  
+  oCol:aItems    :={||GETOPTIONS("DPCOMPVALORAGRE","CVA_MODO")}
+  oCol:aItemsData:={||GETOPTIONS("DPCOMPVALORAGRE","CVA_MODO")}
+//oCol:bValid    :={||oGrid:VCOM_UNDMED(oGrid:COM_UNDMED)}
+//oCol:bWhen    :="!EMPTY(oGrid:COM_CODCOM) .AND. oGrid:cMetodo<>'S'"
+
+  // Cantidad Requerida
+  oCol:=oGrid:AddCol("CVA_MONTO")
+  oCol:cTitle  :="Monto"
+  oCol:nWidth  :=115
+  oCol:cPicture:="99,999,999,999.99"
+
+  SETFOLDER( 0)
+
+/*
+
+  @01, 01 SBUTTON oBtn ;
+          SIZE 42, 23 FONT oFontB;
+          FILE "BITMAPS\XSALIR.BMP" NOBORDER;
+          LEFT PROMPT "Salir";
+          COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+          ACTION (oComProd:Close()) CANCEL
+
+  oBtn:lCancel:=.T.
+  oBtn:cToolTip:="Cerrar Formulario"
+  oBtn:cMsg    :=oBtn:cToolTip
+
+  @01, 01 SBUTTON oBtn ;
+          SIZE 42, 23 FONT oFontB;
+          FILE "BITMAPS\VIEW.BMP" NOBORDER;
+          LEFT PROMPT "Consultar";
+          COLORS CLR_BLACK, { CLR_WHITE, CLR_HGRAY, 1 };
+          ACTION EJECUTAR("DPCOMPRODCON",oComProd:cCodInv , oComProd:cCodFor );
+          CANCEL
+
+  oBtn:lCancel:=.T.
+  oBtn:cToolTip:="Cerrar Formulario"
+  oBtn:cMsg    :=oBtn:cToolTip
+*/
+
+
+
+  oComProd:Activate( { ||oComProd:INICIO() } )
+
+RETURN
+
+FUNCTION INICIO()
+   LOCAL oCursor,oBar,oBtn,oFont,oCol
+   LOCAL oDlg:=oComProd:oDlg
+   LOCAL nLin:=0
+
+   DEFINE CURSOR oCursor HAND
+   DEFINE BUTTONBAR oBar SIZE 52-15,60-15 OF oDlg 3D CURSOR oCursor
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\VIEW.BMP";
+          ACTION EJECUTAR("DPCOMPRODCON",oComProd:cCodInv , oComProd:cCodFor );
+
+
+   oBtn:cToolTip:="Consultar"
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\IMPORTAR.BMP";
+          ACTION oComProd:Import()
+
+   oBtn:cToolTip:="Importar Formula"
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\XSALIR.BMP";
+          ACTION oComProd:Close()
+
+   oBtn:cToolTip:="Salir"
+
+   oBar:SetColor(CLR_BLACK,15724527)
+
+   @ 0.1,20 SAY " Código "      OF oBar SIZE 100,20 BORDER
+   @ 1.4,20 SAY " Descripción " OF oBar SIZE 100,20 BORDER
+
+   @ 0.1,37 SAY " "+oComProd:INV_CODIGO OF oBar SIZE 100,20 BORDER
+   @ 1.4,37 SAY " "+oComProd:INV_DESCRI OF oBar SIZE 350,20 BORDER
+
+   AEVAL(oBar:aControls,{|o,n|o:SetColor(CLR_BLACK,15724527)})
+
+   IF nOption=2
+     oGrid:nOption:=0
+     oGrid:lInc:=.F.
+     oGrid:lMod:=.F.
+     oGrid:lEli:=.F.
+     oGrid:AdjustBtn(.T.)
+   ENDIF
+
+RETURN .T.
+
+/*
+// Carga los Datos
+*/
+FUNCTION LOAD()
+   LOCAL oGrid:=oComProd:aGrids[1]
+
+   IF oComProd:nOption=1
+   ELSE
+     oComProd:SETMEDIDA()
+   ENDIF
+
+RETURN .T.
+
+/*
+// Carga de data del Grid
+*/
+FUNCTION GRIDLOAD()
+
+//  IF oGrid:nOption=1
+//  ENDIF
+
+
+RETURN .T.
+
+/*
+// Pregrabar del Grid
+*/
+FUNCTION GRIDPRESAVE()
+
+  oGrid:Set("COM_CODFOR" , oComProd:cCodFor )
+  oGrid:Set("COM_CODDEP" , oComProd:aCodDep[oComProd:oCodDep:nAt] )
+  oGrid:Set("COM_CODINV" , oComProd:cCodInv )
+
+  // Utilización para la Fabricación
+  SQLUPDATE("DPINV","INV_UTILIZ","F","INV_CODIGO"+GetWhere("=",oComProd:cCodInv))
+
+
+RETURN .T.
+
+/*
+// Ejecuta la Impresión del Documento
+*/
+FUNCTION PRINTER()
+   ? "IMPRIMIR"
+RETURN .T.
+
+/*
+// Permiso para Borrar
+*/
+FUNCTION PREDELETE()
+RETURN .T.
+
+/*
+// Después de Borrar
+*/
+FUNCTION POSTDELETE()
+RETURN .T.
+
+
+/*
+// Carga para Incluir o Modificar en el Grid
+*/
+FUNCTION GRIDLOAD()
+  LOCAL cLista:=""
+
+  IF oGrid:nOption=1
+  ENDIF
+
+RETURN NIL
+
+/*
+// Ejecución despues de Grabar el Item
+*/
+FUNCTION GRIDPOSTSAVE()
+
+  SQLUPDATE("DPINV","INV_UTILIZ","F","INV_CODIGO"+GetWhere("=",oComProd:cCodInv))
+
+RETURN .T.
+
+/*
+// Genera los Totales por Grid
+*/
+FUNCTION GRIDTOTAL()
+RETURN .T.
+
+FUNCTION GRIDSETSCOPE()
+   LOCAL cWhere
+
+   oGrid:COM_CODFOR:=oComProd:cCodFor
+   oGrid:COM_CODDEP:=oComProd:aCodDep[oComProd:oCodDep:nAt]
+   oGrid:COM_CODINV:=oComProd:cCodInv
+
+   cWhere:=" COM_CODDEP "+GetWhere("=",oGrid:COM_CODDEP)+ " AND "+;
+           " COM_CODFOR "+GetWhere("=",oGrid:COM_CODFOR)
+
+   oComProd:aGrids[1]:SetScope(cWhere)
+   oComProd:SETMEDIDA()
+
+   // Valor Agregado
+
+   cWhere:=" CVA_CODDEP "+GetWhere("=",oGrid:COM_CODDEP)+ " AND "+;
+           " CVA_CODFOR "+GetWhere("=",oGrid:COM_CODFOR)
+
+   oComProd:aGrids[2]:SetScope(cWhere)
+
+RETURN .T.
+
+/*
+// Realiza un Salto de Valor en el Combo
+*/
+FUNCTION COMBOSKIP(oCombo,nSkip,lChange)
+   LOCAL nAt,uValue
+   DEFAULT nSkip:=1,lChange:=.T.
+
+   IF ValType(oCombo)!="O"
+      RETURN .F.
+   ENDIF
+
+   oCombo:nAt:=oCombo:nAt+(nSkip)
+
+   IF oCombo:nAt>LEN(oCombo:aItems)
+      oCombo:nAt:=1
+   ENDIF
+
+   IF oCombo:nAt<1
+      oCombo:nAt:=Len(oCombo:nAt)
+   ENDIF
+
+   uValue:=oCombo:aItems[oCombo:nAt]
+   oCombo:VarPut(uValue,.T.)
+   oCombo:Change()
+   oComProd:cCodUnd:=uValue
+
+   oComProd:GRIDSETSCOPE()
+
+RETURN .T.
+
+FUNCTION GRIDPRINT()
+   LOCAL oRep
+
+   oRep:=REPORTE("DPPRECIO")
+  
+   oRep:SetRango(1,oComProd:cCodInv,oComProd:cCodInv)
+   oRep:SetCriterio(2,LEFT(oComProd:cCodMon,oComProd:nLenMon))
+   oRep:SetCriterio(3,LEFT(oComProd:cCodUnd,oComProd:nLenUnd))
+
+RETURN .T.
+// EOF
+
+FUNCTION VCOM_CODCOM(cCodigo)
+  local lRet:=.t.,nExi,nCosto:=0,cEquiv,aItems:={}
+
+  lRet:=(cCodigo==SQLGET("DPINV","INV_CODIGO,INV_METCOS","INV_CODIGO"+GetWhere("=",cCodigo)))
+
+
+  IF !Empty(oDp:aRow)
+    oGrid:cMetodo:=oDp:aRow[2]
+  ENDIF
+
+  IF ALLTRIM(oComProd:cCodInv)==ALLTRIM(cCodigo)
+     MensajeErr("Producto no Válido")
+     lRet:=.F.
+  ENDIF
+
+//SYSANDES
+   // Ubica la Unidad de Medida
+   IF oGrid:nOption=1
+     aItems:=oGrid:BuildUndMed(.T.)
+     oGrid:Set("COM_UNDMED",aItems[1],.T.)
+   ENDIF
+/////////////////////
+
+RETURN lRet
+
+
+/*
+// Valida Unidad de Medida
+*/
+FUNCTION VCOM_UNDMED(cUndMed)
+  LOCAL lRet:=.T.
+
+  lRet:=(cUndMed==SQLGET("DPUNDMED","UND_CODIGO","UND_CODIGO"+GetWhere("=",cUndMed)))
+
+  IF lRet .AND. oGrid:COM_CANTID=0
+
+    oGrid:Set("COM_CANTID",1,.T.)
+
+  ENDIF
+
+RETURN lRet
+
+/*
+// Construye las Opciones
+*/
+FUNCTION BuildUndMed(lData)
+  LOCAL aItem:={}
+
+  aItem:=EJECUTAR("INVGETUNDMED",oGrid:COM_CODCOM,NIL,NIL,oGrid)
+
+// SYSANDES
+  IF LEN(aItem) = 1
+     AADD(aItem,"")
+  ENDIF
+/////////////////////
+
+  IF EMPTY(oGrid:COM_UNDMED).AND.!Empty(aItem)
+     //oGrid:Set("COM_UNDMED",aItem[1])
+	oGrid:Set("COM_UNDMED","www")
+  ENDIF
+
+RETURN aItem
+/*
+// Colocar Unidad de Medida s/formula
+*/
+FUNCTION SETMEDIDA()
+
+  oComProd:cUndMed:=SQLGET("DPFORMULASPROD","FOR_UNDMED,FOR_CANTID","FOR_CODINV"+GetWhere("=",oComProd:cCodInv)+;
+                           "AND FOR_CODIGO"+GetWhere("=",oComProd:cCodFor))
+
+  IF !Empty(oDp:aRow)
+    oComProd:nCantid:=oDp:aRow[2]
+  ENDIF
+
+  oComProd:oCantid:Refresh(.T.)
+  oComProd:oUndMed:Refresh(.T.)
+
+RETURN .T.
+
+FUNCTION CREAFORMULA()
+
+
+ LOCAL oTable
+
+ oTable:=OpenTable("SELECT * FROM DPFORMULASPROD",.F.)
+ oTable:Append()
+ oTable:Replace("FOR_CODIGO","ESTANDAR")
+ oTable:Replace("FOR_UNDMED","UND")
+ oTable:Replace("FOR_CODINV",cCodInv)
+ oTable:Replace("FOR_CANTID",1)
+ oTable:Commit()
+ oTable:End()
+
+ aFormulas:=ASQL("SELECT FOR_CODIGO FROM DPFORMULASPROD WHERE FOR_CODINV"+GetWhere("=",cCodInv))
+
+RETURN .T.
+// FUNCTION VCOM_UNDMED(cUndMed)
+// RETURN .T.
+
+FUNCTION VGRIDLOAD()
+RETURN .T.
+
+FUNCTION VGRIDPOSTSAVE()
+RETURN .T.
+
+FUNCTION VGRIDPRESAVE()
+  oGrid:CVA_CODFOR:=oComProd:cCodFor
+  oGrid:CVA_CODDEP:=oComProd:aCodDep[oComProd:oCodDep:nAt]
+  oGrid:CVA_CODINV:=oComProd:cCodInv
+RETURN .T.
+
+
+FUNCTION VCVA_CODVAL(cCodVal)
+
+  IF !SQLGET("DPVALAGREGADO","VAA_CODIGO","VAA_CODIGO"+GetWhere("=",oGrid:CVA_CODVAL))==cCodVal
+      RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+FUNCTION CONSULTAR()
+
+  EJECUTAR("DPFORMULASCON",oComProd:cCodInv,oComProd:cCodFor,oComProd:nCantid)
+
+RETURN .T.
+
+*****AG20080612
+
+FUNCTION IMPORT()
+LOCAL oTable,cSql:="",cWhere:="",cCodFor:="",oTable2,cTalla:="",cItem:="",I:=1
+
+
+  IF !EMPTY(SQLGET("DPCOMPPRODUCCION","COM_CODFOR","COM_CODINV"+GetWhere("=",oComProd:cCodInv)+" AND COM_CODFOR"+GetWhere("=",oComProd:cCodFor)));
+     .OR. !EMPTY(SQLGET("DPCOMPVALORAGRE","CVA_CODFOR","CVA_CODINV"+GetWhere("=",oComProd:cCodInv)+" AND CVA_CODFOR"+GetWhere("=",oComProd:cCodFor)))
+     MSGINFO("No se puede importar, el producto ya tiene componentes o valores asociados"+CRLF+"Esto podria generar duplicidad de informacion")
+     RETURN .F.
+  ENDIF
+
+   cCodFor:=SQLGET("DPCOMPPRODUCCION","COM_CODFOR","COM_CODINV"+GetWhere("=",oComProd:cCodInv))
+
+   IF !EMPTY(cCodFor)
+
+*****CREA LOS COMPONENTES
+
+      cWhere:="COM_CODINV"+GetWhere("=",oComProd:cCodInv)+" AND COM_CODFOR"+GetWhere("=",cCodFor)
+
+      cSql:="SELECT * FROM DPCOMPPRODUCCION WHERE "+cWhere
+
+      oTable:=OPENTABLE(cSql,.T.)
+
+      WHILE !oTable:Eof()
+
+           cTalla:=SQLGET("DPINV","INV_TALLAS","INV_CODIGO"+GetWhere("=",oTable:COM_CODCOM))
+
+           cItem:=STRZERO(I,5)
+
+           oTable2:=OPENTABLE("SELECT * FROM DPCOMPPRODUCCION",.F.)
+           AEVAL(oTable:aFields,{|a,n|oTable2:Replace(a[1],oTable:Fieldget(n))})
+           oTable2:Replace("COM_CODFOR",oComProd:cCodFor)
+           oTable2:Replace("COM_SERIE",cTalla)
+           oTable2:Replace("COM_ITEM",cItem)
+
+           oTable2:Commit()
+           oTable2:End()
+
+           SQLUPDATE("DPCOMPPRODUCCION","COM_SERIE",cTalla,"COM_CODINV"+GetWhere("=",oComProd:cCodInv)+" AND COM_CODCOM"+GetWhere("=",oTable:COM_CODCOM)+" AND "+;
+                                        "COM_CODFOR"+GetWhere("=",oComProd:cCodFor)+" AND COM_ITEM"+GetWhere("=",oTable:COM_ITEM))
+
+
+           oTable:DbSkip()
+
+           I:=I+1
+
+      ENDDO
+
+*****CREA VALORES AGREGADOS
+
+      cCodFor:=SQLGET("DPCOMPVALORAGRE","CVA_CODFOR","CVA_CODINV"+GetWhere("=",oComProd:cCodInv))
+
+      cWhere:="CVA_CODINV"+GetWhere("=",oComProd:cCodInv)+" AND CVA_CODFOR"+GetWhere("=",cCodFor)
+
+      cSql:="SELECT * FROM DPCOMPVALORAGRE WHERE "+cWhere
+
+      oTable:=OPENTABLE(cSql,.T.)
+
+      WHILE !oTable:Eof()
+
+           oTable2:=OPENTABLE("SELECT * FROM DPCOMPVALORAGRE",.F.)
+           AEVAL(oTable:aFields,{|a,n|oTable2:Replace(a[1],oTable:Fieldget(n))})
+           oTable2:Replace("CVA_CODFOR",oComProd:cCodFor)
+
+           oTable2:Commit()
+           oTable2:End()
+
+           oTable:DbSkip()
+      ENDDO
+
+   ELSE
+      MSGINFO("No se ha creado los componentes de ninguna formula")
+      RETURN .F.
+   ENDIF
+
+   MSGINFO("Importacion Finalizada, debe cerrar la pantalla para actualizar la informacion")
+
+RETURN .T.
+
+*****AG20080612
+
+// DR20140701a. Imprimir
+FUNCTION IMPRIMIR()
+  oDp:cComCodInv:=oComProd:cCodInv
+  REPORTE("COMXPROD")
+  oDp:cComCodInv:=SPACE(20)
+RETURN .T.
+
+
+// EOF

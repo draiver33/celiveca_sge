@@ -1,0 +1,521 @@
+// Programa   : TECVIEWTRANSPROD
+// Fecha/Hora : 16/09/2011 15:19:15
+// Propósito  : Seleccionar Empresa a Importar Prestamo de MP
+// Aplicación : 
+// Tipo       : STD00000
+// Creado Por : 
+// Observación:
+
+#include "dpxbase.ch"
+
+PROCE MAIN(cOrden,aData,oFrm,cNumero,cTipo)
+  LOCAL cSql:="",nAt:=0,nCantid:=0
+  LOCAL oTable,aData2:={},nCuantos:=0
+  LOCAL aProv:={},I,oFontBrw,oBrw,oCol,cSql
+  LOCAL oClaXCon,nCan:=0,nMonto:=0,oTable2,cSql2:="",cWhere:="",nExis:=0,oOdbcInt
+
+  DEFAULT cOrden:="00000002",aData:={}
+
+  IF EMPTY(aData)
+     AADD(aData,{"013","01-E-001-U","MAGIC SCREED","UND",25.04,"P",7.42,1469.69,0,""})
+  ENDIF
+
+//  cWhere:="MOV_INVACT=1 AND MOV_CODALM<>'"+aData[1,1]+"' AND ("
+
+  cWhere:="INV_ESTADO='A' AND ("
+
+  FOR I:=1 TO LEN(aData)
+      IF aData[I,5]>aData[I,7]
+         cWhere:=cWhere+IIF(I=1,""," OR ")+" INV_CODIGO='"+aData[I,2]+"' "
+      ENDIF
+  NEXT I
+
+  cWhere:=cWhere+") "
+
+ // cSql:="SELECT ECP_CODCLI,CLI_NOMBRE,ECP_CODALM,INT_DSN,INT_CODSUC "+;
+        "FROM TECEMPCLIPRO INNER JOIN DPCLIENTES ON ECP_CODCLI=CLI_CODIGO "+;
+        "INNER JOIN TECINTERCOM ON ECP_CODCLI=INT_CODCLI WHERE INT_ORIGEN=1"
+
+  cSql:="SELECT ECP_CODCLI,PRO_NOMBRE AS CLI_NOMBRE,ECP_CODALM,INT_DSN,INT_CODSUC "+;
+        "FROM TECEMPCLIPRO INNER JOIN DPPROVEEDOR ON ECP_CODCLI=PRO_CODIGO "+;
+        "INNER JOIN TECINTERCOM ON ECP_CODCLI=INT_CODPRO WHERE INT_ORIGEN=1"
+
+ // ??clpcopy(csql)
+
+  oTable:=OpenTable( cSql,.T.)
+
+  WHILE !oTable:Eof()
+     oOdbcInt:=OPENODBC(oTable:INT_DSN)
+     FOR I:=1 TO LEN(aData)
+        nExis:=SQLGET("DPMOVINV","SUM(MOV_CANTID*MOV_CXUND*MOV_FISICO)","MOV_INVACT=1 AND MOV_CODALM='"+oTable:ECP_CODALM+"' AND "+;
+                                                                        "MOV_CODIGO='"+aData[I,2]+"'",,oOdbcInt)
+        nCantid:=aData[I,5]-aData[I,7]
+        IF nCantid>0 // DR20160129a. Solo si es positivo.
+           AADD(aProv,{oTable:ECP_CODCLI,oTable:CLI_NOMBRE,oTable:ECP_CODALM,aData[I,2],aData[I,3],nExis,nCantid,0,oTable:INT_CODSUC,oTable:INT_DSN})
+        ENDIF
+     NEXT I
+     oOdbcInt:End()
+     oTable:DbSkip()
+  ENDDO
+
+  oTable:End()
+
+  IF Empty(aProv)
+     MensajeErr("No hay empresas asociadas para importar materia prima")
+     RETURN .T.
+  ENDIF
+
+  aData2:=ACLONE(aProv)  
+
+  DEFINE FONT oFontBrw NAME "Verdana" SIZE 0,-12 BOLD
+
+  oFrmSelDoc:=DPEDIT():New("Transferir Materia Prima Inter-Empresas","TECVIEWTRANSPROD.EDT","oFrmSelDoc",.T.)
+  oFrmSelDoc:cOrden:=cOrden
+  oFrmSelDoc:cNumero:=cNumero
+  oFrmSelDoc:cTipo:=cTipo
+
+  oFrmSelDoc:oFrm:=oFrm
+  oFrmSelDoc:cCodAlm:=aData[1,1]
+  oFrmSelDoc:cSucDes:=aData[1,1]
+
+  oFrmSelDoc:oBrw:=TXBrowse():New(oFrmSelDoc:oDlg)
+  oFrmSelDoc:oBrw:SetArray(aData2)
+
+  oBrw:=oFrmSelDoc:oBrw
+  oBrw:SetFont(oFontBrw)
+
+  oBrw:lFastEdit:= .T.
+  oBrw:lHScroll := .F.
+//  oBrw:nFreeze  := 3
+//  oBrw:nTop := 5
+//  oBrw:nLeft := 00
+//  oBrw:nBottom := 50
+//  oBrw:nRight := 250
+
+  oCol:=oBrw:aCols[1]
+  oCol:cHeader   := "Proveedor"
+  oCol:bLDClickData:={||oFrmSelDoc:ChqSelect(oFrmSelDoc)}
+
+  oCol:=oBrw:aCols[2]
+  oCol:cHeader   := "Nombre"
+  oCol:nWidth       := 200
+  oCol:bLDClickData:={||oFrmSelDoc:ChqSelect(oFrmSelDoc)}
+
+  oCol:=oBrw:aCols[3]
+  oCol:cHeader   := "Alm."
+  oCol:nWidth       := 35
+  oCol:bLDClickData:={||oFrmSelDoc:ChqSelect(oFrmSelDoc)}
+
+  oCol:=oBrw:aCols[4]
+  oCol:cHeader   := "Producto"
+  oCol:nWidth       := 100
+  oCol:bLDClickData:={||oFrmSelDoc:ChqSelect(oFrmSelDoc)}
+
+  oCol:=oBrw:aCols[5]
+  oCol:cHeader   := "Descripcion"
+  oCol:nWidth       := 240
+  oCol:bLDClickData:={||oFrmSelDoc:ChqSelect(oFrmSelDoc)}
+
+  oCol:=oBrw:aCols[6]
+  oCol:cHeader   := "Existencia"
+  oCol:nWidth       := 120
+  oCol:cEditPicture :="99,999,999,999.99"
+  oCol:bStrData     :={|oBrw|oBrw:=oFrmSelDoc:oBrw,TRAN(oBrw:aArrayData[oBrw:nArrayAt,6],"99,999,999,999.99")}
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+
+  oCol:=oBrw:aCols[7]
+  oCol:cHeader   := "Cant.Req."
+  oCol:nWidth       := 120
+  oCol:cEditPicture :="99,999,999,999.99"
+  oCol:bStrData     :={|oBrw|oBrw:=oFrmSelDoc:oBrw,TRAN(oBrw:aArrayData[oBrw:nArrayAt,7],"99,999,999,999.99")}
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nEditType:=1
+  oCol:bClrFooter   := {||{CLR_GREEN,8580861}}
+  oCol:bOnPostEdit  :={|oCol,uValue|oFrmSelDoc:PUTCANTID(oCol,uValue,7)}
+
+  oCol:=oBrw:aCols[8]
+  oCol:cHeader      := "Ok"
+  oCol:nWidth       := 25
+  oCol:AddBmpFile("BITMAPS\xCheckOn.bmp")
+  oCol:AddBmpFile("BITMAPS\xCheckOff.bmp")
+  oCol:bBmpData    := { ||oBrw:=oFrmSelDoc:oBrw,IIF(oBrw:aArrayData[oBrw:nArrayAt,8]=1,1,2) }
+  oCol:bLDClickData:={||oFrmSelDoc:ChqSelect(oFrmSelDoc)}
+
+
+  oCol:=oBrw:aCols[9]
+  oCol:cHeader   := "Suc. Des"
+  oCol:nWidth       := 0
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nEditType:=0
+  oCol:bClrFooter   := {||{CLR_GREEN,8580861}}
+
+  oBrw:DelCol(10)
+
+  oBrw:bClrStd   := {|oBrw|oBrw:=oFrmSelDoc:oBrw,nAt:=oBrw:nArrayAt, { iif( oBrw:aArrayData[nAt,8]=1, CLR_BLACK,  CLR_GRAY ),;
+                                                   iif( oBrw:nArrayAt%2=0, 9690879,  14217982 ) } }
+  oBrw:bClrSel     :={|oBrw|oBrw:=oFrmSelDoc:oBrw, { 65535,  16733011}}
+
+  oBrw:bKeyDown     := {|nKey|oFrmSelDoc:RunKeyD(nKey)}
+
+  oFrmSelDoc:oBrw:CreateFromCode()
+
+  oBrw:bClrHeader  := {|| { 0,  12632256}}
+
+  oFrmSelDoc:oFocus:=oBrw
+
+ @0,0  SBUTTON oBtn2;
+           SIZE 45, 22 ;
+           FILE "BITMAPS\RUN.bmp" NOBORDER;
+           LEFT PROMPT "Aceptar";
+           COLORS CLR_BLACK, { CLR_WHITE, CLR_GRAY, 1 };
+           ACTION (CursorWait(),oFrmSelDoc:XRUN())
+
+ @0,0 SBUTTON oBtn2;
+          SIZE 42, 23 ;
+          FILE "BITMAPS\XSALIR.BMP" ;
+          LEFT PROMPT "Salir";
+          NOBORDER;
+          COLORS CLR_BLACK, { CLR_WHITE, CLR_GRAY, 1 };
+          ACTION (CursorWait(),oFrmSelDoc:Close())
+
+ oFrmSelDoc:Activate({||oFrmSelDoc:INICIO()})
+
+RETURN NIL
+
+FUNCTION INICIO()
+//  oFrmSelDoc:oBrw:SetColor(0,14217982)
+RETURN .T.
+
+FUNCTION XRUN()
+LOCAL lOk:=.F.
+   IF !oFrmSelDoc:VALIDAR()
+      MSGINFO("Debe indicar los prestamos a realizar para poder ejecutar la orden de produccion")
+      RETURN .F.
+   ENDIF
+
+   oFrmSelDoc:PRESTAMO()
+
+   oFrmSelDoc:Close()
+
+   //EJECUTAR("DPPRDEJECINI",oDp:cSucursal,oFrmSelDoc:oFrm:EOP_ORDPRO,oFrmSelDoc:oFrm:cTipo ,;
+                           oFrmSelDoc:oFrm:EOP_CODDEP,oFrmSelDoc:oFrm:EOP_CODDEP,;
+                           oFrmSelDoc:oFrm:EOP_CANTID,oFrmSelDoc:oFrm)
+  lOk:=EJECUTAR("TECPRDEJECINI",oEjp:EOP_CODSUC,oEjp:EOP_ORDPRO,oEjp:cTipo ,;
+                                   oEjp:EOP_CODDEP,oEjp:EOP_CODDEP,oEjp:EOP_CANTID,oEjp)
+ 
+RETURN .T.
+
+FUNCTION VALIDAR()
+LOCAL nCheck:=0,I
+
+   FOR I:=1 TO LEN(oFrmSelDoc:oBrw:aArrayData)
+      IF oFrmSelDoc:oBrw:aArrayData[I,8]=1
+         nCheck++
+      ENDIF
+   NEXT I
+
+   IF nCheck=0
+      RETURN .F.
+   ENDIF
+RETURN .T.
+
+FUNCTION RunKeyD(nKey)
+   LOCAL nCol:=oFrmSelDoc:oBrw:nColSel,nRowSel:=oFrmSelDoc:oBrw:nRowSel
+
+  IF ValType(oFrmSelDoc:oBrw:aCols[nCol]:oEditGet)="O"
+     RETURN .T.
+  ENDIF
+
+  IF nKey=VK_F2
+     oFrmSelDoc:XRUN()
+  ENDIF
+
+  IF nKey=13
+      oFrmSelDoc:ChqSelect(oFrmSelDoc)
+  ENDIF
+
+RETURN .T.
+
+FUNCTION ChqSelect(oFrmSelDoc)
+  LOCAL oBrw:=oFrmSelDoc:oBrw,a:={}
+  LOCAL nArrayAt,nRowSel,nAt:=0
+  LOCAL lSelect:=1
+  LOCAL nCol:=8
+
+  IF ValType(oBrw)!="O"
+     RETURN .F.
+  ENDIF
+
+  nArrayAt:=oBrw:nArrayAt
+  nRowSel :=oBrw:nRowSel
+
+  lSelect :=oBrw:aArrayData[nArrayAt,nCol]
+
+  lSelect :=IIF(lSelect=0,1,0)
+
+  oBrw:aArrayData[nArrayAt,nCol]:=lSelect
+
+  oBrw:RefreshCurrent()
+
+RETURN .T.
+
+FUNCTION PRESTAMO()
+LOCAL oTabTra,cNumero:="",I,oMovi
+LOCAL cTipIva:="",cUndMed:="",nTasIva:=0,nCxUnd:=1,nCosto:=0,cItem:="",oOdbcInt,aDocMov:={},cDocMov:="",nAt:=0
+LOCAL cDsn:=""
+LOCAL lExisteDes // DR20160203a
+
+//OPENTABLE("SELECT * FROM DPDOCPROCTA",.F.,oOdbcInt)
+
+   cNumero:=SQLINCREMENTAL("DPDOCMOV","DOC_NUMERO")
+
+   oTabTra:=OPENTABLE("SELECT * FROM DPDOCMOV",.F.)
+   oTabTra:Append()
+   oTabTra:Replace("DOC_NUMERO",cNumero)
+   oTabTra:Replace("DOC_COMEN1","PRESTAMO DE MAT. PRIMA")
+   oTabTra:Replace("DOC_ESTADO","A")
+   oTabTra:Replace("DOC_COMEN2","")
+   oTabTra:Replace("DOC_FECHA",oDp:dFecha)
+   oTabTra:Replace("DOC_CONTAB","N")
+   oTabTra:Replace("DOC_NUMCBT","")
+   oTabTra:Replace("DOC_CENCOS",oDp:cCenCos)
+   oTabTra:Replace("DOC_EMPRES","")
+   oTabTra:Replace("DOC_NUMDOC","")
+   oTabTra:Replace("DOC_CODINV","")
+   oTabTra:Replace("DOC_CODCOM","")
+   oTabTra:Replace("DOC_NUMMEN",0)
+   oTabTra:Replace("DOC_CODSUC",oDp:cSucursal)
+   oTabTra:Replace("DOC_HORA",TIME())
+   oTabTra:Replace("DOC_CODPER","000001")
+   oTabTra:Replace("DOC_CODGER","")
+   oTabTra:Replace("DOC_CODDIV","")
+   oTabTra:Replace("DOC_ORDPRO",oFrmSelDoc:cOrden)
+   oTabTra:Replace("DOC_EJEPRO",oFrmSelDoc:cNumero)
+   oTabTra:Replace("DOC_EJETIP",oFrmSelDoc:cTipo)
+   oTabTra:Commit()
+   oTabTra:End()
+
+   FOR I:=1 TO LEN(oFrmSelDoc:oBrw:aArrayData)
+
+      IF oFrmSelDoc:oBrw:aArrayData[I,8]=1
+
+         cDsn:=""
+        // cDsn:=SQLGET("TECINTERCOM","INT_DSN","INT_CODCLI='"+oFrmSelDoc:oBrw:aArrayData[I,1]+"'")
+         cDsn:=SQLGET("TECINTERCOM","INT_DSN","INT_CODPRO='"+oFrmSelDoc:oBrw:aArrayData[I,1]+"'")
+
+
+         oOdbcInt:=OPENODBC(cDsn)
+
+         nAt:=ASCAN(aDocMov,{|a,n|a[1]=oFrmSelDoc:oBrw:aArrayData[I,9]})
+
+         IF nAt>0
+            cDocMov:=aDocMov[nAt,2]
+         ELSE
+            PUTDSN("DPDOCMOV","DPDOCMOV",cDsn)
+
+            cDocMov:=SQLGET("DPDOCMOV","DOC_NUMERO","DOC_NUMERO<>'' ORDER BY DOC_NUMERO DESC LIMIT 1",,oOdbcInt)
+            cDocMov:=STRZERO(VAL(cDocMov)+1,10)
+            oTabTra:=OPENTABLE("SELECT * FROM DPDOCMOV",.F.,oOdbcInt)
+            oTabTra:Append()
+            oTabTra:Replace("DOC_NUMERO",cDocMov)
+            oTabTra:Replace("DOC_COMEN1","PRESTAMO DE MAT. PRIMA")
+            oTabTra:Replace("DOC_ESTADO","A") 
+            oTabTra:Replace("DOC_COMEN2","")
+            oTabTra:Replace("DOC_FECHA",oDp:dFecha)
+            oTabTra:Replace("DOC_CONTAB","N")
+            oTabTra:Replace("DOC_NUMCBT","")
+            oTabTra:Replace("DOC_CENCOS","00000001")
+            oTabTra:Replace("DOC_EMPRES","")
+            oTabTra:Replace("DOC_NUMDOC","")
+            oTabTra:Replace("DOC_CODINV","")
+            oTabTra:Replace("DOC_CODCOM","")
+            oTabTra:Replace("DOC_NUMMEN",0)
+            oTabTra:Replace("DOC_CODSUC",oFrmSelDoc:oBrw:aArrayData[I,9])
+            oTabTra:Replace("DOC_HORA",TIME())
+            oTabTra:Replace("DOC_CODPER","000001")
+            oTabTra:Replace("DOC_CODGER","")
+            oTabTra:Replace("DOC_CODDIV","")
+            oTabTra:Replace("DOC_ORDPRO",oFrmSelDoc:cOrden)
+            oTabTra:Replace("DOC_EJEPRO",oFrmSelDoc:cNumero)
+            oTabTra:Replace("DOC_EJETIP",oFrmSelDoc:cTipo)
+            oTabTra:Commit()
+            oTabTra:End()
+            PUTDSN("DPDOCMOV","DPDOCMOV",oDp:cDsnData)
+
+            AADD(aDocMov,{oFrmSelDoc:oBrw:aArrayData[I,9],cDocMov})
+         ENDIF
+
+         cTipIva:=SQLGET("DPINV","INV_IVA","INV_CODIGO='"+oFrmSelDoc:oBrw:aArrayData[I,4]+"'")
+         cUndMed:=SQLGET("DPINVMED","IME_UNDMED,IME_CANTID","IME_CODIGO='"+oFrmSelDoc:oBrw:aArrayData[I,4]+"' AND "+;
+                                                 "IME_COMPRA='S'")
+
+         nCxUnd:=EJECUTAR("INVGETCXUND",oFrmSelDoc:oBrw:aArrayData[I,4],cUndMed)
+
+         nTasIva:=EJECUTAR("IVACAL",cTipIva,2,oDp:dFecha)
+       
+// DR20120328a         nCosto:=EJECUTAR("INVGETULTCOS",oFrmSelDoc:oBrw:aArrayData[I,4],cUndMed,oDp:cSucursal)
+
+         cItem:=STRZERO(I,5) // DR20160211a SQLINCREMENTAL("DPMOVINV","MOV_ITEM","MOV_TIPDOC='DINV' AND MOV_CODSUC='"+oDp:cSucursal+"' AND "+;
+                             // DR20160211a                        "MOV_DOCUME='"+cDocMov+"'",,,oOdbcInt)
+
+*********************SALIDA
+         // DR20160203a. Solo si existe
+         PUTDSN("DPINV","DPINV",cDsn)
+         lExisteDes:=!EMPTY(SQLGET("DPINV","INV_CODIGO","INV_CODIGO"+GetWhere("=",oFrmSelDoc:oBrw:aArrayData[I,4]))) // DR20160203a. Se busca si existe
+         PUTDSN("DPINV","DPINV",oDp:cDsnData)
+         IF lExisteDes
+         // DR20160203a. Fin.
+            PUTDSN("DPMOVINV","DPMOVINV",cDsn)
+            // DR20120328a. EL costo lo calculamos aqui.
+            nCosto:=EJECUTAR("INVGETULTCOS",oFrmSelDoc:oBrw:aArrayData[I,4],cUndMed,oDp:cSucursal)
+
+            oMovi:=OPENTABLE("SELECT * FROM DPMOVINV",.F.,oOdbcInt)
+            oMovi:Append()
+            oMovi:Replace("MOV_CODIGO",oFrmSelDoc:oBrw:aArrayData[I,4])
+            oMovi:Replace("MOV_CODCOM","")
+            oMovi:Replace("MOV_CODCTA","")
+            oMovi:Replace("MOV_DOCUME",cDocMov)
+            oMovi:Replace("MOV_FECHA",oDp:dFecha)
+            oMovi:Replace("MOV_CODTRA",oDp:cSalPre)
+            oMovi:Replace("MOV_UNDMED",cUndMed)
+            oMovi:Replace("MOV_CANTID",oFrmSelDoc:oBrw:aArrayData[I,7])
+            oMovi:Replace("MOV_COSTO",nCosto)
+            oMovi:Replace("MOV_USUARI",oDp:cUsuario)
+            oMovi:Replace("MOV_TOTAL",nCosto*oFrmSelDoc:oBrw:aArrayData[I,7])
+            oMovi:Replace("MOV_DESCUE",0)
+            oMovi:Replace("MOV_PRECIO",0)
+            oMovi:Replace("MOV_EXPORT",0)
+            oMovi:Replace("MOV_ITEM_A","")
+            oMovi:Replace("MOV_IVA",nTasIva)
+            oMovi:Replace("MOV_IMPOTR",0)
+            oMovi:Replace("MOV_NUMMEM",0)
+            oMovi:Replace("MOV_ASOTIP","")
+            oMovi:Replace("MOV_ASODOC","")
+            oMovi:Replace("MOV_TIPO","I")
+            oMovi:Replace("MOV_ITEM",cItem)
+            oMovi:Replace("MOV_LISTA","")
+            oMovi:Replace("MOV_TIPDOC","DINV")
+            oMovi:Replace("MOV_HORA",TIME())
+            oMovi:Replace("MOV_INVACT",1)
+            oMovi:Replace("MOV_CXUND",nCxUnd)
+            oMovi:Replace("MOV_CODSUC",oFrmSelDoc:oBrw:aArrayData[I,9])
+            oMovi:Replace("MOV_CODALM",oFrmSelDoc:oBrw:aArrayData[I,3])
+            oMovi:Replace("MOV_TIPIVA",cTipIva)
+            oMovi:Replace("MOV_FISICO",-1)
+            oMovi:Replace("MOV_LOGICO",-1)
+            oMovi:Replace("MOV_CONTAB",-1)
+            oMovi:Replace("MOV_CODVEN","")
+            oMovi:Replace("MOV_APLORG","I")
+            oMovi:Replace("MOV_CENCOS",oDp:cCenCos)
+            oMovi:Replace("MOV_MTOCOM",0)
+            oMovi:Replace("MOV_IMPORT",0)
+            oMovi:Replace("MOV_CDESC","")
+            oMovi:Replace("MOV_IMPPRO",0)
+            oMovi:Replace("MOV_EXPEND",0)
+            oMovi:Replace("MOV_BANDA",0)
+            oMovi:Replace("MOV_LOTE","")
+            oMovi:Replace("MOV_TALL01",0)
+            oMovi:Replace("MOV_TALL02",0)
+            oMovi:Replace("MOV_TALL03",0)
+            oMovi:Replace("MOV_TALL04",0)
+            oMovi:Replace("MOV_TALL05",0)
+            oMovi:Replace("MOV_TALL06",0)
+            oMovi:Replace("MOV_TALL07",0)
+            oMovi:Replace("MOV_TALL08",0)
+            oMovi:Replace("MOV_TALL09",0)
+            oMovi:Replace("MOV_TALL10",0)
+            oMovi:Replace("MOV_FCHVEN",CTOD(""))
+            oMovi:Replace("MOV_ITEM_C","")
+            oMovi:Commit()
+            oMovi:End()
+            PUTDSN("DPMOVINV","DPMOVINV",oDp:cDsnData)
+
+****************************** ENTRADA
+            oMovi:=OPENTABLE("SELECT * FROM DPMOVINV",.F.)
+            oMovi:Append()
+            oMovi:Replace("MOV_CODIGO",oFrmSelDoc:oBrw:aArrayData[I,4])
+            oMovi:Replace("MOV_CODCOM","")
+            oMovi:Replace("MOV_CODCTA","")
+            oMovi:Replace("MOV_DOCUME",cNumero)
+            oMovi:Replace("MOV_FECHA",oDp:dFecha)
+            oMovi:Replace("MOV_CODTRA",oDp:cEntPre)
+            oMovi:Replace("MOV_UNDMED",cUndMed)
+            oMovi:Replace("MOV_CANTID",oFrmSelDoc:oBrw:aArrayData[I,7])
+            oMovi:Replace("MOV_COSTO",nCosto)
+            oMovi:Replace("MOV_USUARI",oDp:cUsuario)
+            oMovi:Replace("MOV_TOTAL",nCosto*oFrmSelDoc:oBrw:aArrayData[I,7])
+            oMovi:Replace("MOV_DESCUE",0)
+            oMovi:Replace("MOV_PRECIO",0)
+            oMovi:Replace("MOV_EXPORT",0)
+            oMovi:Replace("MOV_ITEM_A","")
+            oMovi:Replace("MOV_IVA",nTasIva)
+            oMovi:Replace("MOV_IMPOTR",0)
+            oMovi:Replace("MOV_NUMMEM",0)
+            oMovi:Replace("MOV_ASOTIP","")
+            oMovi:Replace("MOV_ASODOC","")
+            oMovi:Replace("MOV_TIPO","I")
+            oMovi:Replace("MOV_ITEM",cItem)
+            oMovi:Replace("MOV_LISTA","")
+            oMovi:Replace("MOV_TIPDOC","DINV")
+            oMovi:Replace("MOV_HORA",TIME())
+            oMovi:Replace("MOV_INVACT",1)
+            oMovi:Replace("MOV_CXUND",nCxUnd)
+            oMovi:Replace("MOV_CODSUC",oDp:cSucursal)
+            oMovi:Replace("MOV_CODALM",oFrmSelDoc:cCodAlm)
+            oMovi:Replace("MOV_TIPIVA",cTipIva)
+            oMovi:Replace("MOV_FISICO",1)
+            oMovi:Replace("MOV_LOGICO",1)
+            oMovi:Replace("MOV_CONTAB",1)
+            oMovi:Replace("MOV_CODVEN","")
+            oMovi:Replace("MOV_APLORG","I")
+            oMovi:Replace("MOV_CENCOS",oDp:cCenCos)
+            oMovi:Replace("MOV_MTOCOM",0)
+            oMovi:Replace("MOV_IMPORT",0)
+            oMovi:Replace("MOV_CDESC","")
+            oMovi:Replace("MOV_IMPPRO",0)
+            oMovi:Replace("MOV_EXPEND",0)
+            oMovi:Replace("MOV_BANDA",0)
+            oMovi:Replace("MOV_LOTE","")
+            oMovi:Replace("MOV_TALL01",0)
+            oMovi:Replace("MOV_TALL02",0)
+            oMovi:Replace("MOV_TALL03",0)
+            oMovi:Replace("MOV_TALL04",0)
+            oMovi:Replace("MOV_TALL05",0)
+            oMovi:Replace("MOV_TALL06",0)
+            oMovi:Replace("MOV_TALL07",0)
+            oMovi:Replace("MOV_TALL08",0)
+            oMovi:Replace("MOV_TALL09",0)
+            oMovi:Replace("MOV_TALL10",0)
+            oMovi:Replace("MOV_FCHVEN",CTOD(""))
+            oMovi:Replace("MOV_ITEM_C","")
+            oMovi:Commit()
+            oMovi:End()
+            oOdbcInt:End()
+         ENDIF
+      ELSE
+         MensajeErr("El producto "+oFrmSelDoc:oBrw:aArrayData[I,4]+" no existe en la empresa que se solicito existencia. No se ejecutó este movimiento","Alerta")
+      ENDIF
+  NEXT I
+RETURN .T.
+
+FUNCTION PUTCANTID(oCol,uValue,nCol)
+LOCAL nCantid:=0,nCanOrd:=0
+
+   IF uValue<=0
+      MSGINFO("La cantidad debe ser mayor a cero")
+      RETURN .F.
+   ENDIF
+
+   IF uValue>oFrmSelDoc:oBrw:aArrayData[oFrmSelDoc:oBrw:nArrayAt,6]
+      MSGINFO("La cantidad supera la existencia")
+      RETURN .F.
+   ENDIF
+
+   oFrmSelDoc:oBrw:aArrayData[oFrmSelDoc:oBrw:nArrayAt,7]:=uValue
+   oFrmSelDoc:ChqSelect(oFrmSelDoc)
+
+RETURN .T.
+

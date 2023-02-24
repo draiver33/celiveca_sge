@@ -1,0 +1,167 @@
+// Programa   : DPRECCLICREADOC
+// Fecha/Hora : 07/12/2005 06:48:15
+// Propósito  : Crear Documentos Diferenciales de Pago
+// Creado Por : Juan Navas
+// Llamado por: DPRECIBOSCLI
+// Aplicación : Ventas
+// Tabla      : DPDOCCLI
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(oCliRec)
+
+   LOCAL cTipDoc:="CRE",cNumero:="",cWhere,oTable,aCols:={},I
+   LOCAL cCodigo:=STRZERO(1,10),lResp:=.T.,nMonto:=0
+   LOCAL cCodSuc:=oDp:cSucursal,cCodVen:=STRZERO(1,6),cCenCos:=oDp:cCenCos,dFecha:=oDp:dFecha,cRecibo:=""
+   LOCAL cHora  :=TIME()
+   LOCAL cDocMod:=STRZERO(1,10) // Documento Modelo
+   LOCAL cTipMod:="FAV"         // Tipo de Documento Modelo
+   LOCAL nCxC   :=1
+   LOCAL cRecTipDoc:="",cRecNumDoc:=""
+
+   IF ValType(oCliRec)="O" // Documento Asociado
+
+      cTipDoc:=oCliRec:REC_TIPDOC
+      cNumero:=oCliRec:REC_NUMDOC
+      cRecibo:=oCliRec:REC_NUMERO
+      cCodigo:=oCliRec:REC_CODIGO
+      cCodSuc:=oCliRec:REC_CODSUC
+      cCodVen:=oCliRec:REC_CODCOB
+      dFecha :=oCliRec:REC_FECHA
+      cHora  :=oCliRec:REC_HORA
+      nMonto :=oCliRec:REC_MTODIF
+
+//      IF cRecTipDoc="ANT"
+//         nMonto :=oCliRec:REC_PAGOS
+//         oCliRec:REC_MONTO:=oCliRec:REC_PAGOS
+//      ENDIF
+// MONTO -oCliRec:REC_PAGOS
+// ? oCliRec:REC_MONTO,oCliRec:REC_PAGOS
+
+      cRecTipDoc:=oCliRec:RECTIPDOC
+      cRecNumDoc:=oCliRec:RECNUMDOC
+
+      IF nMonto==0 
+         RETURN .T. // No hay Diferencia Cambiaria
+      ENDIF
+
+   ENDIF    
+
+   nCxC:=EJECUTAR("DPTIPCXC",cTipDoc)
+   // IIF(SQLGET("DPTIPDOCCLI","TDC_CXC","TDC_TIPO"+GetWhere("=",cTipDoc))="D",1,-1)
+
+   cWhere:="DOC_CODSUC"+GetWhere("=",cCodSuc)+ " AND "+;
+           "DOC_TIPDOC"+GetWhere("=",cTipDoc)+ " AND "+;
+           "DOC_NUMERO"+GetWhere("=",cNumero)+ " AND "+;
+           "DOC_TIPTRA"+GetWhere("=","D"    )
+         
+   oTable:=OpenTable("SELECT * FROM DPDOCCLI WHERE  "+cWhere ," WHERE "$cWhere)
+
+   IF cRecTipDoc="ANT" .OR. cRecTipDoc="AOD" // Esta Modificando un Anticipo
+      SQLUPDATE("DPDOCCLI","DOC_NETO",nMonto,cWhere)
+      RETURN .T.
+   ENDIF
+
+   // ? "AGREGA EL DOCUMENTO",cTipDoc,"NO PUEDE QUEDAR VACIO",nMonto
+   // ? cRecTipDoc,"cRecTipDoc"
+
+   IF oTable:RecCount()=0 .AND. Empty(cRecTipDoc)
+
+      oTable:AppendBlank()
+      cWhere:=""
+
+      cNumero:=SQLINCREMENTAL("DPDOCCLI","DOC_NUMERO","DOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                                      "DOC_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+                                                      "DOC_TIPTRA"+GetWhere("=","D"    ))
+
+   ENDIF
+
+   oTable:Replace("DOC_NUMERO", cNumero    )
+   oTable:Replace("DOC_CODSUC", cCodSuc    )
+   oTable:Replace("DOC_CODIGO", cCodigo    )
+   oTable:Replace("DOC_TIPDOC", cTipDoc    )
+   oTable:Replace("DOC_TIPTRA", "D"        )
+   oTable:Replace("DOC_CODVEN", cCodVen    )
+   oTable:Replace("DOC_CENCOS", cCenCos    )
+   oTable:Replace("DOC_FECHA" , dFecha     )
+   oTable:Replace("DOC_HORA"  , cHora      )
+   oTable:Replace("DOC_CODMON", oDp:cMoneda)
+   oTable:Replace("DOC_VALCAM", 1          )
+   oTable:Replace("DOC_ESTADO", IIF(cTipDoc="ANT" .OR. cRecTipDoc="AOD" ,"CA","PE"))
+   oTable:Replace("DOC_CXC"   , nCxC       )
+   oTable:Replace("DOC_ACT"   , 1          )
+   oTable:Replace("DOC_NETO"  , ABS(nMonto))
+   oTable:Replace("DOC_DOCORG", "P"        ) // Es Pago
+   oTable:Replace("DOC_RECNUM", cRecibo    )
+   oTable:Replace("DOC_ZONANL", SQLGET("DPCLIENTES","CLI_ZONANL","CLI_CODIGO"+GetWhere("=",cCodigo)))
+   //?oCliRec:nDifDi
+   //---IGTF-----------------------------------------------------------------------------------------
+   IF oCliRec:REC_TIPDOC="ANT" .OR. oCliRec:REC_TIPDOC="AOD"
+    oTable:Replace("DOC_VALCA2",oCliRec:REC_VALCAM)
+    oTable:Replace("DOC_TOTDI", DIV(ABS(nMonto),oCliRec:REC_VALCAM))
+   ELSE
+    oTable:Replace("DOC_VALCA2",0)
+    oTable:Replace("DOC_TOTDI", 0)
+   ENDIF
+   //---IGTF-----------------------------------------------------------------------------------------
+   oTable:Commit( cWhere )
+
+   oTable:End()
+
+   IF ValType(oCliRec)="O" // Documento Asociado
+
+      oCliRec:REC_TIPDOC:=cTipDoc
+      oCliRec:REC_NUMDOC:=cNumero
+
+      SQLUPDATE("DPRECIBOSCLI","REC_NUMDOC",cNumero,"REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                    "REC_NUMERO"+GetWhere("=",oCliRec:REC_NUMERO))
+
+      // ? " oCliRec:REC_NUMDOC:=cNumero ","  
+
+
+   ENDIF
+
+   IF cTipDoc=="ANT" .OR. cTipDoc=="AOD" // Queda Pendiente para un Futuro Pago
+      RETURN .T.
+   ENDIF
+
+   cWhere:="DOC_CODSUC"+GetWhere("=",cCodSuc)+ " AND "+;
+           "DOC_TIPDOC"+GetWhere("=",cTipDoc)+ " AND "+;
+           "DOC_NUMERO"+GetWhere("=",cNumero)+ " AND "+;
+           "DOC_TIPTRA"+GetWhere("=","P"    )
+
+   oTable:=OpenTable("SELECT * FROM DPDOCCLI WHERE  "+cWhere ," WHERE "$cWhere)
+
+   IF oTable:RecCount()=0
+
+      oTable:AppendBlank()
+      cWhere:=""
+
+   ENDIF
+
+   oTable:Replace("DOC_NUMERO", cNumero    )
+   oTable:Replace("DOC_CODSUC", cCodSuc    )
+   oTable:Replace("DOC_CODIGO", cCodigo    )
+   oTable:Replace("DOC_TIPDOC", cTipDoc    )
+   oTable:Replace("DOC_TIPTRA", "P"        )
+   oTable:Replace("DOC_CODVEN", cCodVen    )
+   oTable:Replace("DOC_CENCOS", cCenCos    )
+   oTable:Replace("DOC_FECHA" , dFecha     )
+   oTable:Replace("DOC_HORA"  , cHora      )
+   oTable:Replace("DOC_CODMON", oDp:cMoneda)
+   oTable:Replace("DOC_VALCAM", 1          )
+   oTable:Replace("DOC_ESTADO", "CA"       )
+   oTable:Replace("DOC_CXC"   , nCxC*-1    )
+   oTable:Replace("DOC_ACT"   , 1          )
+   oTable:Replace("DOC_NETO"  , ABS(nMonto))
+   oTable:Replace("DOC_RECNUM", cRecibo    )
+
+   oTable:Commit( cWhere )
+   oTable:End()
+
+   // Debe Asignar en el Recibo el Documento Asociado
+
+
+RETURN lResp
+// EOF
+

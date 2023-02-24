@@ -1,0 +1,1761 @@
+// Programa   : MINFACTURAV
+// Fecha/Hora : 22/11/2004 23:10:42
+// Propósito  : Factura de Venta
+// Creado Por : Juan Navas
+// Llamado por: Ventas y Cuentas por Cobrar
+// Aplicación : VENTA
+// Tabla      : DPDOCCLI
+
+#INCLUDE "DPXBASE.CH"
+#INCLUDE "Constant.ch"
+#INCLUDE "SAYREF.CH"
+
+PROCE MAIN(cTipDoc,cNumero,lView,cLetra)
+  LOCAL I,aData:={},oGrid,oCol,cSql,cScope,aMonedas:={},T1:=SECONDS(),cFile,cRif
+  LOCAL cTitle:="",cExcluye:="", bEstado,cFileEdt:=""
+  LOCAL oFont,oFontG,oFontB
+  LOCAL oSayDesc,oSayRef
+  LOCAL aExt:={".EDT",".SCG",".BRW"}
+  LOCAL cFileEdt,cFileScg,cFileBrw,cFile,cModSer:=""
+  LOCAL dFechaS:=EJECUTAR("DPFECHASRV") // Necesario para DPINV/INV_FCHACT/GRIDPOST
+  LOCAL lPesado:=IF(ISFIELD("DPUNDMED","UND_VARIA"),COUNT("DPUNDMED","UND_VARIA=1")>0,.F.)
+  LOCAL cImpFiscal:="",cSerie:="",lLibVta
+  LOCAL cSerieF:="" // Serie Según tipo de Documento
+  //IGTF-------------------------------------------------
+  LOCAL oData2:=DATASET("DEFIGTF"+oDp:cSucursal,"ALL")
+  //IGTF-------------------------------------------------
+
+  DEFAULT cTipDoc:="FAV",;
+          lView  :=.F.
+
+  oDp:lDpxBase:=.F.
+
+  EJECUTAR("INVGETUNDMED","",.T.)
+  EJECUTAR("SETIVAPE") // Variables del IVA, Pago Electrónico
+
+//  IF !Empty(cLetra)
+//     cModSer:=SQLGET("DPSERIEFISCAL","SFI_MODELO","SFI_LETRA"+GetWhere("=",cLetra)+" AND SFI_ACTIVO=1")
+//  ENDIF
+
+  IF Empty(oDp:aUndMed)
+     MensajeErr("No hay Unidades de Medida, Necesario para el Cuerpo del Documento ")
+     RETURN .F.
+  ENDIF
+
+  IF Empty(oDp:aMonedas)
+
+     IF !Empty(oDp:cMoneda)
+       SQLUPDATE("DPTABMON","MON_ACTIVO",.T.,"MON_CODIGO"+GetWhere("=",oDp:cMoneda))
+     ENDIF
+
+     MensajeErr("No hay Divisas definidas o Activas, Necesarias para documentos del cliente")
+     DPLBX("DPTABMON.LBX")
+
+     RETURN .F.
+
+  ENDIF
+
+  lLibVta:=SQLGET("DPTIPDOCCLI","TDC_LIBVTA,TDC_SERIEF","TDC_TIPO"+GetWhere("=",cTipDoc))
+  cSerieF:=DPSQLROW(2,"")
+
+IF .F.
+
+ ? cLetra,lLibVta,COUNT("DPSERIEFISCAL","SFI_ACTIVO=1")>1
+
+  IF Empty(cLetra) .AND. lLibVta .AND. COUNT("DPSERIEFISCAL","SFI_ACTIVO=1")>1
+
+    EJECUTAR("DPSERIEFISCALCREA")
+
+    IF EJECUTAR("BRDOCCLISERFIS",NIL,oDp:cSucursal,NIL,NIL,NIL,NIL,cTipDoc)
+       RETURN .F.
+    ENDIF
+
+  ENDIF
+
+ENDIF
+
+  IF !EJECUTAR("DPPRIVVTALEE",cTipDoc,.T.) // Lee los Privilegios del Usuario
+     RETURN .F.
+  ENDIF
+
+  cTitle:=oDp:Get(cTipDoc+"Titulo")
+
+  // Buscamos Letra segun tipo de Documento
+  IF Empty(cLetra).AND. lLibVta
+     cLetra:=SQLGET("DPSERIEFISCAL","SFI_LETRA","SFI_MODELO"+GetWhere("=",cSerieF))
+  ENDIF
+
+  IF !Empty(cLetra) .AND. lLibVta
+
+     cSerie     :=SQLGET("DPSERIEFISCAL","SFI_MODELO,SFI_IMPFIS","SFI_LETRA"+GetWhere("=",cLetra)+" AND SFI_ACTIVO=1")
+     cImpFiscal :=ALLTRIM(UPPER(DPSQLROW(2,"")))
+
+     IF "NINGU"$UPPER(cImpFiscal)
+        cImpFiscal:=""
+     ENDIF
+
+     cModSer    :=cSerie
+
+  ENDIF
+
+  IF !Empty(cModSer)
+     cModSer:=ALLTRIM(cModSer)
+     cTitle :=cTitle+" [ Serie "+cModSer+IF(Empty(cImpFiscal),""," - "+cImpFiscal)+" ]"
+  ENDIF
+
+  // AG20080401
+  oDp:dFchIniDoc:=CTOD(SPACE(8))
+  oDp:dFchFinDoc:=CTOD(SPACE(8))
+
+  DEFINE FONT oFont  NAME "Times New Roman"   SIZE 0, -14
+  DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -15 BOLD
+
+//  cFileEdt:="FORMS\DPDOCCLI_"+cTipDoc+".EDT"
+
+  IF !ISDPSTD() 
+
+    FOR I=1 TO LEN(aExt)
+
+      cFile:="FORMS\DPDOCCLI_"+cTipDoc+aExt[I]
+
+      IF !FILE(cFile) 
+        COPY FILE ("FORMS\DPDOCCLI_FAV"+aExt[I]) TO (cFile)
+      ENDIF
+
+    NEXT I
+
+    cFileEdt:="FORMS\DPDOCCLI_"+cTipDoc+aExt[1]
+    cFileScg:="FORMS\DPDOCCLI_"+cTipDoc+aExt[2]
+    cFileBrw:="FORMS\DPDOCCLI_"+cTipDoc+aExt[3]
+
+  ELSE
+
+//  cFileEdt:="FORMS\DPDOCCLI_FAV"+aExt[1]
+//  cFileScg:="FORMS\DPDOCCLI_FAV"+aExt[2]
+//  cFileBrw:="FORMS\DPDOCCLI_FAV"+aExt[3]
+
+    cFileEdt:="FORMS\DPDOCCLI_"+cTipDoc+aExt[1]
+    cFileScg:="FORMS\DPDOCCLI_"+cTipDoc+aExt[2]
+    cFileBrw:="FORMS\DPDOCCLI_"+cTipDoc+aExt[3]
+
+    IF !ISFILESTD(cFileEdt,.T.)
+       cFileEdt:="FORMS\DPDOCCLI_FAV"+aExt[1]
+       cFileScg:="FORMS\DPDOCCLI_FAV"+aExt[2]
+       cFileBrw:="FORMS\DPDOCCLI_FAV"+aExt[3]
+    ENDIF
+
+    IF !ISFILESTD(cFileEdt,.T.)
+       MensajeErr("No existe Componente "+cFileEdt)
+       RETURN .F.
+    ENDIF
+
+  ENDIF
+
+
+  DOCENC(cTitle,"oDocCli",cFileEdt)
+
+  cScope:="DOC_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND "+;
+          "DOC_TIPDOC"+GetWhere("=",cTipDoc      )+" AND "+;
+          "DOC_TIPTRA"+GetWhere("=","D"          )+" AND "+;
+          "DOC_DOCORG"+GetWhere("=","V"          )+;
+          IIF(Empty(cNumero),""," AND DOC_NUMERO"+GetWhere("=",cNumero))
+
+
+  IF !Empty(cNumero) .AND. lView
+    oDocCli:lMod:=.F.
+    oDocCli:lInc:=.F.
+    oDocCli:lEli:=.F.
+  ENDIF
+
+  oDocCli:cTitle_:=cTitle
+  oDocCli:lBar:=.T.
+  oDocCli:SetScope(cScope)
+  oDocCli:cScopeFind:=cScope
+
+  oDocCli:ADD("DOC_NUMGTR","")
+
+ // oDocCli:SetTable("DPDOCCLI","DOC_NUMERO",cScope, NIL, NIL,NIL,"DOC_NUMERO")
+ 
+  oDocCli:SetTable("DPDOCCLI","DOC_NUMERO") 
+
+  oDocCli:cWhereRecord:=cScope
+  oDocCli:cNomDoc    :=ALLTRIM(cTitle)
+  oDocCli:nPar_CxC   :=0
+  oDocCli:cValCodCli :=""
+  oDocCli:aPrecios   :={}
+  oDocCli:lPar_IVA   :=.T.
+  oDocCli:lPar_Condic:=.T.
+//oDocCli:lGenerico  :=.F.
+  oDocCli:DOC_FACAFE :=""
+  oDocCli:DOC_ORIGEN :="V"
+  oDocCli:cTerceros  :="N" // NO requiere Terceros
+  oDocCli:lSelCodSuc :=.F. // Seleccionar Codigo Sucursal
+  oDocCli:lImportAut :=.F. 
+  oDocCli:lIsProdAutm:=.T. // Indica si Tiene Productos Automáticos 
+  oDocCli:cNumTar    :=""  // Número de Tarea Automática 
+  oDocCli:lDpEquiv   :=(COUNT("DPEQUIV","WHERE 1=1 LIMIT 1")>0)  // Indica si tiene Equivalente para Agregar Barra
+  oDocCli:cTdoc      :=cTipDoc   // SYSANDES
+  oDocCli:lValCodCli :=.F. // Activa los demas controles luego que sea Validado el Cliente
+  oDocCli:cWhereCli  :="CLI_SITUAC='A' OR CLI_SITUAC='C'"
+  oDocCli:dFechaS    :=dFechaS
+  oDocCli:cSerie     :=cSerie     // SQLGET("DPSERIEFISCAL","SFI_MODELO,SFI_SERIMP","SFI_LETRA"+GetWhere("=",cLetra))
+  oDocCli:cImpFiscal :=cImpFiscal
+  oDocCli:lImpFiscal :=!Empty(oDocCli:cImpFiscal) .AND. !("NINGUN"$UPPER(oDocCli:cImpFiscal))
+  oDocCli:lPELock    :=.F.
+  oDocCli:nRecCount  :=0
+  //IGTF-------------------------------------------------
+  oDocCli:lIGTFDef    :=.F.
+  oDocCli:lIGTFDef:=oData2:Get("lIGTFDef",.F.)
+  oDocCli:dIGTFFchDes:=oData2:Get("dIGTFFchDes"  ,CTOD(""))
+  oDocCli:dIGTFFchHas:=oData2:Get("dIGTFFchHas"  ,CTOD(""))
+  oDocCli:nIGTFPor:=oData2:Get("nIGTFPor"  ,0.00)
+
+  //IGTF-------------------------------------------------
+
+  // Agregar en Clausula Where Para Actualizar el Registro
+  // Utiliza Indice: DOC_CODSUC,DOC_TIPDOC,DOC_NUMERO,DOC_TIPTRA                                     
+  oDocCli:cScope_Update:="DOC_TIPTRA"+GetWhere("=","D")+" AND "+;
+                         "DOC_DOCORG"+GetWhere("=","V")
+
+
+//oDocCli:lPar_AutoImp_:=oDocCli:lPar_AutoImp
+
+  oDocCli:CCG_RIF   :=""   // 25-08-2008 Marlon Ramos Evitar Error: "CCG_RIF sin declaraci¥n" en DPDOCNUMFIS cuando se usa una serie fiscal
+  oDocCli:CCG_NOMBRE:=""   // 25-08-2008 Marlon Ramos Evitar Error: "CCG_NOMBRE sin declaraci¥n" en DPDOCNUMFIS cuando se usa una serie fiscal
+
+  oDocCli:cNumero   :=""
+  oDocCli:cLetra    :=cLetra
+  oDocCli:cNumFis   :=""
+  oDocCli:cFileEdt  :=cFileEdt
+  oDocCli:cFileScg  :=cFileScg
+  oDocCli:cFileBrw  :=cFileBrw
+
+  STORE "" TO oDocCli:CCG_DIR1,oDocCli:CCG_DIR2,oDocCli:CCG_TEL1
+
+  oDocCli:DOC_DESTIN :="N"
+  oDocCli:bEstado := {||EJECUTAR("DPDOCCLIEDO",oDocCli:DOC_CODSUC,oDocCli:cTipDoc,;
+                                               oDocCli:DOC_CODIGO,oDocCli:DOC_NUMERO,;
+                                               NIL,oDocCli:DOC_CXC,oDocCli:DOC_NETO,oDocCli)}
+
+  oDocCli:cVeces := 0    // 18-10-2008 Marlon Ramos
+
+  EJECUTAR("DPDOCCLIPAR",oDocCli,cTipDoc)
+
+  // Decreto 22/12/2016
+  oDocCli:lLimite     :=.F.  // Documento con Limites
+  oDocCli:lPagEle     :=.F.  // Pago en formas electrónica
+  oDocCli:nLimite     :=0    // Limite del Monto
+  oDocCli:cTipPer     :="N"  // Personas Naturales
+  oDocCli:nIvaGN      :=0    // Iva Aplicado
+  oDocCli:cTitleCli   :=nil  // Titulo Ventana de Clientes
+  oDocCli:lParAutoImp :=oDocCli:lPar_AutoImp // AutoImpresión de Factura
+  oDocCli:dDesdeLim   :=CTOD("")
+  oDocCli:dHastaLim   :=CTOD("")
+  oDocCli:cTipIvaLim  :="" 
+  oDocCli:DOC_MTOBRU  :=0 // Calculado en DOCTOTAL Y Necesario para el IVA rebaj
+  oDocCli:cTitleIni   :=oDocCli:cTitle
+
+
+  oDocCli:cPrimary:="DOC_CODSUC,DOC_TIPDOC,DOC_NUMERO"
+
+// oDocCli:lMsgBar :=.F.
+
+  oDocCli:Windows(0,0,625,1010) 
+
+  cScope:="DOC_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND "+;
+          "DOC_TIPDOC"+GetWhere("=",cTipDoc)      +" AND "+;
+          "DOC_TIPTRA"+GetWhere("=","D")
+
+  // No es Impresora Epson
+
+  IF oDocCli:nEpson=0  
+    oDocCli:SetIncremental("DOC_NUMERO",cScope,oDp:Get(cTipDoc+"NUMERO"))
+  ENDIF
+ 
+  oDocCli:SetMemo("DOC_NUMMEM","Descripción Amplia")
+
+  IF DPVERSION()>4
+    oDocCli:SetAdjuntos("DOC_FILMAI") // Vinculo con DPFILEEMP
+  ENDIF
+
+  //IF oDp:Get(cTipDoc+"LCreaCli") .AND. oDp:nVersion>=4
+
+    oDocCli:AddBtnEdit("CLIENTE.BMP","Crear Cliente","(oDocCli:nOption=1 .OR. oDocCli:nOption=3 )",;
+                               "EJECUTAR('MINCREACLI',oDocCli:oDOC_CODIGO)","OTHER")
+
+    oDocCli:AddBtnEdit("RETIVA.BMP","Validar RIF","(oDocCli:nOption=1 .OR. oDocCli:nOption=3 )","oDocCli:VALRIF()","OTHER")
+
+
+ // ENDIF
+
+ // oDocCli:AddBtnEdit("xpeople2.bmp","Cliente Genérico","(oDocCli:nOption=1 .OR. oDocCli:nOption=3) .AND. oDocCli:DOC_CODIGO=STRZERO(0,10)",;
+                                     "EJECUTAR('DPCLIENTESCERO',oDocCli,oDocCli:oDoc_CODIGO)","CLI")
+
+
+  oDocCli:lPELock:=.F. // Bloque el Botón en las Devoluciones Importadas
+  oDocCli:lPagEle:=.F.
+
+  EJECUTAR("DPFACTURAV10IVA",oDocCli)
+
+  IF  (oDp:dFecha>=oDp:dDesdePE .AND. oDp:dFecha<=oDp:dHastaPE) 
+
+     oDocCli:AddBtnEdit("iva10%.bmp","Pago Electrónico","(oDocCli:nOption=1 .OR. oDocCli:nOption=3) .AND. !oDocCli:lPELock",;
+                        "oDocCli:SETIVA10()","CLI")
+
+  ENDIF
+
+  oDocCli:AddBtn("xexpediente.bmp","Expedientes (Ctrl-A)","(oDocCli:nOption=0)",;
+                 "EJECUTAR('DPDOCCLIEXP',NIL,oDocCli:DOC_CODSUC,;
+                                             oDocCli:DOC_TIPDOC,;
+                                             oDocCli:DOC_CODIGO,;
+                                             oDocCli:DOC_NUMERO,;
+                                             'Expedientes '+oDocCli:cTitle)","CLI",,STR(DP_CTRL_A))
+  
+  oDocCli:AddBtn("favoritos.bmp","Agregar como Favorito (Ctrl-F)","(oDocCli:nOption=0)",;
+                   "EJECUTAR('DPDOCCLIFAV',oDocCli:cTitle    ,;
+                                           oDocCli:DOC_CODSUC,;
+                                           oDocCli:DOC_TIPDOC,;
+                                           oDocCli:DOC_CODIGO,;
+                                           oDocCli:DOC_NUMERO,;
+                                           oDocCli:cNomDoc   ,;
+                                           oDocCli:oWnd      )","CLI",,STR(DP_CTRL_F))
+
+  oDocCli:AddBtn("MENU.bmp","Menú de Opciones (Ctrl-O)","(oDocCli:nOption=0)",;
+                    "EJECUTAR('DPDOCCLIMNU',oDocCli:DOC_CODSUC ,;
+                                            oDocCli:DOC_NUMERO ,;
+                                            oDocCli:DOC_CODIGO ,;
+                                            oDocCli:cNomDoc , oDocCli:DOC_TIPDOC , oDocCli  )","CLI",,STR(DP_CTRL_O))
+
+  IF oDp:Get(cTipDoc+"RETISR")
+
+    oDocCli:AddBtn("RETISLR.bmp","Retención ISLR","(oDocCli:nOption=0)",;
+                   "EJECUTAR('DPDOCISLR',oDocCli:DOC_CODSUC,;
+                                         oDocCli:DOC_TIPDOC,;
+                                         oDocCli:DOC_CODIGO,;
+                                         oDocCli:DOC_NUMERO,;
+                                         oDocCli:cNomDoc   ,'V',;
+                                         oDocCli:DOC_NETO)","CLI")
+  ENDIF
+
+  IF oDp:Get(cTipDoc+"RETIVA")
+
+    oDocCli:AddBtn("RETIVA.bmp","Retención de IVA","(oDocCli:nOption=0)",;
+                    "EJECUTAR('DPDOCCLIRTI' ,oDocCli:DOC_CODSUC,;
+                                             oDocCli:DOC_TIPDOC,;
+                                             oDocCli:DOC_CODIGO,;
+                                             oDocCli:DOC_NUMERO,;
+                                             oDocCli:cNomDoc     )","CLI")
+  ENDIF
+
+ 
+  IF oDocCli:lPar_REQDIG .AND. oDp:nVersion>=5
+
+    oDocCli:AddBtn("ADJUNTAR.BMP","Digitalización","(oDocCli:nOption=0)",;
+                   "EJECUTAR([DPDOCCLIDIG],oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_CODIGO,oDocCli:DOC_NUMERO,.F.)","CLI")
+
+  ENDIF
+
+
+  IF oDp:nVersion>=5.1 .AND. ISRELEASE("16.08")
+
+    oDocCli:AddBtn("EMAIL.BMP","Enviar en Formato HTML por Correo","(oDocCli:nOption=0)",;
+                   "oDocCli:DOCCLIMAIL(.F.)","CLI")
+
+  ENDIF
+
+
+/*
+  IF oDp:nVersion>=5.1 .AND. ISRELEASE("16.08")
+
+    oDocCli:AddBtn("PDF.BMP","Enviar en Formato PDF por Correo","(oDocCli:nOption=0)",;
+                   "oDocCli:PRINTER_PDF(.T.)","CLI")
+
+  ENDIF
+*/
+
+  IF oDp:Get(cTipDoc+"PAGOS") 
+/*
+    oDocCli:AddBtn("RECPAGO.bmp","Recepción de Pagos (Ctrl-R)","(oDocCli:nOption=0)",;
+                         "EJECUTAR('DPDOCCLIMNU',oDocCli:DOC_CODSUC ,;
+                                                 oDocCli:DOC_NUMERO ,;
+                                                 oDocCli:DOC_CODIGO ,;
+                                                 oDocCli:cNomDoc , oDocCli:DOC_TIPDOC , oDocCli ,'RECIBO' )","CLI",,STR(DP_CTRL_O))
+*/
+    oDocCli:AddBtn("RECPAGO.bmp","Recepción de Pagos (Ctrl-R)","(oDocCli:nOption=0)",;
+                         "oDocCli:RECIBO()","CLI",,STR(DP_CTRL_O))
+
+  ENDIF
+
+
+/*
+// Revisar si está actualizado, para no mostrar boton de contabilizar.
+   cActual:=EJECUTAR("DPDOCVIEWCON",oForm:DOC_CODSUC,oForm:DOC_TIPDOC,oForm:DOC_CODIGO,oForm:DOC_NUMERO,"D",.T.,.F.)
+*/
+
+  IF oDp:Get(cTipDoc+"CXC")<>0 
+
+    oDocCli:AddBtn("CONTABILIZAR.bmp","Contabilizar","(oDocCli:nOption=0)",;
+                   "EJECUTAR('DPDOCCLICONTAB',oDocCli)","CLI")
+
+
+  ENDIF
+ 
+  IF oDocCli:DOC_TIPDOC$"FAV,ODE,PED,FCI" .AND. oDp:dFecha>=oDocCli:dIGTFFchDes .AND.   oDp:dFecha<=oDocCli:dIGTFFchHas
+
+   oDocCli:AddBtn("lcompras.bmp","Aplicar IGTF","(oDocCli:nOption=0)",;
+                    "EJECUTAR('DPDOCFPITF' ,oDocCli:DOC_CODSUC,;
+                                             oDocCli:DOC_TIPDOC,;
+                                             oDocCli:DOC_CODIGO,;
+                                             oDocCli:DOC_NUMERO,;
+                                             oDocCli:cNomDoc,'V',IIF(oDocCli:DOC_TIPDOC='ODE','ITD','ITF'),oDocCli:nIGTFPor,oDoccli:DOC_MTOIVA     )","CLI")
+
+  ENDIF
+
+ IF oDocCli:DOC_TIPDOC="FAV"
+
+    oDocCli:AddBtn("notaentrega.bmp","Nota de Entrega Post-Venta","(oDocCli:nOption=0)",;
+                   "EJECUTAR('TECGENDOCVTA',oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO,'Factura de Venta','NEN')","CLI")
+
+  ENDIF
+
+
+
+ IF oDocCli:DOC_TIPDOC="ODE"
+
+    oDocCli:AddBtn("facturavta.bmp","Generar Factura de Venta","(oDocCli:nOption=0)",;
+                   "EJECUTAR('TECGENDOCVTA',oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO,'Orden de Despacho','FAV')","CLI")
+
+  ENDIF
+
+  IF  oDocCli:lEli .AND. oDocCli:DOC_TIPDOC="ODE" .AND. oDocCli:DOC_ACT=1
+    oDocCli:AddBtn("comisiondeventa.bmp","Comision de Cobranza","(oDocCli:nOption=0)",;
+                   "EJECUTAR('DRCOMIDET',oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO,oDocCli:cNomDoc,oDocCli:DOC_FECHA,oDocCli:DOC_FECHA,oDocCli:DOC_CODVEN)","CLI")
+
+  ENDIF
+
+  //(cCodSuc,cTipDoc,cNumero,cNomDoc,cTipDes)
+  oDocCli:cList:=NIL // AG20080401
+
+  @ 1, 1.0 GROUP oDocCli:oGroup TO 10,10 
+
+  @ 14,0 SAYREF oSayRef PROMPT "Neto:" RIGHT SIZE 42,12 FONT oFontB RIGHT
+
+  SayAction(oSayRef,{||oDocCli:TOTALIZAR()})
+
+//oSayDesc:bAction:={||oDocCli:TOTALIZAR()}
+
+  @ 1.35, 0 FOLDER oDocCli:oFolder ITEMS cTitle,"Otros Valores" OF oDocCli:oDlg SIZE 490,61
+
+  SETFOLDER( 1)
+
+  // Nombre del Cliente
+  @ 1.0,0 SAY oSayRef PROMPT oDocCli:cNameCli+":" SIZE 42,12 FONT oFontB RIGHT
+
+  SayAction(oSayRef,{||oDocCli:CONCLIENTE()})
+
+  // Nombre del Vendedor
+  @ 1.0,0 SAY oSayRef PROMPT oDocCli:cNameVen+":" SIZE 42,12 FONT oFontB RIGHT
+     
+  SayAction(oSayRef,{||oDocCli:CONVENDEDOR()})
+
+  // Moneda
+  @ 1.0,0 SAY oSayRef PROMPT oDocCli:cNameMon+":" SIZE 42,12 FONT oFontB RIGHT
+
+  SayAction(oSayRef,{||DpLbx("DPTABMON.LBX")})
+
+  // Descuento
+  @ 1.0,0 SAY oSayDesc PROMPT "Descuento:" SIZE 42,12 FONT oFontB RIGHT
+
+  SayAction(oSayDesc,{||oDocCli:RUNDESC()})
+
+  @ 2.2,10 SAY "Condición:" RIGHT SIZE 42,20
+  @ 2.2,28 SAY "Plazo:"     RIGHT SIZE 42,20
+  @ 0.1,50 SAY "Número:"    RIGHT
+  @ 0.8,50 SAY "Fecha:"     RIGHT
+  @ 1.5,50 SAY "Estado:"    RIGHT
+
+  @ .1,06 BMPGET oDocCli:oDOC_CODIGO VAR oDocCli:DOC_CODIGO;
+                 VALID oDocCli:VALCODCLI();
+                 NAME "BITMAPS\CLIENTE2.BMP"; 
+                 ACTION (oDpLbx:=DpLbx("DPCLIENTES",oDocCli:cTitleCli,oDocCli:cWhereCli,NIL,NIL,NIL,NIL,NIL,NIL,oDocCli:oDOC_CODIGO),;
+                         oDpLbx:GetValue("CLI_CODIGO",oDocCli:oDOC_CODIGO)); 
+                 WHEN (AccessField("DPDOCCLI","DOC_CODIGO",oDocCli:nOption);
+                      .AND. oDocCli:nOption!=0 ;
+                      .AND. oDocCli:lPar_CodCli;
+                      .AND. oDocCli:lEditCli   ;
+                      .AND. IIF(oDocCli:nOption=3 .AND. !oDocCli:lPar_CamCodCli,.F.,.T.));
+                 SIZE 48,10
+
+  oDocCli:oDOC_CODIGO:cToolTip:="Indique Código  F6:Catálogo"
+  oDocCli:oDOC_CODIGO:cMsg    :=oDocCli:oDOC_CODIGO:cToolTip
+  
+  @ .9,06 BMPGET oDocCli:oDOC_CODVEN VAR oDocCli:DOC_CODVEN;
+                 VALID CERO(oDocCli:DOC_CODVEN,NIL,.T.) .AND. oDocCli:DOCCODVEN();
+                 NAME "BITMAPS\VENDEDORES2.BMP"; 
+                 ACTION (oDpLbx:=DpLbx("DPVENDEDOR",NIL,"VEN_SITUAC='A'",NIL,NIL,NIL,NIL,NIL,NIL,oDocCli:oDOC_CODVEN,oDocCli:oWnd),;
+                        oDpLbx:GetValue("VEN_CODIGO",oDocCli:oDOC_CODVEN)); 
+                 WHEN (AccessField("DPDOCCLI","DOC_CODVEN",oDocCli:nOption);
+                      .AND. oDocCli:lValCodCli ;
+                      .AND. oDocCli:nOption!=0 .AND. oDocCli:lPar_CodVen);
+                 SIZE 28,10
+
+
+  @ .9,06 BMPGET oDocCli:oDOC_CODTER VAR oDocCli:DOC_CODTER;
+                 VALID oDocCli:DOCCODTER();
+                 NAME "BITMAPS\VENDEDORES2.BMP"; 
+                 ACTION (oDpLbx:=DpLbx("DPTERCEROS",NIL,"TDC_ACTIVO=1"),;
+                        oDpLbx:GetValue("TDC_CODIGO",oDocCli:oDOC_CODTER)); 
+                 WHEN (AccessField("DPDOCCLI","DOC_CODTER",oDocCli:nOption);
+                      .AND. oDocCli:lValCodCli ;
+                      .AND. oDocCli:nOption!=0 .AND. oDocCli:lPar_CodTer .AND. !oDocCli:cTerceros="N");
+                 SIZE 28,10
+
+  @ 1.6, 06.0 COMBOBOX oDocCli:oDOC_CODMON VAR oDocCli:DOC_CODMON ITEMS oDp:aMonedas;
+                       VALID EJECUTAR("MINDOCCLIVALCAM",oDocCli);
+                       ON CHANGE EJECUTAR("MINDOCCLIVALCAM",oDocCli);
+                       WHEN (AccessField("DPDOCCLI","DOC_CODMON",oDocCli:nOption);
+                            .AND. oDocCli:lValCodCli ;
+                            .AND. oDocCli:nOption!=0 ) SIZE 100,NIL
+ 
+  ComboIni(oDocCli:oDOC_CODMON)
+
+  @ 2.6,6  GET oDocCli:oDOC_DCTO VAR oDocCli:DOC_DCTO PICTURE "999.99";
+           VALID EJECUTAR("DPDOCCLIVALDES",oDocCli:DOC_DCTO,oDocCli);
+           WHEN (AccessField("DPDOCCLI","DOC_DCTO",oDocCli:nOption);
+                .AND. oDocCli:lValCodCli ;
+                .AND. oDocCli:nOption!=0.AND. oDocCli:nPar_Desc>0 .AND. EMPTY(oDocCli:DOC_DESCCO));
+           SIZE 20,10 RIGHT
+
+//                 ACTION (oDpLbx:=DpLbx("DPVENDEDOR",NIL,"VEN_SITUAC='A'",NIL,NIL,NIL,NIL,NIL,NIL,oDocCli:oDOC_CODVEN,oDocCli:oWnd),;
+//                        oDpLbx:GetValue("VEN_CODIGO",oDocCli:oDOC_CODVEN)); 
+
+
+  @ 2.6,13  BMPGET oDocCli:oDOC_CONDIC VAR oDocCli:DOC_CONDIC;
+            NAME "BITMAPS\XFIND2.BMP"; 
+            ACTION (oDpLbx:=DpLbx("DPCONDPAGO",NIL,NIL,NIL,NIL,NIL,NIL,NIL,NIL,oDocCli:oDOC_CONDIC,oDocCli:oWnd),;
+                    oDpLbx:GetValue("CPG_CODIGO",oDocCli:oDOC_CONDIC)); 
+            VALID oDocCli:VALCONDIC();
+            WHEN (AccessField("DPDOCCLI","DOC_CONDIC",oDocCli:nOption);
+                 .AND. oDocCli:lValCodCli ;
+                 .AND. oDocCli:nOption!=0 .AND. oDocCli:lPar_Cond);
+            SIZE 20,10 
+
+                                                
+  @ 2.6,26.5 GET oDocCli:oDOC_PLAZO  VAR oDocCli:DOC_PLAZO PICT "999";
+             VALID MensajeErr("Plazo no Permitido",NIL,{||oDocCli:DOC_PLAZO<=oDocCli:nPar_MaxDias});
+             WHEN (AccessField("DPDOCCLI","DOC_PLAZO",oDocCli:nOption);
+                  .AND. oDocCli:lValCodCli ;
+                  .AND. oDocCli:nOption!=0 .AND. oDocCli:nPar_MaxDias>0);
+             SIZE 18,10 RIGHT
+
+  @ 0.0,17 SAY oDocCli:oCliNombre PROMPT EJECUTAR("VTACLINOMBRE",oDocCli) SIZE 140,09
+
+  @ 0.7,17 SAY oDocCli:oVenNombre ;
+           PROMPT MYSQLGET("DPVENDEDOR","VEN_NOMBRE","VEN_CODIGO"+GetWhere("=",oDocCli:DOC_CODVEN)) ;
+           SIZE 120,09
+
+  @ 0.0,43 GET oDocCli:oDOC_NUMERO VAR oDocCli:DOC_NUMERO;
+           VALID CERO(oDocCli:DOC_NUMERO) .AND. EJECUTAR("DPDOCCLIVALNUM",oDocCli);
+           WHEN oDocCli:Crea_Cons(oDocCli:cTipDoc) .AND. (AccessField("DPDOCCLI","DOC_NUMERO",oDocCli:nOption);
+                .AND. oDocCli:lValCodCli ;
+                .AND. oDocCli:nOption!=0 .AND. oDocCli:lPar_EditNum);
+           SIZE 35,10
+
+  @ 0.9,43 BMPGET oDocCli:oDOC_FECHA  VAR oDocCli:DOC_FECHA ;
+           PICTURE oDp:cFormatoFecha;
+           NAME "BITMAPS\Calendar.bmp";
+           ACTION LbxDate(oDocCli:oDOC_FECHA ,oDocCli:DOC_FECHA);
+           VALID (EJECUTAR("DPVALFECHA",oDocCli:DOC_FECHA,oDocCli:lPar_ValFch,.T.) .AND. ;
+                  EJECUTAR("DPDOCCLIVALCAM",oDocCli));
+           WHEN (AccessField("DPDOCMOV","DOC_FECHA",oDocCli:nOption);
+                .AND. oDocCli:lValCodCli ;
+                .AND. oDocCli:nOption!=0.AND. oDocCli:lPar_Fecha);
+           SIZE 41,10
+
+  @ 1.5,57 SAY oDocCli:oEstado PROMPT EVAL(oDocCli:bEstado)
+
+  @ 0.7,17 SAY oDocCli:oTerNombre ;
+           PROMPT SQLGET("DPTERCEROS","TDC_NOMBRE","TDC_CODIGO"+GetWhere("=",oDocCli:DOC_CODTER)) ;
+           SIZE 120,09
+
+  // Nombre del Tercero
+  @ 1.0,0 SAY oSayRef PROMPT oDp:xDPTERCEROS+":" SIZE 42,12 FONT oFontB RIGHT
+     
+  SayAction(oSayRef,{||oDocCli:CONTERCEROS()})
+
+  @ 1,60 SAY "Sucursal:" RIGHT
+  @ 3,80 SAY oDocCli:oDOC_SUCCLI PROMPT oDocCli:DOC_SUCCLI+CRLF+SQLGET("DPCLIENTESSUC","SDC_NOMBRE","SDC_CODCLI"+GetWhere("=",oDocCli:DOC_CODIGO)+" AND "+;
+                                                                                      "SDC_CODIGO"+GetWhere("=",oDocCli:DOC_SUCCLI))
+  IF oDocCli:lPar_LibVta
+     @ 1,60 SAY "# Fiscal:" RIGHT
+     @ 3,80 SAY oDocCli:oDOC_NUMFIS PROMPT oDocCli:DOC_SERFIS+"-"+oDocCli:DOC_NUMFIS 
+  ENDIF
+
+ @ 1,35 SAY oDocCli:oValCa2 PROMPT TRAN(oDocCli:DOC_VALCA2, "99,999,999.9999")SIZE 42,12 RIGHT
+ 
+ @ 1,50 SAY oDocCli:oDi PROMPT TRAN(oDocCli:DOC_DI, "99,999,999.99")SIZE 42,12 RIGHT
+  SETFOLDER( 2)
+
+  oDocCli:oScroll:=oDocCli:SCROLLGET("DPDOCCLI",oDocCli:cFileScg,cExcluye)
+
+  IF oDocCli:IsDef("oScroll")
+    oDocCli:oScroll:SetEdit(.F.)
+  ENDIF
+
+  IIF(Empty(oDp:cModeVideo),oDocCli:oScroll:SetColSize(180,250,298),oDocCli:oScroll:SetColSize(230,290,320))
+
+  oDocCli:oScroll:SetColorHead(CLR_BLACK,16763025,oFontB) 
+  oDocCli:oScroll:SetColor(16775408,0,1,16770764,oFontB) 
+
+  oDocCli:oScroll:SetColor(16775408,CLR_BLACK,3,16770764,oFontB) 
+  oDocCli:oScroll:SetColor(16775408,CLR_BLACK,2,16770764,oFont) 
+
+  SETFOLDER( 0)
+
+  @ 00,50 SAY oDocCli:oProducto PROMPT SPACE(40)
+  @ 12,50 SAY oDocCli:oNeto     PROMPT TRAN(oDocCli:DOC_NETO,"99,999,999,999.99") RIGHT
+
+//  @ 1,1 SAY "Bruto:" RIGHT SIZE 42,12
+  @ 1,1 SAY oDocCli:oIVATEXT PROMPT "I.V.A."+IF(oDocCli:DOC_IVAREB>0,"-"+LSTR(oDocCli:DOC_IVAREB)+"%","")+":" RIGHT SIZE 42,12
+
+//  @ 12,50 SAY oDocCli:oBruto    PROMPT TRAN(oDocCli:nBruto,"99,999,999,999.99") RIGHT
+  @ 12,50 SAY oDocCli:oIVA PROMPT TRAN(oDocCli:nIva  ,"99,999,999,999.99") RIGHT
+
+  // Numero de Items 
+//  @ 1,1 SAY "Numero de Items:" RIGHT 
+//  @ 1,1 SAY oDocCli:oItems PROMPT TRAN(oDocCli:nItems,"99,999") RIGHT BORDER 
+
+  cSql:=" SELECT "+SELECTFROM("DPMOVINV",.F.)+;
+        " ,IF(MOV_NUMMEM>0 AND MEM_DESCRI<>'',MEM_DESCRI,INV_DESCRI) AS INV_DESCRI "+;
+        " FROM DPMOVINV "+;
+        " INNER JOIN DPINV     ON MOV_CODIGO=INV_CODIGO "+;
+        " LEFT  JOIN DPMEMO    ON MOV_NUMMEM=MEM_NUMERO "
+
+//cScope:="MOV_TIPDOC"+GetWhere("=",cTipDoc)+" AND MOV_APLORG='V' AND MOV_INVACT=1 AND MOV_TIPO='I'"
+// JN 15/09
+  cScope:="MOV_APLORG='V' AND MOV_INVACT=1 AND MOV_TIPO='I'"
+
+  oGrid:=oDocCli:GridEdit( "DPMOVINV" ,"DOC_CODSUC,DOC_TIPDOC,DOC_NUMERO" , "MOV_CODSUC,MOV_TIPDOC,MOV_DOCUME" , cSql , cScope ) 
+
+  oGrid:cImport       :=0
+  oGrid:cTipDoc       :=""
+  oGrid:cNumDoc       :=""
+  oGrid:nCxUnd        :="" // Necesario para las Und Med Variable
+  oGrid:cPreReg       :="" // Requiere Precio Regulado
+  oGrid:cCodBar       :="" // Código de Barra
+  oGrid:cTipCom       :="" // Tipo de Componentes
+  oGrid:nPrecio       :=0  // Precio
+  oGrid:lImport       :=.F.
+  oGrid:lPesado       :=lPesado // Indica si el Producto requiere Peso Variable
+  oGrid:nPeso         :=0
+  oGrid:cFieldAud    :="MOV_REGAUD" // Genera Auditoria de Registros Anulados o Modificados
+
+
+  oGrid:cScript    :="MINFACTURAV"
+//oGrid:aSize      := IIF(Empty(oDp:cModeVideo),{161,0,762,167},{177,4,890,230})
+//oGrid:aSize      := {177,4,1130+50,330}
+  oGrid:aSize      := {177,4,1024-30,330}
+
+  oGrid:cCodBar    := "" // Codigo de Barra para DPCAPAPRECIOS
+
+  oGrid:lTotal     :=.T.
+  oGrid:aCodReco   :={}
+  oGrid:aTallas    :={}
+  oGrid:lComent    :=.F.
+  oGrid:lMulti     :=.F. // si multiplica MOV_CXUND*MOV_CANTID*MOV_PRECIO (Caso Unidad de Medida Variable)
+
+  oGrid:nClrPane1   :=16775408
+  oGrid:nClrPane2   :=16770764
+  oGrid:nClrPaneH   :=16763025
+  oGrid:nClrTextH   :=0 
+  oGrid:nRecSelColor:=16763025 // 16763283
+  oGrid:nIva        :=0        // Iva para los Precios
+  oGrid:cTipIva     :=""
+  oGrid:lTallas     :=.F.
+  oGrid:cTallas     :=""
+  oGrid:nExiste     :=0
+  oGrid:nLotes      :=0 // Cantidad del Lote
+  oGrid:nCostoLote  :=0 // Costo de Lotes
+  oGrid:nPrecioLote :=0 // Precio del Lote
+  oGrid:aComponentes:={}
+  oGrid:lDcto       :=.F. // el ITEM es un descuento
+  oGrid:lTransp     :=.F. // Transporte
+  oGrid:oFont       :=oFont
+  oGrid:oFontH      :=oFontB
+  oGrid:bWhen       :="!EMPTY(oDocCli:DOC_CODIGO) .AND. !Empty(oDocCli:DOC_CODVEN) .AND. oDocCli:lValCodCli"
+  oGrid:bValid      :="!EMPTY(oDocCli:DOC_NUMERO)"
+  oGrid:cItem       :="MOV_ITEM"
+  oGrid:cFieldAud   :="MOV_REGAUD" // Genera Auditoria de Registros Anulados o Modificados
+  oGrid:cLoad       :="GRIDLOAD"
+  oGrid:cPresave    :="GRIDPRESAVE"
+  oGrid:cPostSave   :="GRIDPOSTSAVE" 
+  oGrid:cPreDelete  :="GRIDPREDELETE"
+  oGrid:cPostDelete :="GRIDPOSTDELETE" 
+  oGrid:cIdMemo     :=oDp:cIdMemo
+  oGrid:lBar        :=.F.
+
+  oGrid:SetMemo("MOV_NUMMEM","Descripción Amplia",1,1,100,200)
+
+  IF oDp:nVersion>=5
+    oGrid:SetAdjuntos("MOV_FILMAI")
+  ENDIF
+
+  oGrid:cUtiliz     :="" // Utilización del Producto
+  oGrid:oItem       :=NIL
+  oGrid:aUndMed     :={}
+  oGrid:aEsquema    :={}
+
+  oGrid:lInc:=oDoc:lIncItem
+  oGrid:lCon:=oDoc:lConItem
+  oGrid:lMod:=oDoc:lModItem
+  oGrid:lEli:=oDoc:lEliItem
+
+  oGrid:AddBtn("IMPORTAR.BMP","Importar (Ctrl-I)","oGrid:nOption=1",;
+                [EJECUTAR("MINDOCCLIMNUIMP",oDocCli)],"IMP",STR(DP_CTRL_I))
+
+  oGrid:AddBtn("GRUPOS2.BMP","Grupos (Ctrl-G)","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [EJECUTAR("GRIDGRUPOS"  ,oGrid)],"GRU",STR(DP_CTRL_G))
+
+  oGrid:AddBtn("MARCA2.BMP","Marcas (Ctrl-K)","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [EJECUTAR("GRIDMARCAS"  ,oGrid)],"MAR",STR(DP_CTRL_T))
+
+  oGrid:AddBtn("XFIND2.BMP","Buscar (Ctrl-B)","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [EJECUTAR("GRIDBUSCAINV",oGrid)],"BUS",STR(DP_CTRL_B))
+
+  oGrid:AddBtn("MEMO2.BMP","Agregar Comentario","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [EJECUTAR("GRIDADDMEMO",oGrid)],"BUS",STR(DP_CTRL_B))
+
+  oGrid:AddBtn("COMPONENTE.BMP","Editar Componentes","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [EJECUTAR("GRIDEDITCOMP",oGrid)],"BUS",STR(DP_CTRL_B))
+
+  oGrid:AddBtn("PRODUCTO2.BMP","Listar Productos con Lotes","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [oGrid:BRLOTESDIS()],"LOT",NIL)
+
+
+
+  IF oDp:lInvConsol .AND. !Empty(oDp:cWhereExi)
+    oGrid:AddBtn("SUCURSAL.BMP","Existencia x "+GetFromVar("{oDp:xDPSUCURSAL}"),"oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                  [EJECUTAR("DPEXIXSUC",oGrid:MOV_CODIGO)],"SUC")
+  ENDIF
+
+  oGrid:AddBtn("VENDEDORES2.BMP","Vendedor","oGrid:nOption=1 .OR. oGrid:nOption=3",;
+                [oGrid:GRIDCODVEN()],"VEN")
+
+  oGrid:AddBtn("centrodecosto2.bmp","Asignación de "+oDp:xDPCENCOS,"oGrid:nOption=1 .OR. oGrid:nOption=3",;
+               "oDocCli:SETCENCOS()","CENCOS")
+
+  oGrid:AddBtn("DESCUENTO2.BMP","Descuentos","oGrid:nOption=1 .OR. oGrid:nOption=3 ",;
+               [EJECUTAR("DPDOCDESCITEM",oGrid,oGRID:MOV_CANTID*oGRID:MOV_PRECIO,oGrid:MOV_CDESC,!oGrid:nOption=0)],"OTR")
+
+
+  oGrid:cMetodo     :="P"
+  oGrid:cAlmacen    :=""
+  oGrid:cCadena     :=""
+  oGrid:bChange     :='oDocCli:oProducto:SetText(oDocCli:cNameInv+": "+oGrid:INV_DESCRI)'
+  oGrid:nMaxDesc    :=0 // Descuento M ximo Seg£n Precios de Venta
+  oGrid:cInvDescri  :=SPACE(40)
+  oGrid:nCosto      :=0
+  oGrid:lMulti      :=.F.
+  oGrid:cExp        :=""
+  oGrid:nHeaderLines:=2
+
+  oDp:oGrid        :=oGrid
+
+  // Renglón Almacen
+  //?oDp:nAlmacen
+  IF  oDp:nAlmacen>1
+    oCol:=oGrid:AddCol("MOV_CODALM")
+    oCol:cTitle   :="Cód"+CRLF+"Alm."
+    oCol:bValid   :={||oGrid:VMOV_CODALM(oGrid:MOV_CODALM)}
+    oCol:cMsgValid:="Almacén no Existe"
+    oCol:nWidth   :=IIF(Empty(oDp:cModeVideo),34,44)
+    oCol:cListBox :="DPALMACEN.LBX"
+    oCol:bRunOff  :={||EJECUTAR("DPALMACEN",2,oGrid:MOV_CODALM)}
+    oCol:nEditType:=EDIT_GET_BUTTON
+  ENDIF
+
+  // Renglón Código
+  oCol:=oGrid:AddCol("MOV_CODIGO")
+  oCol:cTitle   :="Código"+CRLF+"Producto"
+  oCol:bValid   :={||oGrid:cCadena:=oGrid:MOV_CODIGO,oGrid:VMOV_CODIGO(oGrid:MOV_CODIGO)}
+  oCol:cMsgValid:="Producto no Existe"
+  oCol:nWidth   :=115 //IIF(Empty(oDp:cModeVideo),110,140)
+
+  IF oDocCli:lDpEquiv
+    oCol:cListBox :="DPINVEQUIV.LBX"
+  ELSE
+    oCol:cListBox :="DPINV.LBX"
+  ENDIF
+
+  oCol:cWhereListBox:="INV_ESTADO"+GetWhere("=","A")+" AND "+;
+                      "(INV_APLICA"+GetWhere("=","V")+" OR INV_APLICA"+GetWhere("=","T")+")"+;
+                      IIF(!Empty(oDoc:cWhereInv)," AND ","")+;
+                      oDoc:cWhereInv
+
+  oCol:bPostEdit:='oGrid:ColCalc("INV_DESCRI")' 
+  oCol:bRunOff  :={||EJECUTAR("DPINVCON",NIL,oGrid:MOV_CODIGO)}
+  oCol:nEditType:=EDIT_GET_BUTTON
+  oCol:lItems   :=.T.
+
+  // Renglón Descripción 
+  oCol:=oGrid:AddCol("INV_DESCRI")
+  oCol:cTitle:="Descripción"
+  oCol:bCalc :={||oGrid:cInvDescri}
+  oCol:bWhen :=".F."
+  oCol:nWidth:=420+IIF(oDocCli:lPar_Almace .AND. oDocCli:lPar_DocAlm .AND. oDp:nAlmacen>1,-4,-4)+IIF(oDocCli:nPar_ItemDesc>0,0,30)-120
+  oCol:bValid    :={||oGrid:VINV_DESCRI(oGrid:INV_DESCRI)}
+
+  // Renglón Medida
+  oCol:=oGrid:AddCol("MOV_UNDMED")
+  oCol:cTitle    :=FIELDLABEL("DPMOVINV","MOV_UNDMED")
+  oCol:nWidth    :=IIF(Empty(oDp:cModeVideo),50,60)
+  oCol:aItems    :={ ||oGrid:BuildUndMed(.T.) }
+  oCol:aItemsData:={ ||oGrid:BuildUndMed(.F.) }
+  oCol:bValid    :={ ||oGrid:VMOV_UNDMED(oGrid:MOV_UNDMED) }
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CODIGO) .AND. !(oGrid:cMetodo='C') .AND. !oGrid:lTallas  .AND. !(oGrid:cUtiliz$'HS')"
+
+  oCol:bPostEdit:={||EJECUTAR("MINVTAGRIDEXISTE",oGrid,.T.) }  // Fix:Jonathan
+
+ // Renglón Cantidad
+  oCol:=oGrid:AddCol("MOV_CANTID")
+  oCol:cTitle   :=FIELDLABEL("DPMOVINV","MOV_CANTID")
+  oCol:lTotal   :=.T.
+  oCol:bWhen    :=IIF(oDocCli:nPar_InvFis<>0,"!EMPTY(oGrid:MOV_CODIGO) .AND. !oGrid:cMetodo$'SC' .AND. !oGrid:lTallas .AND. !oGrid:lDcto .AND. !oGrid:lTransp .AND. Empty(oGrid:MOV_EXPRES)",;
+                  "!EMPTY(oGrid:MOV_CODIGO) .AND. !oGrid:lTallas .AND. !oGrid:lDcto .AND. !oGrid:lTransp .AND. Empty(oGrid:MOV_EXPRES) ")+;
+                  " "
+  oCol:bValid   :={||oGrid:VMOV_CANTID()}
+  oCol:cMsgValid:="Cantidad debe ser Mayor que Cero"
+  oCol:cPicture := oDp:cPictCanUnd  
+  oCol:bPostEdit:='oGrid:ColCalc("MOV_TOTAL")' 
+  oCol:nWidth   :=IIF(Empty(oDp:cModeVideo),55,70)
+
+  // CantxUnd
+  oCol:=oGrid:AddCol("MOV_CXUND")
+  oCol:cTitle    :=FIELDLABEL("DPMOVINV","MOV_CXUND")
+  oCol:nWidth    :=60
+  oCol:bWhen     :="oGrid:lPesado"
+  oCol:bValid   :={||oGrid:VMOV_CXUND()}
+
+ IF oDocCli:cTipDoc="ODE"
+  // Renglón DI
+  oCol:=oGrid:AddCol("MOV_DI")
+  oCol:cTitle   :="Precio"+CRLF+"Divisas"
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CANTID) .AND. oDocCli:lPar_Precio .AND. oGrid:nPrecioLote=0 .AND. !oGrid:lDcto .AND. !oGrid:lTransp .AND. !oGrid:cPreReg=[S]"
+  oCol:bValid   :="oGrid:VMOV_DI()"
+  oCol:cPicture :="9,999,999,999.9999" // FIELDPICTURE("DPMOVINV","MOV_PRECIO",.T.) ORIGINAL
+  //?oDp:cPictPrecio,RIGHT(oDp:cPictPrecio, LEN(oDp:cPictPrecio)-7)  
+  //oCol:cPicture :=oDp:cPictPrecio   //08-03-2009 Marlon Ramos (Mostrar los Decimales del Precio, actualmente no se ven)
+  oCol:bPostEdit:='oGrid:ColCalc("MOV_PRECIO")' 
+  oCol:nWidth   :=IIF(Empty(oDp:cModeVideo),65,80)
+ ENDIF
+
+
+  // Renglón Precio
+  oCol:=oGrid:AddCol("MOV_PRECIO")
+  oCol:cTitle   :="Precio"+CRLF+"de Venta"
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CANTID) .AND. oDocCli:lPar_Precio .AND. oGrid:nPrecioLote=0 .AND. !oGrid:lDcto .AND. !oGrid:lTransp .AND. !oGrid:cPreReg=[S]"
+  oCol:bValid   :="oGrid:VMOV_PRECIO()"
+  oCol:cPicture :="99,999,999,999.99999" // FIELDPICTURE("DPMOVINV","MOV_PRECIO",.T.) ORIGINAL
+  //?oDp:cPictPrecio,RIGHT(oDp:cPictPrecio, LEN(oDp:cPictPrecio)-7)  
+  //oCol:cPicture :=oDp:cPictPrecio   //08-03-2009 Marlon Ramos (Mostrar los Decimales del Precio, actualmente no se ven)
+  oCol:bPostEdit:='oGrid:ColCalc("MOV_TOTAL")' 
+  oCol:nWidth   :=IIF(Empty(oDp:cModeVideo),85,105)
+
+/*
+  // Quiere Visualizar cual fue la lista de Precios Utilizada
+  // Lista de Precios
+  oCol:=oGrid:AddCol("MOV_LISTA")
+  oCol:cTitle:="Lista"
+  oCol:nWidth:=39
+  oCol:bWhen :=".F."
+*/
+
+//  oCol:bValid   :={||oGrid:cCadena:=oGrid:MOV_CODIGO,oGrid:VMOV_CODIGO(oGrid:MOV_CODIGO)}
+//  oCol:cMsgValid:="Producto no Existe"
+//  oCol:nWidth   :=IIF(Empty(oDp:cModeVideo),110,140)
+//  oCol:cListBox :="DPINV.LBX"
+
+  // Valor de Incidencia
+
+  IF oDp:nVersion>=6 .AND. .F.
+
+    oCol:=oGrid:AddCol("MOV_MTOCLA")
+    oCol:cTitle   :="Valor"+CRLF+"Incidente"
+    oCol:bWhen    :=".F."
+    /*
+     oCol:bValid   :="oGrid:VMOV_PRECIO()"
+     //oCol:cPicture :=oDp:cPictPrecio // FIELDPICTURE("DPMOVINV","MOV_PRECIO",.T.) ORIGINAL
+     oCol:cPicture :=RIGHT(oDp:cPictPrecio, LEN(oDp:cPictPrecio)-7)   //08-03-2009 Marlon Ramos (Mostrar los Decimales del Precio, actualmente no se ven)
+     oCol:bPostEdit:='oGrid:ColCalc("MOV_TOTAL")' 
+     oCol:nWidth   :=IIF(Empty(oDp:cModeVideo),85,105)
+    */
+  ENDIF
+
+
+  // Renglón Descuento
+  IF oDocCli:nPar_ItemDesc >0
+    oCol:=oGrid:AddCol("MOV_DESCUE")
+    oCol:cTitle   :="%D."
+    oCol:bWhen    :="!EMPTY(oGrid:MOV_CODIGO) .AND. (oDocCli:nPar_ItemDesc>0 .AND. !oGrid:lTransp) .OR. oGrid:lDcto "
+    oCol:bValid   :={||oGrid:VMOV_DESCUE()}
+    oCol:cMsgValid:="Descuento Debe ser Positivo"
+    oCol:cPicture :="999.99"
+    oCol:bPostEdit:='oGrid:ColCalc("MOV_TOTAL")' 
+    oCol:nWidth:=IIF(Empty(oDp:cModeVideo),40,50)
+    IF oDp:cModeloPos="Farmacia"
+      oCol:cListBox :={||oGrid:DESC_CASC(oGRID:MOV_CANTID*oGRID:MOV_COSTO)}
+      oCol:nEditType:=EDIT_GET_BUTTON
+    ENDIF
+  ENDIF
+
+  // Renglón Total
+  oCol:=oGrid:AddCol("MOV_TOTAL")
+  oCol:cTitle   :="Total"
+  oCol:cPicture :=oDp:cPictTotRen // FIELDPICTURE("DPMOVINV","MOV_TOTAL",.T.)
+  oCol:bCalc    :={|nTotal|nTotal:=IF(oGrid:lPesado,oGRID:MOV_CXUND,oGRID:MOV_CANTID*IIF(!oGrid:lMulti,1,oGRID:MOV_CXUND))*oGRID:MOV_PRECIO,nTotal-PORCEN(nTotal,oGrid:MOV_DESCUE)}
+  oCol:bWhen    :={||oDocCli:lPar_TotRen}
+// JN 8/11/2016 .AND. !EMPTY(oGrid:MOV_PRECIO)) .OR. (oGrid:lDcto .AND. oGrid:MOV_DESCUE=0) .OR. oGrid:lTransp .OR. oGrid:lComent}
+  oCol:lTotal   :=.T.
+  oCol:nWidth   :=120+IIF(oDocCli:nPar_ItemDesc>0,0,12)
+  oCol:bValid   :={||oGrid:VMOV_TOTAL(oGrid:MOV_TOTAL)}
+
+  oGrid:oSayOpc :=oDocCli:oProducto
+
+  oDocCli:Activate({||oDocCli:DOCCLIINI()})
+
+RETURN oDocCli
+
+FUNCTION DOCCLIINI()
+  LOCAL nClrBlink := CLR_YELLOW   // blinking color
+  LOCAL nInterval := 500-100      // blinking interval in milliseconds
+  LOCAL nStop     := 0            // blinking limit to stop in milliseconds
+  LOCAL oFontB
+
+  DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -14 BOLD
+
+  @360 + IIF(Empty(oDp:cModeVideo),0,160), 1 STSAY oDocCli:oSayMsgErr PROMPT oDocCli:cSayMsgErr OF oDocCli:oDlg PIXEL ;
+           COLORS CLR_HRED SIZE 250, 19 FONT oFontB ;
+           SHADED;
+           BLINK nClrBlink, nInterval, nStop  
+
+  oDocCli:oScroll:oBrw:SetColor(NIL,16775408)
+
+  oDocCli:oSayMsgErr:Hide()
+  oDocCli:lDocGen  :=.F.
+
+  oDocCli:oScroll:oBrw:Gotop()
+
+//  oDocCli:oDOC_CONDIC:bKeyDown:={|nKey| IIF(nKey=VK_F6, EVAL(oDocCli:oBtnCondic:bAction),NIL)}
+
+
+RETURN .T.
+
+FUNCTION PREDELETE(oForm,lDelete)
+RETURN EJECUTAR("DPDOCCLIPREDEL",oForm,lDelete)
+
+// PosBorrar
+FUNCTION POSTDELETE()
+LOCAL lResp:=EJECUTAR("DPDOCCLIPOSDEL",oDocCli)
+ 
+// Cancelar
+FUNCTION CANCEL()
+   LOCAL lResp:=.F.
+   oDocCli:cTitle:=oDocCli:cTitle_
+
+   lResp:=EJECUTAR("DPDOCCLICANCEL",oDocCli)
+
+   // Debe cerrar Formulario JN 11/05/2017
+   IF oDocCli:nRecCount=0
+      oDocCli:nOption:=0
+      oDocCli:Close()
+   ENDIF
+
+RETURN lResp
+
+// Carga los Datos
+FUNCTION LOAD()
+ LOCAL aControl:={oDocCli:oDOC_CODIGO,oDocCli:oDOC_CODVEN,oDocCli:oDOC_NUMERO,oDocCli:oDOC_FECHA}
+
+ oDocCli:aBtn[1,1]:ForWhen(.T.)    // decasa
+
+ oDocCli:lValCodCli:=.F.
+ oDocCli:lPELock   :=.F.
+ oDocCli:lPagEle   :=.F.
+
+ IF oDocCli:nOption=1 
+
+   oDocCli:DOC_IVAREB:=0
+   oDocCli:DOC_IVABAS:=0
+   oDocCli:lPagEle   :=.F.
+
+   IF oDocCli:lEditCli
+      oDocCli:lValCodCli:=.T.
+   ENDIF
+
+  /*
+  IF oDocCli:nPar_CxC<>0
+
+     IF Empty(oDocCli:cLetra)
+       MensajeErr("Es necesario Indicar la Serie Fiscal")
+       RETURN .F.
+     ENDIF
+
+     oDocCli:DOC_SERFIS:=oDocCli:cLetra
+     oDocCli:DOC_NUMFIS:=EJECUTAR("DPDOCCLIGETNUMFIS",oDocCli:DOC_CODSUC,oDocCli:cLetra)
+     oDocCli:oDOC_NUMFIS:Refresh(.T.)
+
+   ENDIF
+    */
+ ELSE
+
+   oDocCli:lPagEle:=(oDocCli:DOC_IVAREB>0)
+// oDocCli:SETIVA10(.T.)
+
+ ENDIF
+
+ IF oDocCli:nOption=3
+    AEVAL(aControl,{|o,n| EVAL(o:bValid)})
+    oDocCli:lValCodCli:=.T.
+    oDocCli:oDOC_CODIGO:KeyBoard(13)
+ ENDIF
+
+ IF !EJECUTAR("MINDOCCLILOAD",oDocCli)
+    RETURN .F.
+ ENDIF
+
+ // JN 21/09/2017, Verifica el la factura fue creada con Pago Electronico
+
+ IF oDocCli:nOption=3 .AND. (oDocCli:DOC_FECHA>=oDp:dDesdePE .AND. oDocCli:DOC_FECHA<=oDp:dHastaPE)
+
+/*
+    oDocCli:lPagEle:=ISSQLFIND("DPMOVINV","MOV_CODSUC"+GetWhere("=",oDocCli:DOC_CODSUC)+" AND "+;
+                                          "MOV_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC)+" AND "+;
+                                          "MOV_DOCUME"+GetWhere("=",oDocCli:DOC_NUMERO)+" AND "+;
+                                          "MOV_APLORG"+GetWhere("=","V"               )+" AND "+;
+                                          "MOV_TIPIVA"+GetWhere("=","PE"              )+" LIMIT 1")
+*/
+
+/*
+     IF oDocCli:lPagEle
+       EJECUTAR("DPFACTURAV10IVA",oDocCli) // ,oDocCli:lPagEle)
+     ENDIF
+
+     EJECUTAR("DPFACTURAV10IVA",oDocCli) // ,oDocCli:lPagEle)
+*/
+
+  ENDIF
+
+  oDocCli:oIVATEXT:Refresh(.T.)
+
+RETURN .T.
+
+FUNCTION POSTGRABAR()
+
+ // EJECUTAR("TECNOTAEPOSTV",oDocCli)
+
+ IF oGrid:cImport = 1 .AND. oDocCli:cTdoc="CRE"
+      
+    SQLUPDATE("DPDOCCLI","DOC_FACAFE",oGrid:cNumDoc,"DOC_TIPDOC = '"+oDocCli:cTdoc+"' AND DOC_NUMERO = '"+oDocCli:DOC_NUMERO+"'")
+    
+    oGrid:cImport    := 0
+    oGrid:cTipDoc    :=""
+    oGrid:cNumDoc    :=""
+
+ ENDIF
+
+
+ IF oDocCli:DOC_CODIGO=STRZERO(0,10)
+    EJECUTAR("DPCLICEROGRAB",oDocCli)
+ ENDIF
+
+/*
+ IF oDocCli:nOption=1
+    EJECUTAR("DOCCLICREACEN",oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO)
+ ENDIF
+*/
+
+RETURN EJECUTAR("MINDOCCLIPOSGRA",oDocCli)
+
+FUNCTION GRIDLOAD()
+
+     IF oGrid:nOption=3
+       oDocCli:lValCodCli:=.T.
+     ENDIF
+
+RETURN EJECUTAR("VTAGRIDLOAD",oGrid)
+
+// Pregrabar
+FUNCTION GRIDPRESAVE()
+RETURN EJECUTAR("MINVTAGRIDPRESAVE",oGrid)
+
+// Grabación del Item
+FUNCTION GRIDPOSTSAVE()
+RETURN EJECUTAR("VTAGRIDPOSSAV",oGrid)
+
+// Ejecución Antes de Eliminar el Item
+FUNCTION GRIDPREDELETE()
+RETURN EJECUTAR("MINVTAGRIDPREDEL",oGrid)
+
+// PostGrabar
+FUNCTION GRIDPOSTDELETE()
+  LOCAL lResp:=EJECUTAR("VTAGRIDPOSDEL",oGrid)
+   
+  IF lResp .AND. oDocCli:DOC_NETO>0 .AND. oDocCli:lPagEle
+     oDocCli:SETIVA10(.T.)
+  ENDIF
+
+RETURN lResp
+
+
+// Valida Código de Almacen
+FUNCTION VMOV_CODALM(cCodAlm)
+RETURN EJECUTAR("VTAGRIDVALALM",oGrid)
+
+// Valida Código del Producto
+FUNCTION VMOV_CODIGO(cCodInv)
+
+   //  EJECUTAR("LBXINIGET2",,"DPINV","",oGrid:cCadena,oGrid)
+   ///// RIGC 29-07-2008
+
+   IF oGrid:lComent
+      RETURN .T.
+   ENDIF
+
+   EJECUTAR("MINVTAGRIDVALUND",oGrid,oGrid:MOV_UNDMED)
+
+
+   IF !EJECUTAR("MINVTAGRIDVALCOD",oGrid)
+
+      //Se inactivo para que al buscar una cadena llame a dpinv.lbx TJ
+      //EJECUTAR("GRIDBUSCAINV",oGrid,oGrid:cCadena)
+
+      RETURN .F. // EJECUTAR("VTAGRIDVALCOD",oGrid)
+   ENDIF
+
+RETURN .T.
+// RETURN  EJECUTAR("VTAGRIDVALCOD",oGrid)
+
+// Valida Descripción del Producto
+FUNCTION VINV_DESCRI(cCodInv)
+RETURN  EJECUTAR("VTAGRIDVALTEX",oGrid)
+
+// Unidad de Medida
+FUNCTION VMOV_UNDMED(cUndMed)
+RETURN EJECUTAR("MINVTAGRIDVALUND",oGrid,cUndMed)
+
+// Valida Cantidad
+FUNCTION VMOV_CANTID()
+RETURN EJECUTAR("MINVTAGRIDVALCAN",oGrid)
+
+// Valida Descuento
+FUNCTION VMOV_PRECIO()
+RETURN EJECUTAR("VTAGRIDVALPRE",oGrid)
+
+// Valida di
+FUNCTION VMOV_DI()
+IF oGrid:MOV_DI<0
+MensajeErr("Precio es Menor a Cero")
+RETURN .F.
+ENDIF
+oGrid:SET("MOV_PRECIO",ROUND(oGrid:MOV_DI*oDocCli:DOC_VALCA2,4),.T.)
+
+RETURN .T.
+
+// Valida Descuento
+FUNCTION VMOV_DESCUE()
+RETURN EJECUTAR("VTAGRIDVALDES",oGrid)
+
+// Valida Descuento
+FUNCTION VMOV_TOTAL()
+RETURN EJECUTAR("VTAGRIDVALTOT",oGrid)
+
+FUNCTION VMOV_CXUND()
+RETURN EJECUTAR("MINVTAGRIDVALUND",oGrid)
+
+
+// Construye las Opciones
+FUNCTION BuildUndMed(lData)
+  LOCAL aItem:={}
+
+  aItem:=EJECUTAR("INVGETUNDMED",oGrid:MOV_CODIGO,lData,NIL,oGrid)
+
+  oGrid:aUndMed:=ACLONE(aItem) // Unidades de Medida
+
+  IF (EMPTY(oGrid:MOV_UNDMED).AND.!Empty(aItem)) .OR. LEN(aItem)=1
+    oGrid:Set("MOV_UNDMED",aItem[1],.T.)
+  ENDIF
+
+RETURN aItem
+
+// Realiza el Trabajo de Depuración
+FUNCTION DOCMOVDEPURA()
+RETURN .T.
+
+// Debe Generar el Número del Documento
+FUNCTION BUILDNUMDOC()
+RETURN .T.
+
+FUNCTION PRINTER()
+
+   oDocCli:PRINTER_PDF(.F.)
+
+RETURN NIL
+
+
+/*
+FUNCTION PRINTER(oDocCli,cCodSuc,cTipDoc,cCodigo,cNumero,cWhere)
+
+  DEFAULT cCodSuc:=oDocCli:DOC_CODSUC,;
+          cTipDoc:=oDocCli:DOC_TIPDOC,;
+          cCodigo:=oDocCli:DOC_CODIGO,;
+          cNumero:=oDocCli:DOC_NUMERO,;
+          cWhere :=oDocCli:cWhere
+
+
+RETURN EJECUTAR("DPFACTURAV_PRINT",.F.,cCodSuc,cTipDoc,cCodigo,cNumero,cWhere,oDocCli:cNomDoc,oDocCli:lDocGen,oDocCli)
+*/
+
+
+/*
+FUNCTION PRINTER_PDF(lPdf,cCodSuc,cTipDoc,cCodigo,cNumero,cWhere)
+
+  DEFAULT cCodSuc:=oDocCli:DOC_CODSUC,;
+          cTipDoc:=oDocCli:DOC_TIPDOC,;
+          cCodigo:=oDocCli:DOC_CODIGO,;
+          cNumero:=oDocCli:DOC_NUMERO,;
+          cWhere :=oDocCli:cWhere
+
+
+RETURN EJECUTAR("DPFACTURAV_PRINT",lPdf,cCodSuc,cTipDoc,cCodigo,cNumero,cWhere,oDocCli:cNomDoc,oDocCli:lDocGen,oDocCli)
+*/
+
+
+// Imprimir
+FUNCTION PRINTER_PDF(lPdf)
+  LOCAL cSerie:=MYSQLGET("DPTIPDOCCLI"  ,"TDC_SERIEF","TDC_TIPO"+GetWhere("=",oDocCli:DOC_TIPDOC))
+  LOCAL cHora :=MYSQLGET("DPDOCCLI","DOC_HORA",oDocCli:cWhere)  // 07-08-2008 Marlon Ramos 
+  LOCAL bBlq,oRep
+  LOCAL cTitle
+
+  DEFAULT lPdf:=.F.
+
+  IF (!Empty(cSerie) .AND. (ALLTRIM(UPPER(cSerie))="BMC" .OR. "EPSON"=LEFT(UPPER(cSerie),5) .OR. "BEMATECH"=ALLTRIM(UPPER(cSerie)) .OR. "SAMSUNG"$UPPER(cSerie) .OR. "ACLAS"$UPPER(cSerie) .OR. "OKIDATA"$UPPER(cSerie) .OR. "STAR"$UPPER(cSerie)))
+     // 07-08-2008 Marlon Ramos RETURN EJECUTAR("DPDOCCLIIMPFIS",cSerie,oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_CODIGO,oDocCli:DOC_NUMERO,.T.)
+     RETURN EJECUTAR("DPDOCCLIIMPFIS",cSerie,oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_CODIGO,oDocCli:DOC_NUMERO,.T.,oDocCli:DOC_FECHA,cHora,oDocCli:CCG_NOMBRE,oDocCli:CCG_RIF)
+  ENDIF
+
+  oDp:cDocNumIni:=oDocCli:DOC_NUMERO
+  oDp:cDocNumFin:=oDocCli:DOC_NUMERO
+
+  IF !oDocCli:lDocGen
+
+    oRep:=REPORTE("DOCCLI"+oDocCli:DOC_TIPDOC,"DOC_CODSUC"+GetWhere("=",oDocCli:DOC_CODSUC)+" AND "+;
+                                              "DOC_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC))
+
+  ELSE
+
+    oRep:=REPORTE("DOCCLIGEN","DOC_CODSUC"+GetWhere("=",oDocCli:DOC_CODSUC)+" AND "+;
+                              "DOC_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC),;
+                             ,,oDocCli:cNomDoc)
+  ENDIF
+
+  oDp:oGenRep:aCargo  :=oDocCli:DOC_TIPDOC
+
+  oRep:aCargo:=oDocCli:DOC_TIPDOC
+
+  IF lPdf
+
+     oRep:SETCREXPORT() // Solo Muestra los Reportes Crystal para CREXPORT
+
+     oRep:aCargo  :=oDocCli:DOC_TIPDOC
+     oRep:cTipDoc :=oDocCli:DOC_TIPDOC
+     oRep:cCodCli :=oDocCli:DOC_CODIGO
+     oRep:cNumDoc :=oDocCli:DOC_NUMERO
+     oRep:cCodSuc :=oDocCli:DOC_CODSUC
+     oRep:cNomCli :=EVAL(oDocCli:oCliNombre:bSetGet)
+
+     oRep:cFileOut:=oDocCli:DOC_TIPDOC+"-"+oDocCli:DOC_NUMERO+".PDF"
+     oRep:cTitle  :=oDocCli:cNomDoc 
+//+" "+oDocCli:DOC_NUMERO+" ["+oRep:cCodCli+"]="+oRep:cNomCli
+// ? oRep:cTitle
+
+     bBlq:=[Errorsys(.t.),EJECUTAR("BRCLIPERMAILPDF",NIL,oDp:oGenRep:cCodCli,NIL,NIL,oDp:oGenRep:cTitle,oDp:oGenRep:cCodSuc,oDp:oGenRep:cTipDoc,oDp:oGenRep:cNumDoc,oDp:oGenRep:cFileOut)]
+
+  ELSE
+
+     bBlq:=[SQLUPDATE("DPDOCCLI","DOC_IMPRES",.T.,"]+oDocCli:cWhere+[")]
+ 
+  ENDIF
+
+  oDp:oGenRep:bPostRun:=BLOQUECOD(bBlq) //{|| SQLUPDATE("DPDOCCLI","DOC_IMPRES",.T.,oDocCli:cWhere)}
+
+RETURN .T.
+
+
+// Imprimir
+// Consulta del Documento
+FUNCTION VIEW()
+  LOCAL cFile:="DPXBASE\DPDOCCLI"+oDocCli:cTipDoc+"CON"
+
+  IF FILE(cFile+".DXB")
+    EJECUTAR("DPDOCCLI"+oDocCli:cTipDoc+"CON",oDocCli)
+  ELSE
+    EJECUTAR("DPDOCCLIFAVCON",oDocCli)
+  ENDIF
+RETURN 
+
+// Pre-Grabar
+FUNCTION PREGRABAR(oForm,lSave)
+LOCAL nValca2:=1
+
+   oDocCli:DOC_IVAREB:=0
+   IF Empty(oGrid:MOV_CODIGO)
+     oForm:aGrids[1]:CancelEdit()
+   ENDIF
+
+  oDoc:DOC_VALCAM:=ROUND(EJECUTAR("DPGETVALCAM",Left(oDoc:DOC_CODMON,3),oDoc:DOC_FECHA,oDoc:DOC_HORA),4)
+
+  IF oDp:cMonedaExt<>Left(oDocCli:DOC_CODMON,3)   //.AND. oDoc:DOC_TIPDOC="FAV"
+   nValCa2:=ROUND(EJECUTAR("DPGETVALCAM",oDp:cMonedaExt,oDocCli:DOC_FECHA,oDocCli:DOC_HORA),4)
+  ENDIF
+ // ?oDp:cMonedaExt,Left(oDocCli:DOC_CODMON,3) ,nValCa2,oDoc:DOC_VALCA2
+  IF nValCa2<>oDocCli:DOC_VALCA2    //.AND. oDoc:DOC_TIPDOC="FAV"
+   oDocCli:DOC_VALCA2:=nValCa2
+  ENDIF 
+
+RETURN EJECUTAR("DPDOCCLIPREGRA",oForm,lSave)
+
+// Consultar Cliente
+FUNCTION CONCLIENTE()
+  LOCAL lFound:=.F.
+
+  lFound:=!Empty(oDocCli:DOC_CODIGO) .AND. MYSQLGET("DPCLIENTES","CLI_CODIGO","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO))=oDocCli:DOC_CODIGO
+
+  IF lFound  
+    EJECUTAR("DPCLIENTESCON",oDocCli,oDocCli:DOC_CODIGO)
+  ENDIF
+
+  IF !lFound .AND. oDocCli:nOption<>0
+    EVAL(oDocCli:oDOC_CODIGO:bAction) // Lista los Clientes
+  ENDIF
+
+  oDocCli:Prepare()
+RETURN .T.
+
+// Consultar Cliente
+FUNCTION CONVENDEDOR()
+  LOCAL lFound:=.F.
+
+  lFound:=!Empty(oDocCli:DOC_CODVEN) .AND. MYSQLGET("DPVENDEDOR","VEN_CODIGO","VEN_CODIGO"+GetWhere("=",oDocCli:DOC_CODVEN))=oDocCli:DOC_CODVEN
+
+  IF lFound  
+    EJECUTAR("DPVENDEDORCON",oDocCli:DOC_CODVEN)
+  ENDIF
+
+  IF !lFound .AND. oDocCli:nOption<>0
+    EVAL(oDocCli:oDOC_CODVEN:bAction) // Lista los Clientes
+  ENDIF
+RETURN .T.
+
+// Consultar Moneda
+FUNCTION CONMONEDA()
+  ? "CONMONEDA"
+RETURN .T.
+
+FUNCTION RUNDESC()
+  LOCAL nBruto:=0,nDesc
+
+  nBruto:=oDocCli:aGrids[1]:GetTotal("MOV_TOTAL")
+
+  nDesc :=EJECUTAR("DPDOCDESC",oDocCli,nBruto,oDocCli:DOC_DESCCO,!oDocCli:nOption=0)
+
+  oDocCli:Prepare()
+RETURN .T.
+
+// Totalizar
+FUNCTION TOTALIZAR(lEdit)
+
+//  IF oDocCli:DOC_NETO=0 
+//    RETURN .F.
+//  ENDIF
+
+  EJECUTAR("DOCTOTAL",oDocCli , .T. ,NIL , NIL , .T.,oDocCli:nOption>0)
+
+RETURN .T.
+
+FUNCTION DOCCODVEN()
+  LOCAL lResp:=.T.
+
+  oDocCli:SeekTable("DPVENDEDOR",oDocCli:oDOC_CODVEN,"VEN_CODIGO",NIL,"VEN_NOMBRE",;
+                  oDocCli:oVenNombre,"VEN_SITUAC='A'")
+
+  oDoc:lSelCodSuc:=.F.  // Volver a Solicitar Sucursal
+  SysRefresh(.T.)
+
+RETURN lResp
+
+FUNCTION ISLR(oDpCli)
+
+  IF UPPER(ALLTRIM(EVAL(oDpCli:bEstado<>"Pagado")))
+
+    EJECUTAR('DPDOCISLR',oDocCli:DOC_CODSUC,;
+                         oDocCli:DOC_TIPDOC,;
+                         oDocCli:DOC_CODIGO,;
+                         oDocCli:DOC_NUMERO,;
+                         oDocCli:cNomDoc     )
+  ENDIF
+
+RETURN .T.
+
+// Se ejecuta desde Comprobante de Pago
+FUNCTION UPDATEPAGO()
+  LOCAL cEstado:=SQLGET("DPDOCCLI","DOC_ESTADO",oDocCli:cWhere)
+
+  IF !Empty(cEstado)
+    oDocCli:DOC_ESTADO:=cEstado
+  ENDIF
+
+  oDocCli:oEstado:Refresh(.T.)  
+RETURN .T.
+
+FUNCTION GRIDCODVEN() 
+  LOCAL cCodVen
+
+  cCodVen:=EJECUTAR("REPBDLIST","DPVENDEDOR","VEN_CODIGO,VEN_NOMBRE",.T.,"VEN_SITUAC='A'";
+                   ,"Seleccionar "+oDP:xDPVENDEDOR,NIL,oGrid:MOV_CODVEN)
+
+  IF !EMPTY(cCodVen)
+    oGrid:SET("MOV_CODVEN",cCodVen)
+  ENDIF
+RETURN .T.
+
+/*
+// AG20080401. Browser
+*/
+FUNCTION LIST()
+  LOCAL cWhere:="",dDesde,dHasta
+
+  cWhere:="DOC_CODSUC"+GetWhere("=",oDp:cSucursal)+;
+          " AND DOC_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC)+;
+          " AND DOC_TIPTRA='D' AND DOC_DOCORG='V' "
+
+  dHasta:=SQLGETMAX(oDocCli:cTable,"DOC_FECHA",oDocCli:cScope)
+  dDesde:=FCHINIMES(dHasta)
+
+  IF !EJECUTAR("CSRANGOFCH","DPDOCCLI",cWhere,"DOC_FECHA",dDesde,dHasta)
+      RETURN .T.
+  ENDIF
+
+  cWhere:="DOC_CODSUC"+GetWhere("=",oDp:cSucursal)+;
+          " AND DOC_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC)+;
+          " AND DOC_TIPTRA='D' AND DOC_DOCORG='V' "
+ 
+  IF !Empty(oDp:dFchIniDoc)
+      cWhere:=cWhere+GetWhereAnd("DOC_FECHA",oDp:dFchIniDoc,oDp:dFchFinDoc)
+  ENDIF
+
+  oDocCli:ListBrw(cWhere,oDocCli:cFileBrw) 
+
+RETURN .T.
+
+// 18-10-2008 Marlon Ramos (Consecutivo diferente para cada impresora Fiscal)
+FUNCTION Crea_Cons(cTipDoc)
+LOCAL nLen, cNumero, cWhere
+
+ IF cTipDoc="FAV" .OR. cTipDoc="DEV"    // S+¦lo para Facturas y Devoluciones
+   IF oDocCli:nOption = 1     // Incluir 
+      IF (MYSQLGET("DPEQUIPOSPOS","EPV_IP,EPV_SERIEF,EPV_NUMERO","EPV_IP"+GetWhere("=",oDp:cPcName))=oDp:cIpLocal) .AND. oDocCli:cVeces = 0 
+         oDp:cTkSerie :=oDp:aRow[2]
+         oDp:cTkNumero:=oDp:aRow[3]
+
+         cWhere:="DOC_CODSUC"+GetWhere("=",oDp:cSucursal)+;
+                 " AND DOC_TIPDOC"+GetWhere("=",cTipDoc)+;
+                 " AND DOC_TIPTRA='D' "
+      
+         cNumero:=SQLGETMAX("DPDOCCLI","DOC_NUMERO",cWhere+" AND LEFT(DOC_NUMERO,1)"+GetWhere("=",oDp:cTkSerie))
+         IF Empty(cNumero)
+            cNumero:=oDp:cTkNumero
+         ENDIF
+         nLen:=10-LEN(ALLTRIM(oDp:cTkSerie))
+         cNumero:=RIGHT(cNumero,nLen)
+         cNumero:=ALLTRIM(oDp:cTkSerie)+STRZERO(VAL(cNumero)+1,nLen)
+         oDp:cTkNumero:=cNumero
+         oDocCli:DOC_NUMERO:=cNumero
+         oDocCli:oDOC_NUMERO:Refresh()
+         oDocCli:cVeces := oDocCli:cVeces  +1
+
+      ENDIF
+   ENDIF
+
+   RETURN .T.    // Evitar que se edite el numero  cNumero:=ALLTRIM(oDp:cTkSerie)+STRZERO(VAL(cNumero)+1,nLen)
+
+ ENDIF
+RETURN .T.
+
+FUNCTION DOCCODTER()
+  LOCAL lResp:=.T.
+
+  oDocCli:SeekTable("DPTERCEROS",oDocCli:oDOC_CODTER,"TDC_CODIGO",NIL,"TDC_NOMBRE",;
+                  oDocCli:oTerNombre,"TDC_ACTIVO=1")
+
+  oDocCli:oTerNombre:Refresh(.T.)
+
+  IF oDocCli:cTerceros="S" .AND. oDocCli:DOC_CODTER=oDp:cCodter
+     MensajeErr("Debe Utilizar "+oDp:xDPTERCEROS+" Diferente a "+oDp:cCodter)
+     RETURN .F.
+  ENDIF
+
+  oDoc:lSelCodSuc:=.F.  // Volver a Solicitar Sucursal
+  SysRefresh(.T.)
+
+RETURN lResp
+
+FUNCTION CONTERCEROS()
+RETURN .T.
+
+/*
+// Presentar Condiciones de Pago
+*/
+FUNCTION VALCONDIC()
+  LOCAL cCodigo:=SQLGET("DPCONDPAGO","CPG_CODIGO,CPG_DIAS","CPG_CODIGO"+GetWhere("=",oDocCli:DOC_CONDIC))
+
+  oDocCli:SeekTable("DPCONDPAGO",oDocCli:oDOC_CONDIC,"CPG_CODIGO",NIL,"CPG_CODIGO",NIL,NIL)
+
+  IF Empty(cCodigo) // .AND. oDocCli:lPar_Condic
+     // MensajeErr("Condición "+oDocCli:DOC_CONDIC+" no está Registrada")
+     // EVAL(oDocCli:oBtnCondic:bAction)
+     EVAL(oDocCli:oDOC_CONDIC:bAction)
+     RETURN .F.
+  ENDIF
+
+  IF !Empty(oDp:aRow)
+     oDocCli:oDOC_PLAZO:VarPut(oDp:aRow[2],.T.)
+  ENDIF
+
+RETURN .T.
+
+FUNCTION VALCODCLI()
+   LOCAL cWhere:="DOC_CODSUC"+GetWhere("=",oDocCli:DOC_CODSUC)+" AND "+;
+                 "DOC_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC)+" AND "+;
+                 "DOC_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO)+" AND "+;
+                 "DOC_TIPTRA"+GetWhere("=","D")
+  // LOCAL cCodAlm1:=SQLGET("DPTIPDOCCLI","TDC_CODALM","TDC_TIPO"+GetWhere("=",oDocCli:DOC_TIPDOC))
+   LOCAL cUltFac,cCondic,cRif,cCodigo,cWhereCli:=""
+
+
+    //cCodAlm1:=IIF(Empty(cCodAlm1),oDp:cAlmacen,cCodAlm1)
+
+   oDocCli:oCliNombre:Refresh(.T.)
+
+   IF Empty(oDocCli:DOC_CODIGO)
+     oDocCli:oDOC_CODIGO:KeyBoard(VK_F6)
+     RETURN .F.
+   ENDIF
+
+   IF oDp:Get(oDocCli:DOC_TIPDOC+"LCreaCli")=NIL
+      oDp:Set(oDocCli:DOC_TIPDOC+"LCreaCli",.T.)
+   ENDIF
+
+   IF oDp:Get(oDocCli:DOC_TIPDOC+"LCreaCli") .AND. !ISSQLFIND("DPCLIENTES","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO))
+
+      // Busca Similares
+      cWhereCli:="CLI_CODIGO LIKE "+GetWhere("","%"+ALLTRIM(oDocCli:DOC_CODIGO)+"%")
+
+      IF COUNT("DPCLIENTES",cWhereCli)>0
+
+         cCodigo:=EJECUTAR("REPBDLIST","DPCLIENTES","CLI_CODIGO,CLI_NOMBRE",.F.,cWhereCli,NIL,NIL,oDocCli:DOC_CODIGO,NIL,NIL,"CLI_CODIGO",oDocCli:oDOC_CODIGO)
+
+	    IF !Empty(cCodigo) .AND. ISSQLFIND("DPCLIENTES","CLI_CODIGO"+GetWhere("=",cCodigo))
+           oDocCli:oDOC_CODIGO:VarPut(cCodigo,.T.)
+           oDocCli:DOC_CODIGO:=cCodigo
+         ENDIF
+
+      ELSE
+
+         cRif:=cCodigo
+
+      ENDIF
+
+      IF Empty(cCodigo) .AND. !EJECUTAR('DPCREACLI',oDocCli:oDOC_CODIGO,oDocCli:DOC_CODIGO)
+         RETURN .F.
+      ENDIF
+
+      IF !ISSQLFIND("DPCLIENTES","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO))
+         RETURN .F.
+      ENDIF
+
+   ENDIF
+
+   oDocCli:lValCodCli:=(EJECUTAR("DPCEROCLI",oDocCli:DOC_CODIGO,oDocCli:oDOC_CODIGO) .AND. ;
+                        EJECUTAR("DPDOCCLIVALCLI",oDocCli:oDOC_CODIGO,oDocCli, oDocCli:oCliNombre ))
+
+   oDocCli:oIVATEXT:Refresh(.T.)
+
+   IF oDocCli:lPagEle
+      oDocCli:SETIVA10(.T.)
+   ENDIF
+
+   IF  oDocCli:lValCodCli
+      oDocCli:lValCodCli:=EJECUTAR("DPDOCCLISUC",oDocCli,oDocCli:oDOC_CODIGO)
+   ENDIF
+
+   IF oDocCli:lValCodCli 
+
+     cUltFac:=SQLGET("DPDOCCLI","DOC_NUMERO,DOC_CONDIC",cWhere+" ORDER BY CONCAT(DOC_FECHA,DOC_HORA) DESC LIMIT 1")
+     cCondic:=DPSQLROW(2)
+
+     IF !Empty(cCondic) 
+       oDocCli:oDOC_CONDIC:VarPut(cCondic,.T.)
+     ENDIF
+
+   ENDIF
+
+   oDocCli:oDOC_FECHA:ForWhen(.T.)
+   oDocCli:oDOC_CODVEN:ForWhen(.T.)
+   oDocCli:oDOC_CONDIC:ForWhen(.T.)
+   oDocCli:oDOC_NUMERO:ForWhen(.T.)
+
+   IF ISALLDIGIT(ALLTRIM(oDocCli:DOC_CODVEN))
+      oDocCli:DOC_CODVEN:=STRZERO(VAL(oDocCli:DOC_CODVEN),LEN(oDocCli:DOC_CODVEN))
+      oDocCli:oDOC_CODVEN:VarPut(oDocCli:DOC_CODVEN,.T.)
+      EVAL(oDocCli:oDOC_CODVEN:bValid)
+   ENDIF
+
+   IF !EJECUTAR("DPFOCUSWHEN",oDocCli:oDOC_CODIGO) 
+      oDocCli:aGrids[1]:GotFocus()
+   ENDIF
+
+   IF !oDocCli:lValCodCli
+     oDocCli:oDOC_CODIGO:KeyBoard(VK_F6)
+   ENDIF
+
+   IF oDocCli:lLimite .AND. oDocCli:DOC_CODIGO<>REPLI("0",10)
+
+      cRif:=SQLGET("DPCLIENTES","CLI_RIF","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO))
+       
+//      ? oDocCli:cTipPer,"oDocCli:cTipPer"
+
+      IF !("J"$oDocCli:cTipPer)
+
+        IF LEFT(cRif,1)="V"
+          cTipPer:="N"
+        ELSE
+          oDocCli:oDOC_CODIGO:MsgErr("Factura requiere RIF de Persona Natural")
+          RETURN .F.
+        ENDIF
+
+      ENDIF
+  
+   ENDIF
+
+  //?oDocCli:lValCodCli
+ // IF oDocCli:lValCodCli
+ //    oGrid:SET("MOV_CODALM",cCodAlm1,.T.)
+ // ENDIF
+
+RETURN oDocCli:lValCodCli
+
+FUNCTION BRLOTESDIS()
+     LOCAL cWhere:="MOV_CODSUC"+GetWhere("=",oDp:cSucursal)
+     oGrid:GetCol("MOV_CODIGO"):ListBox(.F.,"DPINVLOTES.LBX",cWhere)
+
+RETURN .T.
+
+/*
+// Asignación de Centro de Costos JN 07/04/2014
+*/
+FUNCTION SETCENCOS()
+   LOCAL cWhere :="CEN_ACTIVO=1 AND CEN_CODSUC"+GetWhere("=",oDp:cSucursal)
+   LOCAL cCodCen:=EJECUTAR("REPBDLIST","DPCENCOS","CEN_CODIGO,CEN_DESCRI",.F.,cWhere,NIL,NIL,oGrid:MOV_CENCOS)
+
+   oGrid:SET("MOV_CENCOS",cCodCen,.T.)
+
+RETURN NIL
+
+FUNCTIO VALRIF()
+
+  IF Empty(oDocCli:DOC_CODIGO) .OR. Empty(SQLGET("DPCLIENTES","CLI_CODIGO","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO)))
+     MensajeErr("Es Necesario Indicar Código")
+     RETURN .T.
+  ENDIF
+
+  EJECUTAR("BRCLINOVALRIF","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO),NIL,NIL,NIL,NIL,"Validar RIF "+oDocCli:DOC_CODIGO)
+
+RETURN 
+
+FUNCTION DOCCLIMAIL(lPdf)
+  LOCAL cTitle   :=ALLTRIM(SQLGET("DPTIPDOCCLI","TDC_DESCRI","TDC_TIPO"+GetWhere("=",oDocCli:DOC_TIPDOC)))+" Número "+oDocCli:DOC_NUMERO
+  LOCAL cDescri  :=DPSQLROW(1,"")
+  LOCAL cWhereDoc:="DOC_CODSUC"+GetWhere("=",oDocCli:DOC_CODSUC)+" AND "+;
+                   "DOC_TIPDOC"+GetWhere("=",oDocCli:DOC_TIPDOC)+" AND "+;
+                   "DOC_NUMERO"+GetWhere("=",oDocCli:DOC_NUMERO)+" AND "+;
+                   "DOC_TIPTRA"+GetWhere("=","D")
+  LOCAL cTipDocDef:="DPDOCCLIHTML"+oDocCli:DOC_TIPDOC
+
+  DEFAULT lPdf:=.F.
+
+  IF lPdf
+    EJECUTAR("BRCLIPERMAILPDF",cTipDocDef,oDocCli:DOC_CODIGO,NIL,cWhereDoc,cTitle,oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO)
+  ELSE
+
+    IF !EJECUTAR("DPFORMATOSPRNCOPY","DPDOCCLIHTML",cTipDocDef,cDescri) // Copia el Formato en caso de no Existir sin tipo de Documento
+       RETURN .F.
+    ENDIF
+
+    EJECUTAR("BRCLIPERMAIL",cTipDocDef,oDocCli:DOC_CODIGO,NIL,cWhereDoc,cTitle,oDocCli:DOC_CODSUC,oDocCli:DOC_TIPDOC,oDocCli:DOC_NUMERO)
+  ENDIF
+
+RETURN .T.
+
+FUNCTION RECIBO()
+   LOCAL oRecibo,cWhere
+
+   oRecibo:=EJECUTAR("DPDOCCLIPAG2",oDocCli:DOC_CODSUC,;
+                                    oDocCli:DOC_TIPDOC,;
+                                    oDocCli:DOC_CODIGO,;
+                                    oDocCli:DOC_NUMERO,;
+                                    oDocCli:cNomDoc,;
+                                    oDocCli:DOC_CODVEN,;
+                                    .F.,;
+                                    oDocCli:lPagEle)
+
+   oRecibo:=oDp:oCliRec
+   oRecibo:lSaveAndClose:=.T.
+
+   // JN 05/05/2017 (Guardar, Cobrar (Cerra) e Imprimir
+   IF (oRecibo:lPagEle .AND. SQLGET("DPCLIENTES","CLI_TIPPER","CLI_CODIGO"+GetWhere("=",oDocCli:DOC_CODIGO))="N") .OR. oDp:Get(oDocCli:DOC_TIPDOC+"LRecPag")
+
+
+     oRecibo:cRunGrabar:=[EJECUTAR("DPFACTURAV_PRINT",.F.,]+;
+                         GetWhere("",oDocCli:DOC_CODSUC)+","+;
+                         GetWhere("",oDocCli:DOC_TIPDOC)+","+;
+                         GetWhere("",oDocCli:DOC_CODIGO)+","+;
+                         GetWhere("",oDocCli:DOC_NUMERO)+","+;
+                         ["]+oDocCli:cWhere+["]         +","+;
+                         [NIL,]+IF(oDocCli:lDocGen,".T.",".F.")+[,NIL)]
+
+
+// PROCE MAIN(lPdf,cCodSuc,cTipDoc,cCodigo,cNumero,cWhere,cNomDoc,lDocGen,oDocCli)
+// ? oRecibo:cRunGrabar,oDocCli:lDocGen
+
+     IF oRecibo:lPagEle
+       oRecibo:oWnd:SetText(oRecibo:cTitle+" [ Pagos con Instrumentos Electrónicos ]")
+     ENDIF
+
+   ENDIF
+
+RETURN 
+
+/*
+// Asignar IVA 10% Beneficio Tributario
+*/
+FUNCTION SETIVA10(lCalc)
+    oDocCli:DOC_MTOBRU:=oDocCli:aGrids[1]:GETTOTAL("MOV_TOTAL")
+RETURN EJECUTAR("SETIVA10FAV",lCalc)
+// EOF
+
+/*
+// Funcion desde bin
+*/
+FUNCTION ISRELEASE()
+RETURN .F.

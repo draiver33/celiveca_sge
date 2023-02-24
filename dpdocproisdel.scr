@@ -1,0 +1,77 @@
+// Programa   : DPDOCPROISDEL
+// Fecha/Hora : 17/10/2005 09:52:42
+// Propósito  : Validar si es posible o no Modificar un Documento
+// Creado Por : Juan Navas
+// Llamado por: DPDOCPRO
+// Aplicación : Proveedor
+// Tabla      : DPDOCPRO
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(oForm)
+  LOCAL lResp:=.T.,nCxP:=1,cWhere,cMotivo:="",nPagos:=0,cMemo
+  LOCAL aCXP :={-1,0,1},cAction:="",cActual:=""
+
+  IF ValType(oForm)!="O"
+     RETURN .F.
+  ENDIF
+
+  cAction :=IIF(oForm:nOption=3,"Modificar",cAction)
+  cAction :=IIF(oForm:nOption=4,"Anular"   ,cAction)
+
+  cWhere  :="DOC_CODSUC"+GetWhere("=",oForm:DOC_CODSUC)+" AND "+;
+            "DOC_TIPDOC"+GetWhere("=",oForm:DOC_TIPDOC)+" AND "+;
+            "DOC_CODIGO"+GetWhere("=",oForm:DOC_CODIGO)+" AND "+;
+            "DOC_NUMERO"+GetWhere("=",oForm:DOC_NUMERO)
+
+  IF Empty(oForm:DOC_TIPDOC)
+     MsgMemo("Documento Vacio")
+     RETURN .F.
+  ENDIF
+
+  nCXP    :=aCXP[AT(SQLGET("DPTIPDOCPRO","TDC_CXP","TDC_TIPO"+GetWhere("=",oForm:DOC_TIPDOC)),"CND")]
+
+  IF oForm:DOC_ESTADO="AN"
+    cMotivo:="Documento Anulado"
+  ENDIF
+
+  IF oForm:DOC_ESTADO="EX"
+    cMotivo:="Documento Exportado"
+  ENDIF
+
+  // Verifica si tiene Asientos Actualizados
+
+  IF Empty(cMotivo) .AND. !Empty(oForm:DOC_CBTNUM)
+
+     cActual:=EJECUTAR("DPDOCVIEWCON",oForm:DOC_CODSUC,oForm:DOC_TIPDOC,oForm:DOC_CODIGO,oForm:DOC_NUMERO,"D",.F.,.F.)
+
+     IF cActual="S"
+
+        cMotivo:="Documento Contabilizado"+CRLF+;
+                 "Comprobante Contable "+oForm:DOC_CBTNUM+" Está Actualizado "
+
+     ENDIF
+
+  ENDIF
+
+
+  IF nCXP<>0 .AND. Empty(cMotivo) // Debe buscar Pagos
+
+     cMemo:="Documento :"+oForm:cTitle+" "+oForm:DOC_NUMERO+CRLF+;
+            "No puede "+IIF(oForm:nOption=3,"Modificarse","Anularse")+" debido a que tiene Pagos Registrados. Si "+CRLF+;
+            "Anula los Recibos de Pago el documento estará disponible para "+CRLF+;
+            "la "+IIF(oForm:nOption=3,"Modificación","Anulación")
+
+     IF EJECUTAR("DPDOCPROPAGCON",oForm:DOC_CODSUC,oForm:DOC_TIPDOC,oForm:DOC_CODIGO,oForm:DOC_NUMERO,cMemo)
+        RETURN .F.
+     ENDIF
+
+  ENDIF
+
+  IF !Empty(cMotivo)
+     MensajeInfo("No se puede Aplicar:"+CRLF+cMotivo,cAction+" "+oForm:cTitle)
+     lResp:=.F.
+  ENDIF
+
+RETURN lResp
+// EOF

@@ -1,0 +1,1005 @@
+// Programa   : TECINVTRANSF
+// Fecha/Hora : 22/11/2004 23:10:42
+// Propósito  : Editar los Documentos de Movimiento de Inventario
+// Creado Por : Juan Navas
+// Llamado por: Inventario Transacciones
+// Aplicación : Inventario
+// Tabla      : DPINVTRANSF
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN()
+  LOCAL I,aData:={},oFontG,oGrid,oCol,cSql,oFontB,cScope,oFont
+  LOCAL cTitle:=GETFROMVAR("{oDp:DPINVTRANSF}"),cExcluye:="",cSql,oTable
+
+  oDp:MOV_MultiAlm:=.T.
+
+  cScope:="TNI_SUCORG"+GetWhere("=",oDp:cSucursal)
+
+  // Font Para el Browse
+  IF Empty(oDp:cModeVideo)
+   DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -12
+   DEFINE FONT oFont  NAME "Times New Roman"   SIZE 0, -12
+  ELSE
+   DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -14
+   DEFINE FONT oFont  NAME "Times New Roman"   SIZE 0, -14
+  ENDIF
+
+  oINVTRAN:=DOCENC(cTitle,"oINVTRAN","DPINVTRANSF"+IIF(Empty(oDp:cModeVideo),"","2")+".EDT")
+  oINVTRAN:cList:="DPINVTRANSF.BRW"
+
+  oINVTRAN:lBar:=.T.
+  oINVTRAN:nBtnStyle:=1
+  oINVTRAN:SetScope(cScope)
+  oINVTRAN:SetTable("DPINVTRANSF","TNI_NUMERO") // ,cScope)
+  oINVTRAN:lFind:=.T.
+
+  oINVTRAN:cPrimary:="TNI_SUCORG,TNI_NUMERO"
+  oINVTRAN:SetIncremental("TNI_NUMERO",cScope)
+  oINVTRAN:cPreSave :="PRESAVE"
+  oINVTRAN:cPostSave:="POSTGRABAR"
+  oINVTRAN:SetMemo("TNI_NUMMEM","Descripción Amplia")
+
+  oINVTRAN:Windows(0,0,440+IIF(Empty(oDp:cModeVideo),0,140),800+IIF(Empty(oDp:cModeVideo),0,140))
+ // oINVTRAN:SetKey(VK_F2,\\\'oINVTRAN:Test("Listo")\\\')
+
+  oINVTRAN:cNameCen:=oDp:XDPCENCOS
+  oINVTRAN:cNameSuc:=oDp:XDPSUCURSAL
+  oINVTRAN:cNameInv:=oDp:XDPINV
+  oINVTRAN:cNameAlm:=oDp:XDPALMACEN
+  oINVTRAN:cPicture:=FIELDPICTURE("DPMOVINV","MOV_CANTID",.T.) // Para Existencia
+  oINVTRAN:cCodTraS:="" // Transacción de Salida
+  oINVTRAN:cCodTraE:="" // Transacción de Entrada
+
+  @ 1.35, 0 FOLDER oINVTRAN:oFolder ITEMS "Documento","Otros Valores";
+                OF oINVTRAN:oDlg SIZE 390,61
+
+  SETFOLDER( 1)
+ 
+  @ 1,1 SAY "Número:" 
+
+  @ 2,1 GET oINVTRAN:oTNI_NUMERO VAR oINVTRAN:TNI_NUMERO;
+        VALID CERO(oINVTRAN:TNI_NUMERO);
+        WHEN (AccessField("DPSUCURSAL","TNI_NUMERO",oINVTRAN:nOption);
+              .AND. oINVTRAN:nOption!=0);
+        SIZE 45,NIL
+
+  @ 3,1.0 BMPGET oINVTRAN:oTNI_FECHA  VAR oINVTRAN:TNI_FECHA  PICTURE "99/99/9999";
+              NAME "BITMAPS\Calendar.bmp";
+              ACTION LbxDate(oINVTRAN:oTNI_FECHA ,oINVTRAN:TNI_FECHA);
+              WHEN (AccessField("DPINVTRANSF","TNI_FECHA",oINVTRAN:nOption);
+                    .AND. oINVTRAN:nOption!=0);
+              SIZE 40,NIL
+
+ @ .1,01 BMPGET oINVTRAN:oTNI_ALMORG VAR oINVTRAN:TNI_ALMORG;
+                 VALID CERO(oINVTRAN:TNI_ALMORG,NIL,.T.) .AND.;
+                 oINVTRAN:ALMORIGEN();
+                 NAME "BITMAPS\ALMACEN2.BMP"; 
+                 ACTION (oDp:lExcluye:=.F.,;
+                         oDpLbx:=DpLbx("DPALMACEN",NIL,"ALM_CODSUC"+GetWhere("=",oDp:cSucursal)),;
+                         oDp:lExcluye:=.T.,;
+                         oDpLbx:GetValue("ALM_CODIGO",oINVTRAN:oTNI_ALMORG)); 
+                 WHEN (AccessField("DPINVTRANSF","TNI_ALMORG",oINVTRAN:nOption);
+                 .AND. oINVTRAN:nOption!=0);
+                 SIZE 28,10
+
+ @ .9,06 BMPGET oINVTRAN:oTNI_SUCDES VAR oINVTRAN:TNI_SUCDES;
+                VALID CERO(oINVTRAN:TNI_SUCDES,NIL,.T.) .AND.;
+                oINVTRAN:SUCDESTINO();
+                NAME "BITMAPS\SUCURSAL2.BMP"; 
+                ACTION (oDpLbx:=DpLbx("DPSUCURSAL",NIL),;
+                        oDpLbx:GetValue("SUC_CODIGO",oINVTRAN:oTNI_SUCDES)); 
+                WHEN (AccessField("DPINVTRANSF","TNI_SUCDES",oINVTRAN:nOption);
+                .AND. oINVTRAN:nOption!=0 ;
+                .AND. !Empty(oINVTRAN:TNI_ALMORG));
+                SIZE 28,10
+
+/*
+// Almacen Destino
+*/
+
+ @ .1,01 BMPGET oINVTRAN:oTNI_ALMDES VAR oINVTRAN:TNI_ALMDES;
+                 VALID CERO(oINVTRAN:TNI_ALMDES,NIL,.T.) .AND.;
+                 oINVTRAN:ALMDESTINO();
+                 NAME "BITMAPS\ALMACEN2.BMP"; 
+                 ACTION (oDp:lExcluye:=.F.,;
+                         oDpLbx      :=DpLbx("DPALMACENDES",GetFromVar("{oDp:DPALMACEN}")+" "+;
+                                             "Destino","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCDES)),;
+                         oDp:lExcluye:=.T.,;
+                         oDpLbx:GetValue("ALM_CODIGO",oINVTRAN:oTNI_ALMDES)); 
+                 WHEN (AccessField("DPINVTRANSF","TNI_ALMDES",oINVTRAN:nOption);
+                       .AND. oINVTRAN:nOption!=0;
+                       .AND. !Empty(oINVTRAN:TNI_SUCDES));
+                 SIZE 28,10
+
+ @ 2,20 SAY "Fecha:" 
+
+ @ 3,10 SAY GetFromVar("{oDp:xDPSUCURSAL}")+" Destino:"
+ @ 1,10 SAY GetFromVar("{oDp:xDPALMACEN}")+" Origen:"
+ @ 1,10 SAY GetFromVar("{oDp:xDPALMACEN}")+" Destino:"
+
+ @ 1,1 SAY oINVTRAN:oSaySucDes PROMPT MYSQLGET("DPSUCURSAL","SUC_DESCRI","SUC_CODIGO"+GetWhere("=",oINVTRAN:TNI_SUCDES))
+
+ @ 1,1 SAY oINVTRAN:oSayAlmOrg PROMPT MYSQLGET("DPALMACEN" ,"ALM_DESCRI","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCORG)+" AND "+;
+                                                                         "ALM_CODIGO"+GetWhere("=",oINVTRAN:TNI_ALMORG))
+
+ @ 1,1 SAY oINVTRAN:oSayAlmDes PROMPT MYSQLGET("DPALMACEN","ALM_DESCRI","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCDES)+" AND "+;
+                                                                        "ALM_CODIGO"+GetWhere("=",oINVTRAN:TNI_ALMDES))
+
+
+ SETFOLDER( 2)
+
+ oINVTRAN:oScroll:=oINVTRAN:SCROLLGET("DPINVTRANSF","DPINVTRANSF.SCG",cExcluye)
+
+ IF oINVTRAN:IsDef("oScroll")
+    oINVTRAN:oScroll:SetEdit(.F.)
+ ENDIF
+
+ oINVTRAN:oScroll:SetColSize(200,250,282)
+ oINVTRAN:oScroll:SetColorHead(CLR_BLACK,14671839,oFont) 
+ oINVTRAN:oScroll:SetColor(15790320,0,1,16382457 ,oFont) 
+
+ oINVTRAN:oScroll:SetColor(CLR_WHITE,CLR_BLACK,3,NIL,oFontB) 
+ oINVTRAN:oScroll:SetColor(CLR_WHITE,CLR_BLACK,2,NIL,oFont) 
+
+ SETFOLDER(0)
+  
+ @ 2,50 SAY oINVTRAN:oProducto PROMPT oINVTRAN:cNameInv+SPACE(40)
+
+ cSql :=" SELECT "+SELECTFROM("DPMOVINV",.F.)+;
+        " ,DPINV.INV_DESCRI "+;
+        " ,DPINVTRAN.TAB_DESCRI "+;
+        " FROM DPMOVINV "+;
+        " INNER JOIN DPINV     ON MOV_CODIGO=INV_CODIGO"+;
+        " INNER JOIN DPINVTRAN ON TAB_CODIGO=MOV_CODTRA"
+
+  cScope:="MOV_TIPDOC='TRAN' AND MOV_APLORG='T' AND MOV_INVACT=1 AND MOV_FISICO=-1"
+
+  oGrid:=oINVTRAN:GridEdit( "DPMOVINV" ,"TNI_SUCORG,TNI_NUMERO" , "MOV_CODSUC,MOV_DOCUME" , cSql , cScope ) 
+
+  oGrid:cScript    :="TECINVTRANSF"
+  oGrid:aSize      :={135+5+20,0,775+05+IIF(Empty(oDp:cModeVideo),0,140),190+IIF(Empty(oDp:cModeVideo),0,120)}
+  oGrid:oFont      :=oFontB
+  oGrid:bWhen      :="!EMPTY(oINVTRAN:TNI_NUMERO) .AND. !Empty(oINVTRAN:TNI_ALMDES)"
+  oGrid:bValid     :="!EMPTY(oINVTRAN:TNI_NUMERO)"
+  oGrid:cItem      :="MOV_ITEM"
+  oGrid:cLoad      :="GRIDLOAD"
+  oGrid:cPresave   :="GRIDPRESAVE"
+  oGrid:cPostSave  :="GRIDPOSTSAVE" 
+  oGrid:cPreDelete :="GRIDPREDELETE"
+  oGrid:cPostDelete:="GRIDPOSTDELETE" 
+  oGrid:cMetodo    :="P" // Método de Costo
+
+  oGrid:nClrPane1   :=15724527
+  oGrid:nClrPane2   :=16316664
+  oGrid:nClrPaneH   :=12578047
+  oGrid:nClrTextH   :=0 
+  oGrid:nRecSelColor:=12578047 // 16763283
+  oGrid:lTallas     :=.F.
+  oGrid:cTallas     :=""
+  oGrid:MOV_APLORG  :="I"
+  oGrid:nCostoLote  :=0
+  oGrid:nLotes      :=0
+
+  oGrid:AddBtn("GRUPOS2.BMP","Grupos","oGrid:nOption=1",;
+               [EJECUTAR("GRIDGRUPOS",oGrid)],"GRU")
+
+  oGrid:AddBtn("MARCA2.BMP","Marcas","oGrid:nOption=1",;
+                [EJECUTAR("GRIDMARCAS",oGrid)],"MAR")
+
+  oGrid:AddBtn("FIND22.BMP","Buscar","oGrid:nOption=1",;
+               [EJECUTAR("GRIDBUSCAINV",oGrid)],"BUS")
+
+
+  oGrid:bChange  :={||oINVTRAN:oProducto:SetText(oINVTRAN:cNameInv+": "+oGrid:INV_DESCRI)}
+
+  // Almacén
+  oGrid:cAlmacen:=oDp:cAlmacen
+
+  // Campo Código
+  oCol:=oGrid:AddCol("MOV_CODIGO")
+  oCol:cTitle   :="Código"
+  oCol:bValid   :={||oGrid:VMOV_CODIGO(oGrid:MOV_CODIGO)}
+  oCol:cMsgValid:="Producto no Existe"
+  oCol:nWidth   :=125+8+IIF(Empty(oDp:cModeVideo),0,20)
+  oCol:cListBox :="DPINV.LBX"
+  oCol:nEditType:=EDIT_GET_BUTTON
+  oCol:bPostEdit:='oGrid:ColCalc("INV_DESCRI")'
+
+  // Descripción
+  oCol:=oGrid:AddCol("INV_DESCRI")
+  oCol:cTitle:="Descripción"
+  oCol:bCalc :={||MYSQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))}
+  oCol:bWhen :=".F."
+  oCol:nWidth:=334+IIF(Empty(oDp:cModeVideo),0,80)
+
+  // Unidad de Medida
+  oCol:=oGrid:AddCol("MOV_UNDMED")
+  oCol:cTitle    :="Trans."
+  oCol:nWidth    :=65
+  oCol:aItems    :={||oGrid:BuildUndMed(.T.)}
+  oCol:aItemsData:={||oGrid:BuildUndMed(.F.)}
+  oCol:bValid    :={||oGrid:VMOV_UNDMED(oGrid:MOV_UNDMED)}
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CODIGO) .AND. oGrid:cMetodo<>'S' .AND. !oGrid:lTallas"
+
+  oCol:=oGrid:AddCol("MOV_CANTID")
+  oCol:cTitle   :="Cantidad"
+  oCol:bWhen    :="!EMPTY(oGrid:MOV_CODIGO) .AND. oGrid:cMetodo<>'S' .AND. !oGrid:lTallas"
+  oCol:bValid   :={||oGrid:VMOV_CANTID(oGrid:MOV_CODTRA)}
+  oCol:cMsgValid:="Cantidad debe ser Mayor que Cero"
+  oCol:cPicture :=FIELDPICTURE("DPMOVINV","MOV_CANTID",.T.)
+  oCol:nWidth   :=95+IIF(Empty(oDp:cModeVideo),0,20)
+
+
+  oCol:=oGrid:AddCol("MOV_COSTO")
+  oCol:cTitle   :="Costo"
+  oCol:bWhen    :="Left(oGrid:MOV_CODTRA,1)$'E,A'"
+  oCol:bValid   :="oGrid:MOV_COSTO>0"
+  oCol:cPicture :=FIELDPICTURE("DPMOVINV","MOV_COSTO",.T.)
+  oCol:nWidth   :=105+IIF(Empty(oDp:cModeVideo),0,20)
+
+
+ //oCol:bPostEdit:=\\\'oGrid:ColCalc("MOV_TOTAL")\\\' // Calcula el Total
+
+  oGrid:oSayOpc   :=oINVTRAN:oProducto
+  oINVTRAN:oFocusFind:=oINVTRAN:oTNI_NUMERO
+
+  oINVTRAN:Activate( {||oINVTRAN:INICIO()} )
+
+// oINVTRAN:SetColorBar(CLR_BLACK,CLR_YELLOW)
+// oINVTRAN:SetColorBar(CLR_BLACK,15724527)
+
+RETURN
+
+FUNCTION INICIO()
+
+    oGrid:bChange:=BloqueCod(oGrid:bChange)
+    Eval(oGrid:bChange)
+RETURN .T.
+
+/*
+// Carga los Datos
+*/
+FUNCTION LOAD()
+
+  IF oINVTRAN:nOption=1
+//   oINVTRAN:TNI_NUMERO:=SQLGETMAX("DPINVTRANSF","TNI_NUMERO")
+//   oINVTRAN:TNI_NUMERO:=STRZERO(VAL(oINVTRAN:TNI_NUMERO)+1,8)
+     oINVTRAN:oTNI_FECHA :VarPut(oDp:dFecha   ,.T.)
+     oINVTRAN:SetValue("TNI_SUCORG",oDp:cSucursal)
+//   oINVTRAN:oTNI_CENCOS:VarPut(oDp:cCenCos  ,.T.)
+     oINVTRAN:TNI_HORA   :=TIME() // Guarda la Hora
+     oINVTRAN:SetValue("TNI_CENCOS",oDp:cCenCos)
+     oINVTRAN:SetValue("TNI_CODPER",oDp:cCodPer)
+//   oINVTRAN:oCenDescri:Refresh(.T.)
+//   oINVTRAN:oSucDescri:Refresh(.T.)
+
+     IF MYCOUNT("DPSUCURSAL")=1 // Existe una Sola Sucursal
+       oINVTRAN:oTNI_SUCDES:VarPut(oDp:cSucursal,.T.)
+       oINVTRAN:oSaySucDes:Refresh(.T.)
+     ENDIF
+
+  ENDIF
+
+  IF oINVTRAN:nOption=3
+     oINVTRAN:ALMORIGEN()
+     oINVTRAN:ALMDESTINO()
+  ENDIF
+
+  oGrid:MOV_APLORG:="I" // Todas son Operaciones de Inventario
+
+RETURN .T.
+
+FUNCTION PRESAVE()
+
+     oINVTRAN:TNI_TIPDOC:="TRAN" // Transferencia
+
+RETURN .T.
+
+FUNCTION GRIDLOAD()
+  LOCAL I
+
+  oGrid:XMOV_CANTID:=0
+  oGrid:aSeriales  :={}
+  oGrid:MOV_APLORG :="I"
+  oGrid:nLotes     :=0
+
+  IF oGrid:nOption=1
+
+    FOR I=1 TO 10
+      oGrid:Set("MOV_TALL"+STRZERO(I,2),0)
+    NEXT I
+
+//  oGrid:Set("MOV_CODALM" , IIF(Empty(oGrid:MOV_CODALM),oDp:cAlmacen,oGrid:MOV_CODALM),oDp:MOV_MultiAlm .AND. oDp:nAlmacen>1)
+    oGrid:Set("MOV_CANTID" , 1,.T.)
+    oGrid:Set("MOV_INVACT" , 1  ) // Transacción Activa
+    oGrid:Set("MOV_LOTE"   , CTOEMPTY(oGrid:MOV_LOTE))
+    oGrid:Set("MOV_PRECIO" , 0 )
+    oGrid:Set("MOV_FCHVEN" , CTOD(""))
+
+  ELSE
+ 
+    oGrid:XMOV_CANTID:=oGrid:MOV_CANTID
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Pregrabar
+*/
+FUNCTION GRIDPRESAVE()
+
+   // Tipo de Transacción
+
+   IF EMPTY(oGrid:MOV_CODTRA)
+      MensajeErr("Es necesario Código de Transacción")
+      RETURN .F.
+   ENDIF
+
+   oGrid:MOV_INVACT:=IIF(Left(oGrid:MOV_CODTRA,1)="E" ,  1 , oGrid:MOV_INVACT )
+   oGrid:MOV_INVACT:=IIF(Left(oGrid:MOV_CODTRA,1)="S" , -1 , oGrid:MOV_INVACT )
+
+   IF oGrid:cMetodo="C" .AND. oGrid:MOV_INVACT<0  // Salidas de Capas de Costos
+       oGrid:SET("MOV_COSTO",oGrid:nCostoLote,.T.)
+   ENDIF
+
+   oGrid:MOV_CONTAB:=oGrid:MOV_INVACT // Contable
+   oGrid:MOV_LOGICO:=oGrid:MOV_INVACT // Lógico
+   oGrid:MOV_FISICO:=oGrid:MOV_INVACT // Físico
+   oGrid:MOV_INVACT:=1 // Transacción Actia
+   oGrid:MOV_FECHA :=oINVTRAN:TNI_FECHA
+   oGrid:MOV_TIPDOC:="TRAN"   // Documento de Inventario
+   oGrid:MOV_CXUND :=EJECUTAR("INVGETCXUND",oGrid:MOV_CODIGO,oGrid:MOV_UNDMED)
+   oGrid:MOV_TIPO  :="I"      // Producto Individual
+   oGrid:MOV_USUARI:=oDp:cUsuario
+   oGrid:MOV_TOTAL :=oGrid:MOV_CANTID*oGrid:MOV_COSTO
+   oGrid:MOV_CODSUC:=oINVTRAN:TNI_SUCORG
+   oGrid:MOV_APLORG:="T"
+
+   IF oGrid:nOption=1
+      oGrid:MOV_HORA  :=TIME() // oINVTRAN:TNI_HORA 
+   ENDIF
+
+RETURN .T.
+
+/*
+// Grabación del Item
+*/
+FUNCTION GRIDPOSTSAVE()
+   LOCAL oTable,aData:={}
+   LOCAL cItem
+
+   // EJECUTAR("INVUPDATECAPA",oGrid)
+   // oGrid:MOV_CODSUC,oGrid:MOV_TIPDOC,oGrid:MOV_DOCUME,oGrid:MOV_CODCTA,oGrid:MOV_ITEM,.T.)
+
+   IF oGrid:cMetodo="S" .AND. !Empty(oGrid:aSeriales)
+      EJECUTAR("SERGRABAR",oGrid)
+   ENDIF
+
+   IF oGrid:nOption!=1
+
+      SQLDELETE("DPMOVINV","MOV_ITEM  "+GetWhere("=",oGrid:MOV_ITEM  )+" AND "+;
+                           "MOV_DOCUME"+GetWhere("=",oGrid:MOV_DOCUME)+" AND "+;
+                           "MOV_TIPDOC='TRAN' AND MOV_FISICO=1")
+
+   ENDIF
+
+
+   oTable:=OpenTable("SELECT * FROM DPMOVINV WHERE MOV_ITEM  "+GetWhere("=",oGrid:MOV_ITEM  )+" AND "+;
+                                                 " MOV_DOCUME"+GetWhere("=",oGrid:MOV_DOCUME)+" AND "+;
+                                                 " MOV_TIPDOC='TRAN'",.T.)
+                                              
+   AEVAL(oTable:aFields,{|a,n|AADD(aData,oTable:FieldGet(n))})
+   oTable:Append()
+   AEVAL(oTable:aFields,{|a,n|oTable:FieldPut(n,aData[n]) })
+   oTable:Replace("MOV_CODTRA",oINVTRAN:cCodTraE  )
+   oTable:Replace("MOV_FISICO",1                  )
+   oTable:Replace("MOV_LOGICO",1                  )
+   oTable:Replace("MOV_CONTAB",1                  )
+   oTable:Replace("MOV_CODSUC",oINVTRAN:TNI_SUCDES)
+   oTable:Replace("MOV_CODALM",oINVTRAN:TNI_ALMDES)
+   oTable:Commit()
+   oTable:End()
+
+   IF oGrid:cMetodo="S" .AND. !Empty(oGrid:aSeriales)
+
+      oGrid:MOV_CODSUC:=oINVTRAN:TNI_SUCDES
+      oGrid:MOV_CODALM:=oINVTRAN:TNI_ALMDES
+      EJECUTAR("SERGRABAR",oGrid)
+
+   ENDIF
+
+RETURN .T.
+
+/*
+// Ejecución Antes de Eliminar el Item
+*/
+FUNCTION GRIDPREDELETE()
+  // Verifica si puede borrar la Salida
+
+//  EJECUTAR("INVQUITARCAPA",oGrid:MOV_TIPDOC,oGrid:MOV_DOCUME,oGrid:MOV_CODCTA,oGrid:MOV_ITEM,.F.)
+//
+//  IF LEFT(oGrid:MOV_CODTRA,1)="E" .AND. !EJECUTAR("INVCHKDELENT",oGrid:MOV_TIPDOC,oGrid:MOV_DOCUME,oGrid:MOV_CODCTA,oGrid:MOV_ITEM)
+//      oGrid:MensajeErr("La existencia quedará Negativa","No es posible Eliminar el Item")
+//      RETURN .F.
+//  ENDIF
+
+  oDp:cMotivo:="" // Motivo del Borrado
+
+  IF !EJECUTAR("DPMOVINVPREDEL",oGrid:MOV_CODSUC,oGrid:MOV_CODALM,oGrid:MOV_TIPDOC,;
+                                oGrid:MOV_DOCUME,oGrid:MOV_CODCTA,oGrid:MOV_ITEM)
+
+     MensajeErr(oDp:cMotivo,"Item: "+oGrid:MOV_ITEM+" no puede ser Borrado")
+
+     RETURN .F.
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// PostGrabar
+*/
+FUNCTION GRIDPOSTDELETE()
+
+    // Borra la Transacción de Entrada
+
+    SQLDELETE("DPMOVINV","MOV_ITEM  "+GetWhere("=",oGrid:MOV_ITEM  )+" AND "+;
+                         "MOV_DOCUME"+GetWhere("=",oGrid:MOV_DOCUME)+" AND "+;
+                         "MOV_TIPDOC='TRAN' AND MOV_FISICO=1")
+
+RETURN .T.
+
+/*
+// Valida Almacén
+*/
+FUNCTION VMOV_ALMACE(cCodAlm)
+
+   IF SQLGET("DPALMACEN","ALM_CODIGO","ALM_CODIGO"+GetWhere("=",cCodAlm))!=cCodAlm
+      RETURN .F.
+   ENDIF
+
+   oGrid:cAlmacen:=cCodAlm
+   oINVTRAN:oProducto:SetText(oINVTRAN:cNameAlm+":"+MYSQLGET("DPALMACEN","ALM_DESCRI","ALM_CODIGO"+GetWhere("=",cCodAlm)))
+
+RETURN .T.
+
+FUNCTION VMOV_CODIGO(cCodInv)
+   LOCAL nExi,nCosto:=0,cEquiv,aItems:={}
+   LOCAL cCodTra:=oINVTRAN:cCodTraS
+
+   
+
+   IF EMPTY(oGrid:MOV_CODIGO)
+      RETURN .F.
+   ENDIF
+
+   oGrid:Set("MOV_CODALM",oINVTRAN:TNI_ALMORG) // Almacén Origen
+
+   IF Empty(cCodTra) .OR. !ISMYSQLGET("DPINVTRAN","TAB_CODIGO",cCodTra) 
+
+      MensajeErr("Transacción "+cCodTra+" no Existe en "+CRLF+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCORG+" y "+CRLF+;
+                 GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_ALMORG)
+
+
+      oGrid:GetCol("MOV_CODIGO"):lListBox:=.F.
+
+      RETURN .F.
+
+   ENDIF
+
+   oGrid:Set("MOV_CODTRA",oINVTRAN:cCodTraS)
+
+   //oGrid:MOV_CODTRA:=cCodTra
+   // Debe Ubicar el Codigo de Salida de Transacción
+
+   IF !ISMYSQLGET("DPINV","INV_CODIGO",oGrid:MOV_CODIGO)
+
+      // BUSCA EL EQUIVALENTE
+      cEquiv:=SQLGET("DPEQUIV","EQUI_CODIG","EQUI_BARRA"+GetWhere("=",oGrid:MOV_CODIGO))
+
+      IF Empty(cEquiv)
+         RETURN .F.
+      ENDIF
+
+      oGrid:GetCol("MOV_CODIGO"):VarPut(cEquiv)
+
+   ENDIF
+
+   // Ubica la Unidad de Medida
+   IF oGrid:nOption=1
+     aItems:=oGrid:BuildUndMed(.T.)
+     oGrid:Set("MOV_UNDMED",aItems[1],.T.)
+   ENDIF
+
+   oGrid:cMetodo:=MYSQLGET("DPINV","INV_METCOS,INV_TALLAS","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))
+   oGrid:lTallas:=.F.
+   oGrid:cTallas:=""
+
+   IF !Empty(oDp:aRow) .AND. !Empty(oDp:aRow[2])
+
+      oGrid:lTallas:=.T.
+      oGrid:cTallas:=oDp:aRow[2]
+
+   ENDIF
+
+// EJECUTAR("INVDEPURACAPAS",cCodInv)
+// nExi:=EJECUTAR("INVGETEXI" , cCodInv , oGrid:MOV_UNDMED , oGrid:MOV_CODALM , oINVTRAN:TNI_SUCORG)
+   nExi:=GRID_EXISTENCIA(.t.)
+
+//   oINVTRAN:oProducto:SetText(oINVTRAN:cNameInv+": "+SQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",cCodInv))+;
+//                      " E:("+TRAN(nExi,oINVTRAN:cPicture)+")")
+
+   nCosto:=EJECUTAR("INVGETULTCOS" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oINVTRAN:TNI_SUCORG, NIL, NIL )
+
+   oGrid:Set("MOV_COSTO" ,nCosto ,.T.)
+   oGrid:Set("MOV_CODIGO",cCodInv,.T.)
+
+   IF !oGrid:VMOV_CODTRA(cCodTra)
+      RETURN .F.
+   ENDIF
+
+RETURN .T.
+
+/*
+// Valida Transacción
+*/
+FUNCTION VMOV_CODTRA(cCodOpe)
+
+  EVAL(oGrid:GetCol("INV_DESCRI"):bCalc)
+
+  oGrid:Set("INV_DESCRI",MYSQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO)),.T.)
+
+  IF oGrid:cMetodo="S" 
+
+     EJECUTAR(IIF(Left(cCodOpe,1)="E","SERENTRADA","SERSALIDA"),oGrid)
+
+     IF Empty(oGrid:aSeriales)
+        // oGrid:GetCol("MOV_CODTRA"):VarPut(cCodOpe)
+        oGrid:GetCol("MOV_CODIGO"):lListBox:=.F.
+        RETURN .F.
+     ENDIF
+
+     oGrid:GetCol("MOV_CANTID"):VarPut(LEN(oGrid:aSeriales))
+     oGrid:IsFinish(.F.)
+
+  ENDIF
+
+  IF oGrid:cMetodo="C"  // Capas o Costos
+
+      IF !EJECUTAR(IIF(Left(cCodOpe,1)="E","DPLOTE_ENT","DPLOTE_SAL"),oGrid)
+         oGrid:GetCol("MOV_CODIGO"):lListBox:=.F.
+         RETURN .F.
+      ENDIF
+
+      oGrid:Set("MOV_COSTO",oGrid:MOV_COSTO,.T.)
+
+  ENDIF
+
+  IF oGrid:lTallas 
+     IF EJECUTAR("DPTALLASGET", oGrid ,  Left(cCodOpe,1)="E" )=0
+//     oGrid:GetCol("MOV_CODTRA"):lListBox:=.F.
+       RETURN .F.
+     ELSE
+//     EVAL(oGrid:GetCol("INV_DESCRI"):bCalc)
+//     EVAL(oGrid:GetCol("MOV_CODIGO"):bPostEdit)
+       oGrid:IsFinish(.F.)
+     ENDIF
+  ENDIF
+
+RETURN .T.
+
+/*
+// Unidad de Medida
+*/
+FUNCTION VMOV_UNDMED(cUndMed)
+
+   LOCAL nCosto,dHasta,cHoraMax
+
+   // Cuando Modifica, debe Buscar el Costo de su momento
+
+   IF oGrid:nOption!=1
+      dHasta  :=oGrid:MOV_FECHA
+      cHoraMax:=oGrid:MOV_HORA
+   ENDIF
+
+   GRID_EXISTENCIA(.T.)
+
+   nCosto:=EJECUTAR("INVGETULTCOS" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oINVTRAN:TNI_SUCORG, dHasta, cHoraMax )
+
+   oGrid:Set("MOV_COSTO",nCosto,.T.)
+
+RETURN .T.
+
+/*
+// Valida Cantidad
+*/
+FUNCTION VMOV_CANTID()
+  LOCAL nExi:=0
+
+  IF !oGrid:MOV_CANTID>0
+      RETURN .F.
+  ENDIF
+
+  IF oGrid:cMetodo="C" .AND. Left(oGrid:MOV_CODTRA,1)="S"
+
+    nExi:=oGrid:nLotes
+    oGrid:SET("MOV_COSTO",oGrid:nCostoLote,.T.)
+
+  ELSE
+
+    nExi:=GRID_EXISTENCIA(.T.)
+    GRID_COSTO()
+
+  ENDIF
+
+//  IF oGrid:nOption=3 .AND. LEFT(oGrid:MOV_CODTRA,1)="E";
+//                     .AND. !EJECUTAR("INVCHKDELENT",oGrid:MOV_TIPDOC,oGrid:MOV_DOCUME,oGrid:MOV_CODCTA,oGrid:MOV_ITEM,oGrid:MOV_CANTID)
+//
+//      oGrid:GetCol("MOV_CANTID"):MensajeErr("La existencia quedará Negativa","No es Aceptar las Cantidades")
+//
+//      RETURN .F.
+//
+//  ENDIF
+
+  IF Left(oGrid:MOV_CODTRA,1)="S" .AND. nExi<oGrid:MOV_CANTID 
+     oGrid:GetCol("MOV_CANTID"):MensajeErr("Existencia no Cubre la Cantidad Requerida")
+     IF  !MsgYesNo("Desea Continuar?")
+     RETURN .F.
+     ENDIF
+  ENDIF
+
+RETURN .T.
+
+
+/*
+// Construye las Opciones
+*/
+FUNCTION BuildUndMed(lData)
+  LOCAL aItem:={}
+
+  aItem:=EJECUTAR("INVGETUNDMED",oGrid:MOV_CODIGO,NIL,oGrid:cMetodo,oGrid)
+
+  IF (EMPTY(oGrid:MOV_UNDMED) .AND. !Empty(aItem)) .OR. LEN(aItem)=1
+     oGrid:Set("MOV_UNDMED",aItem[1],.T.)
+  ENDIF
+
+RETURN aItem
+
+/*
+// Obtiene la Existencia del Grid
+*/
+FUNCION GRID_EXISTENCIA(lShow)
+  LOCAL nExiste:=0,dFecha,cHora
+
+  dFecha:=oINVTRAN:TNI_FECHA
+  cHora :=NIL // TIME() // oINVTRAN:TNI_HORA 
+
+  DEFAULT lShow:=.F.
+
+  IF oGrid:nOption=3
+     dFecha:=oGrid:MOV_FECHA
+     cHora :=oGrid:MOV_HORA
+  ENDIF
+
+  nExiste:=EJECUTAR("INVGETEXI" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED , oGrid:MOV_CODALM , oINVTRAN:TNI_SUCORG, dFecha, cHora,"MOV_FISICO")
+
+  IF oGrid:nOption=3 // Modificar
+    nExiste:=nExiste-(oGrid:XMOV_CANTID*oGrid:MOV_INVACT)
+  ENDIF
+
+  IF lShow
+
+    oINVTRAN:oProducto:SetText(oINVTRAN:cNameInv+": "+;
+                                MYSQLGET("DPINV","INV_DESCRI","INV_CODIGO"+GetWhere("=",oGrid:MOV_CODIGO))+CRLF+;
+                                "Disponible ["+ALLTRIM(TRAN(nExiste,oINVTRAN:cPicture))+"]")
+
+  ENDIF
+
+
+RETURN nExiste
+
+/*
+// Debe Mostrar y Colocar el Costo
+*/
+FUNCTION GRID_COSTO()
+   LOCAL nCosto,cHora
+
+   IF LEFT(oGrid:MOV_CODTRA,1)="S"
+
+      nCosto:=EJECUTAR("INVGETCOSTO"   ,oGrid:MOV_CODIGO ,oGrid:MOV_UNDMED    , oINVTRAN:TNI_SUCORG , oINVTRAN:TNI_FECHA , cHora , oGrid:MOV_CANTID  )
+
+   ELSE
+
+      nCosto:=EJECUTAR("INVGETULTCOS" , oGrid:MOV_CODIGO , oGrid:MOV_UNDMED   , oINVTRAN:TNI_SUCORG , oINVTRAN:TNI_FECHA , cHora )
+
+   ENDIF
+
+   oGrid:Set("MOV_COSTO",nCosto,.T.)
+
+RETURN nCosto
+
+/*
+// Realiza el Trabajo de Depuración
+*/
+FUNCTION DOCMOVDEPURA()
+  LOCAL cSql,oTable
+
+  cSql:="SELECT TNI_NUMERO,TNI_SUCORG FROM DPINVTRANSF "+;
+        "LEFT  JOIN DPMOVINV ON TNI_NUMERO=MOV_DOCUME AND MOV_TIPDOC='DINV'"+;
+        "       AND MOV_CODSUC=TNI_SUCORG "+;
+        "WHERE MOV_DOCUME IS NULL "
+
+  oTable:=OpenTable(cSql,.T.)
+
+  WHILE !oTable:Eof() 
+
+    cSql   :="DELETE FROM DPINVTRANSF WHERE TNI_NUMERO"+GetWhere("=",oTable:TNI_NUMERO)+;
+                         " AND TNI_SUCORG"+GetWhere("=",oTable:TNI_SUCORG)
+
+    oTable:EXECUTE(cSql)
+    oTable:DbSkip(1)
+
+  ENDDO
+
+  oTable:End()
+  oTable:=NIL
+
+RETURN .T.
+
+/*
+// Debe Generar el Número del Documento
+*/
+FUNCTION BUILDNUMDOC()
+   LOCAL lResp
+
+   IF oINVTRAN:nOption=1
+
+       oINVTRAN:BuildIncremental("TNI_NUMERO","TNI_SUCORG"+GetWhere("=",oINVTRAN:TNI_SUCORG))
+
+   ELSE
+     
+       IF oINVTRAN:oTable:TNI_SUCORG<>oINVTRAN:TNI_SUCORG
+
+          MensajeErr("Debe verificar si puede o no cambiar la sucursal")
+          lResp:=EJECUTAR("INVCHKDOC",oINVTRAN:nOption)
+
+       ENDIF
+
+   ENDIF
+   
+RETURN .T.
+
+FUNCTION POSTGRABAR()
+
+//  ? oGrid:MOV_ITEM
+// MsgRun("Por Favor Espere","Calculando Precios",{|oDlg,oSay|oDoc:CALPRECIOS(oDlg,oSay)})
+
+   oINVTRAN:PRINTER()
+
+
+RETURN .T.
+
+FUNCTION CALPRECIOS(oDlg,oSay)
+RETURN 
+
+FUNCTION PREDELETE()
+  LOCAL nInvAct:=0,nEstado:=0,cPregunta:=""
+
+  nEstado:=MYSQLGET("DPMOVINV","MOV_INVACT","MOV_CODSUC"+GetWhere("=",oDp:cSucursal )+" AND "+;
+                               "MOV_DOCUME"+GetWhere("=",oINVTRAN:TNI_NUMERO)+" AND "+;
+                               "MOV_TIPDOC='TRAN' AND MOV_APLORG='T' LIMIT 1")
+
+  cPregunta:=IIF(nEstado=0,"Reactivar","Anular")
+
+  IF !MsgNoYes("Desea "+cPregunta+" Documento "+oINVTRAN:TNI_NUMERO,"Seleccione la Opción")
+    RETURN .F.
+  ENDIF
+ 
+  nInvAct:=IIF( nEstado=0 , 1, 0)
+
+  SQLUPDATE("DPMOVINV","MOV_INVACT",nInvAct,"MOV_CODSUC"+GetWhere("=",oDp:cSucursal       )+" AND "+;
+                                            "MOV_DOCUME"+GetWhere("=",oINVTRAN:TNI_NUMERO)+" AND "+;
+                                            "MOV_TIPDOC='TRAN' AND MOV_APLORG='T' ")
+  
+  oINVTRAN:LoadData(0)
+
+RETURN .F.
+
+FUNCTION POSTDELETE()
+RETURN .T.
+
+
+FUNCTION PRINTER()
+ 
+  REPORTE("INVTRANSF")
+
+  oDp:oGenRep:SetRango(1,oINVTRAN:TNI_NUMERO,oINVTRAN:TNI_NUMERO)
+  oDp:oGenRep:SetCriterio(1,oINVTRAN:TNI_SUCORG)
+
+RETURN .T.
+
+FUNCTION SUCDESTINO()
+   LOCAL nContar:=0,cCodAlm
+
+ /*  IF oINVTRAN:TNI_SUCDES=oDp:cSucursal
+      MensajeErr(GetFromVar("{oDp:xDPSUCURSAL}")+" debe ser Diferente que "+oDp:cSucursal)
+      oINVTRAN:oTNI_SUCDES:KeyBoard(VK_F6)
+      RETURN .T.
+   ENDIF
+*/
+
+   IF !ISMYSQLGET("DPSUCURSAL","SUC_CODIGO",oINVTRAN:TNI_SUCDES)
+     oINVTRAN:oTNI_SUCDES:KeyBoard(VK_F6)
+     RETURN .T.
+   ENDIF
+
+   nContar:=MYCOUNT("DPALMACEN","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCORG))
+
+   IF nContar=0 
+
+      MensajeErr(GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCORG+" "+;
+                 " no posee "+GetFromVar("{oDp:DPALMACEN}"))
+
+      RETURN .F.
+
+   ENDIF
+
+   IF nContar=1 
+     cCodAlm:=MYSQLGET("DPALMACEN","ALM_CODIGO","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCORG))
+     oINVTRAN:oTNI_ALMDES:VarPut(cCodAlm,.T.)
+     oINVTRAN:oTNI_ALMDES:KeyBoard(13)
+   ENDIF
+
+   oINVTRAN:oSaySucDes:Refresh(.T.)
+
+RETURN .T.
+
+FUNCTION ALMORIGEN()
+
+   LOCAL cCodTra
+
+   IF Empty(oINVTRAN:TNI_ALMORG) .OR. !MYSQLGET("DPALMACEN","ALM_CODIGO","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCORG)+" AND "+;
+                                                                         "ALM_CODIGO"+GetWhere("=",oINVTRAN:TNI_ALMORG))==oINVTRAN:TNI_ALMORG
+
+     oINVTRAN:oTNI_ALMORG:KeyBoard(VK_F6)
+
+     RETURN .T.
+
+   ENDIF
+
+   oINVTRAN:oSayAlmOrg:Refresh(.T.)
+
+   cCodTra:=MYSQLGET("DPALMACEN","ALM_T_S","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCORG)+" AND "+;
+                                           "ALM_CODIGO"+GetWhere("=",oINVTRAN:TNI_ALMORG))
+
+
+   IF Empty(cCodTra) 
+
+      MensajeErr(GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_ALMORG+" de "+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCORG+CRLF+;
+                 "no posee Código de Transacción de Salida por Transferencia")
+
+      EJECUTAR("DPALMACEN",3,oINVTRAN:TNI_ALMORG)
+
+      RETURN .F.
+
+   ENDIF
+
+
+   IF LEFT(cCodTra,1) != "S" 
+
+      MensajeErr(GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_ALMORG+" de "+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCORG+CRLF+;
+                 "Transacción de Salida "+cCodTra+" debe iniciar por [S]")
+
+      EJECUTAR("DPALMACEN",3,oINVTRAN:TNI_ALMORG)
+
+      RETURN .F.
+
+   ENDIF
+
+   IF !ISMYSQLGET("DPINVTRAN","TAB_CODIGO",cCodTra) 
+
+      MensajeErr("Transacción "+cCodTra+" no Existe en "+CRLF+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCORG+" y "+CRLF+;
+                 GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_SUCORG)
+
+      RETURN .F.
+
+   ENDIF
+
+   oINVTRAN:cCodTraS:=cCodTra // Codigo de Transacción de Salida
+
+   IF MYCOUNT("DPSUCURSAL")=1 // Existe una Sola Sucursal
+      oINVTRAN:oTNI_SUCDES:VarPut(oDp:cSucursal,.T.)
+      oINVTRAN:oSaySucDes:Refresh(.T.)
+
+      oINVTRAN:oTNI_ALMDES:bAction:={||oDpLbx:=DpLbx("DPALMACENDES2",GetFromVar("{oDp:DPALMACEN}")+" "+;
+                                      "Destino ",;
+                                      "ALM_CODSUC"+GetWhere("=" ,oINVTRAN:TNI_SUCDES)+" AND "+;
+                                      "ALM_CODIGO"+GetWhere("<>",oINVTRAN:TNI_ALMORG)),;
+                                       oDpLbx:GetValue("ALM_CODIGO",oINVTRAN:oTNI_ALMDES)}
+
+   ENDIF
+
+RETURN .T.
+
+FUNCTION ALMDESTINO()
+
+   LOCAL cCodTra
+
+   IF Empty(oINVTRAN:TNI_ALMDES) .OR. !MYSQLGET("DPALMACEN","ALM_CODIGO","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCDES)+" AND "+;
+                                                                         "ALM_CODIGO"+GetWhere("=",oINVTRAN:TNI_ALMDES))==oINVTRAN:TNI_ALMDES
+
+     oINVTRAN:oTNI_ALMDES:KeyBoard(VK_F6)
+
+     RETURN .T.
+
+   ENDIF
+
+   oINVTRAN:oSayALMDES:Refresh(.T.)
+
+   cCodTra:=MYSQLGET("DPALMACEN","ALM_T_E","ALM_CODSUC"+GetWhere("=",oINVTRAN:TNI_SUCDES)+" AND "+;
+                                           "ALM_CODIGO"+GetWhere("=",oINVTRAN:TNI_ALMDES))
+
+
+   IF Empty(cCodTra) 
+
+      MensajeErr(GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_ALMDES+" de "+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCDES+CRLF+;
+                 "no posee Código de Transacción de Entrada por Transferencia")
+
+      oDp:lExcluye    :=.F.
+      EJECUTAR("DPALMACEN",3,oINVTRAN:TNI_ALMDES,oINVTRAN:TNI_SUCDES)
+      oDp:lExcluye    :=.T.
+
+      RETURN .F.
+
+   ENDIF
+
+
+   IF LEFT(cCodTra,1) != "E" 
+
+      MensajeErr(GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_ALMDES+" de "+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCDES+CRLF+;
+                 "Transacción de Salida "+cCodTra+" debe iniciar por [S]")
+
+      EJECUTAR("DPALMACEN",3,oINVTRAN:TNI_ALMDES,oINVTRAN:TNI_SUCDES)
+
+      RETURN .F.
+
+   ENDIF
+
+   IF !ISMYSQLGET("DPINVTRAN","TAB_CODIGO",cCodTra) 
+
+      MensajeErr("Transacción "+cCodTra+" no Existe en "+CRLF+;
+                 GetFromVar("{oDp:xDPSUCURSAL}")+" "+oINVTRAN:TNI_SUCDES+" y "+CRLF+;
+                 GetFromVar("{oDp:xDPALMACEN} ")+" "+oINVTRAN:TNI_SUCDES)
+
+      RETURN .F.
+
+   ENDIF
+
+   IF oINVTRAN:TNI_SUCDES=oINVTRAN:TNI_SUCORG .AND. oINVTRAN:TNI_ALMDES=oINVTRAN:TNI_ALMORG
+    
+      MensajeErr(GetFromVar("{oDp:xDPALMACEN}")+" Destino "+oINVTRAN:TNI_ALMDES+" debe ser "+;
+                 "diferente que el "+GetFromVar("{oDp:xDPALMACEN} ")+" Origen ")
+
+      oINVTRAN:oTNI_ALMDES:KeyBoard(VK_F6)
+
+   ENDIF
+
+   oINVTRAN:cCodTraE:=cCodTra // Codigo de Transacción de Salida
+
+RETURN .T.
+
+// EOF  uuuuu
+
+
+
+
+
+

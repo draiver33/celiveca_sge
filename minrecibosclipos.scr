@@ -1,0 +1,517 @@
+// Programa   : MINRECIBOSCLIPOS
+// Fecha/Hora : 07/10/2006 06:08:49
+// Propósito  : PostGrabar Recibos de Ingreso
+// Creado Por : Juan Navas
+// Llamado por: DPRECIBOSCLI
+// Aplicación : Tesorería
+// Tabla      : DPRECIBOSCLI
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(oCliRec)
+  LOCAL lResp:=.T.,I,aData:=ACLONE(oCliRec:oBrw:aArrayData),nAt,cCtaCaja,cCodigo,cNumTra ,cCodSuc,nRata
+  LOCAL cTipDoc,lCaja,cNumDoc,cBanco,cCuenta,cMarcaF,dFecha,cCodBco:="",nMonto:=0,cWhere:="",nCaj:=0,nBco:=0
+  LOCAL nMtoOtr:=0,nMtoIva:=0,nCxC
+
+  CURSORWAIT()
+
+  WHILE (nAt:=ASCAN(aData,{|a,n|a[6+1]=0}),nAt>0)
+     aData:=ARREDUCE(aData,nAt)
+  ENDDO
+
+// ViewArray(oCliRec:aDataPag)
+// RETURN .T.
+
+  DpSqlBegin()
+
+  // Anula los Documentos Creados Antes de Modificar
+
+  IF EMPTY(oCliRec:REC_NUMMEM) .OR. !Empty(oCliRec:REC_MEMO)
+
+     oCliRec:REC_NUMMEM:=DPMEMOSAVE(oCliRec:REC_NUMMEM,oCliRec:REC_MEMO,"")
+
+     SQLUPDATE("DPRECIBOSCLI","REC_NUMMEM",oCliRec:REC_NUMMEM,"REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                              "REC_NUMERO"+GetWhere("=",oCliRec:REC_NUMERO))
+
+  ENDIF
+
+
+  IF oCliRec:nOption<>1
+
+    // SE ANULAN LOS CAMBIOS DE PAGO
+
+    SQLUPDATE("DPCAJAMOV","CAJ_ACT",0," WHERE CAJ_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+;
+                                      " AND   CAJ_DOCASO"+GetWhere("=",oCliRec:REC_NUMERO)+;
+                                      " AND CAJ_ORIGEN"+GetWhere("=","REC")+;
+                                      " AND CAJ_ACT=1")
+    // Se cambio DOC_DOCORG='R' por DOC_DOCORG='P', ya que anulaba las retenciones al modificar el recibo
+    SQLUPDATE("DPDOCCLI","DOC_ACT",0,"(DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                     " DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)+" AND "+;
+                                     " DOC_TIPTRA='P') OR "+;
+                                     "(DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                     " DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)+" AND "+;
+                                     " DOC_DOCORG='P') ") 
+
+/*
+//
+SQLUPDATE("DPDOCCLI","DOC_ACT",0,"(DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                     " DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)+" AND "+;
+                                     " DOC_TIPTRA='P') OR "+;
+                                     "(DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                     " DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)+" AND "+;
+                                     " DOC_DOCORG='R') "
+*/
+                                   
+
+    FOR I=1 TO LEN(oCliRec:aDataPag)
+
+        IF oCliRec:aDataPag[I,7+1]<>aData[I,7+1] 
+
+          cTipDoc:=oCliRec:aDataPag[I,1]
+          nAt    :=ASCAN(oDp:aFormas,{|a,n|a[1]==cTipDoc})
+          cTipDoc:=oDp:aFormas[nAt,6]
+
+          IF oCliRec:aDataPag[I,7+1] // Caja
+
+            nCaj++
+
+            cWhere:="CAJ_TIPO  "+GetWhere("=",oCliRec:aCajaDat[nCaj,1])+" AND "+;
+                    "CAJ_BCODIR"+GetWhere("=",oCliRec:aCajaDat[nCaj,2])+" AND "+;
+                    "CAJ_FECHA "+GetWhere("=",oCliRec:aCajaDat[nCaj,3])+" AND "+;
+                    "CAJ_NUMERO"+GetWhere("=",oCliRec:aCajaDat[nCaj,4])+" AND "+;
+                    "CAJ_MONTO "+GetWhere("=",oCliRec:aCajaDat[nCaj,5])+" AND "+;
+                    "CAJ_NUMTRA"+GetWhere("=",oCliRec:aCajaDat[nCaj,6])+" AND "+;
+                    "CAJ_ACT   "+GetWhere("=",1                       )
+
+             oCliRec:aCajaDat:=ARREDUCE(oCliRec:aCajaDat,nCaj)
+             nCaj--
+
+             SQLUPDATE("DPCAJAMOV","CAJ_ACT",0,cWhere)            
+
+          ELSE
+
+            nBco++
+
+            cWhere:="MOB_TIPO  "+GetWhere("=",oCliRec:aBcoDat[nBco,1])+" AND "+;
+                    "MOB_CUENTA"+GetWhere("=",oCliRec:aBcoDat[nBco,2])+" AND "+;
+                    "MOB_FECHA "+GetWhere("=",oCliRec:aBcoDat[nBco,3])+" AND "+;
+                    "MOB_CODBCO"+GetWhere("=",oCliRec:aBcoDat[nBco,4])+" AND "+;
+                    "MOB_DOCUME"+GetWhere("=",oCliRec:aBcoDat[nBco,5])+" AND "+;
+                    "MOB_MONTO" +GetWhere("=",oCliRec:aBcoDat[nBco,6])+" AND "+;
+                    "MOB_NUMTRA"+GetWhere("=",oCliRec:aBcoDat[nBco,8])+" AND "+;
+                    "MOB_ACT  " +GetWhere("=",1                       )
+
+           oCliRec:aBcoDat:=ARREDUCE(oCliRec:aBcoDat,nBco)
+
+           nBco--
+
+           SQLUPDATE("DPCTABANCOMOV","MOB_ACT",0,cWhere) 
+   
+          ENDIF
+
+        ENDIF
+
+    NEXT I
+
+  ENDIF
+
+  nCaj:=0
+  nBco:=0
+
+ // Actualiza Caja/Bancos
+
+  FOR I=1 TO LEN(aData)
+
+      lCaja  :=aData[I,7+1]
+
+// ? lCaja, aData[I,7+1]
+
+      cTipDoc:=aData[I,1]
+
+      nAt    :=ASCAN(oDp:aFormas,{|a,n|a[1]==cTipDoc})
+      cTipDoc:=oDp:aFormas[nAt,6]
+      cMarcaF:=aData[I,1+1] 
+      cBanco :=aData[I,2+1] 
+      cCuenta:=aData[I,3+1]
+      cNumDoc:=aData[I,4+1]
+      dFecha :=aData[I,5+1]
+      nMonto :=aData[I,6+1]
+      cCodBco:=""
+
+      IF !lCaja // Banco
+
+         cCodBco:=SQLGET("DPCTABANCO","BAN_CODIGO"," INNER JOIN DPBANCOS ON DPBANCOS.BAN_CODIGO = DPCTABANCO.BCO_CODIGO "+;
+                                                   " WHERE BCO_CTABAN"+GetWhere("=",cCuenta)+;
+                                                   "   AND BAN_NOMBRE"+GetWhere("=",cBanco ))
+
+         nBco    :=nBco+1
+         cWhere  :=""
+
+         IF oCliRec:nOption<>0 .AND. nBco<=LEN(oCliRec:aBcoDat) // Cambios
+
+            cWhere:="MOB_TIPO  "+GetWhere("=",oCliRec:aBcoDat[nBco,1])+" AND "+;
+                    "MOB_CUENTA"+GetWhere("=",oCliRec:aBcoDat[nBco,2])+" AND "+;
+                    "MOB_FECHA "+GetWhere("=",oCliRec:aBcoDat[nBco,3])+" AND "+;
+                    "MOB_CODBCO"+GetWhere("=",oCliRec:aBcoDat[nBco,4])+" AND "+;
+                    "MOB_DOCUME"+GetWhere("=",oCliRec:aBcoDat[nBco,5])+" AND "+;
+                    "MOB_MONTO" +GetWhere("=",oCliRec:aBcoDat[nBco,6])+" AND "+;
+                    "MOB_ACT  " +GetWhere("=",1                       )
+
+         ENDIF
+
+         IF !CREAMOVBCO(cCodBco,cNumDoc,cCuenta,cTipDoc,nMonto,dFecha,cWhere)
+            RETURN .F.
+         ENDIF
+
+      ELSE
+
+         cCtaCaja:=oCliRec:aCajas[oCliRec:oREC_CODCAJ:nAt,1]
+         cNumTra :=""
+         cWhere  :=""
+         nCaj    :=nCaj+1
+
+         IF oCliRec:nOption<>0 .AND. nCaj<=LEN(oCliRec:aCajaDat)
+
+            cWhere:="CAJ_TIPO  "+GetWhere("=",oCliRec:aCajaDat[nCaj,1])+" AND "+;
+                    "CAJ_BCODIR"+GetWhere("=",oCliRec:aCajaDat[nCaj,2])+" AND "+;
+                    "CAJ_FECHA "+GetWhere("=",oCliRec:aCajaDat[nCaj,3])+" AND "+;
+                    "CAJ_NUMERO"+GetWhere("=",oCliRec:aCajaDat[nCaj,4])+" AND "+;
+                    "CAJ_MONTO "+GetWhere("=",oCliRec:aCajaDat[nCaj,5])+" AND "+;
+                    "CAJ_NUMTRA"+GetWhere("=",oCliRec:aCajaDat[nCaj,6])+" AND "+;
+                    "CAJ_ACT   "+GetWhere("=",1                       )
+
+         ENDIF
+
+         IF !CREAMOVCAJ(cTipDoc,cCtaCaja,cMarcaF,cBanco,cNumDoc,dFecha,nMonto,cWhere,cCuenta)
+            RETURN .F.
+         ENDIF
+         
+      ENDIF
+
+  NEXT I
+
+  // Ahora graba los Documentos
+  aData:=IIF(LEFT(oCliRec:REC_TIPPAG,1)="A",{},ACLONE(oCliRec:oBrwD:aArrayData))
+
+  FOR I=1 TO LEN(aData)
+
+     IF oCliRec:aDocOrg[I,9] 
+
+        cCodSuc:=oCliRec:aDocOrg[I,2]
+        cTipDoc:=oCliRec:aDocOrg[I,5]
+        cNumDoc:=aData[I,2]
+        cCodigo:=oCliRec:aDocOrg[I,1]
+        nMonto :=aData[I,4]
+        nMonto :=IIF(Empty(nMonto),aData[I,5],nMonto)
+        nCxC   :=oCliRec:aDocOrg[I,3]
+
+       // IF !oCliRec:aDocOrg[I,14]=1
+       //    nMonto :=oCliRec:aDocOrg[I,16]-oCliRec:aDocOrg[I,17]
+       // ENDIF
+
+        nMonto:=DIV(nMonto,IIF(oCliRec:aDocOrg[I,14]=0,oCliRec:aDocOrg[I,14]))
+
+        nMtoOtr:=oCliRec:aDocOrg[I,17]
+
+        IF !CREADOCCLI(cTipDoc,cNumDoc,cCodigo,nMonto,cCodSuc,nMtoOtr,nCxC)
+           lResp:=.F.
+        ENDIF
+
+        //Calcula los Impuestos
+        EJECUTAR("DPDOCCLIIVA",cCodSuc,cTipDoc,cCodigo,cNumero,.F.,;
+                             NIL ,NIL,NIL,NIL,"V")
+
+
+        nRata  :=RATA(nMonto,oDp:nNeto)
+        nMtoIva:=nMtoIva + PORCEN(oDp:nIva , nRata)
+
+     ENDIF
+
+  NEXT I
+
+  IF lResp 
+     lResp:=EJECUTAR("MINRECCLICREADOC",oCliRec)
+     lResp:=EJECUTAR("MINRECCLICREADOC2",oCliRec)
+  ENDIF
+
+  // Cambiar Estatus
+
+  SQLUPDATE("DPRECIBOSCLI","REC_MTOIVA",nMtoIva,"REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                "REC_NUMERO"+GetWhere("=",oCliRec:REC_NUMERO))
+  
+  IF oCliRec:lRecContab  .OR. (oCliRec:nOption<>1 .AND. !Empty(oCliRec:REC_CBTNUM))
+
+      MsgRun("Recibos de Ingreso"+oCliRec:REC_NUMERO,"Por Favor Espere",;
+             {||EJECUTAR("DPCBTEPAGOCON",oCliRec:REC_CODIGO,;
+                                         oCliRec:REC_NUMERO,;
+                                         oCliRec:REC_NUMERO,;
+                                         NIL,.T.,.F.)})
+ 
+  ENDIF
+
+
+
+  IF !lResp
+    DpSqlRollBack()
+  ELSE
+    DpSqlCommit()
+
+    FOR I=1 TO LEN(aData)
+      cCodSuc:=oCliRec:aDocOrg[I,2]
+      cTipDoc:=oCliRec:aDocOrg[I,5]
+      cNumDoc:=aData[I,2]
+      cCodigo:=oCliRec:aDocOrg[I,1]
+      IF oCliRec:aDocOrg[I,9] 
+        oCliRec:PAGADO(cCodSuc,cTipDoc,cNumDoc,cCodigo)
+      ENDIF
+    NEXT I
+
+  ENDIF
+
+  IF oCliRec:nOption<>1 .AND. !Empty(oCliRec:REC_CBTNUM)  
+
+     EJECUTAR("DPRECIBOSCLIDEL",oCliRec)
+
+     MsgRun("Contabilizando "+oCliRec:cNomDoc+":"+oCliRec:REC_NUMERO,"Por Favor Espere",{||;
+                 EJECUTAR("DPRECIBOCONT",oCliRec:REC_CODSUC,;
+                                         oCliRec:REC_NUMERO,;
+                                         oCliRec:REC_NUMERO,;
+                                         NIL,.T.,.F.)})
+
+  ENDIF
+
+  oCliRec:oFolder:SetOption( 1 )
+  // Aqui esta el Menu de Impresion
+
+  IF oCliRec:lPagEle
+//  oCliRec:cRunGrabar :=""      // Para Imprimir la Factura
+//  ? "AQUI FINALIZA EL PAGO",oCliRec:cRunGrabar
+
+     IF !Empty(oCliRec:cRunGrabar)
+        MACROEJE(oCliRec:cRunGrabar)
+     ENDIF
+
+     oCliRec:Close()
+
+     RETURN .T.
+  ENDIF
+
+  IF !oCliRecX:lSaveAndClose
+     oCliRec:PRINTER() // Presenta Menú
+  ENDIF
+
+  IF ValType(oCliRec:oFrmDoc)="O" .AND. oCliRec:oWnd:hWnd>0
+      oCliRec:oFrmDoc:UPDATEPAGO()
+      oCliRec:Close()
+  ENDIF
+
+RETURN lResp
+
+/*
+// Crea Movimiento de Caja
+*/
+FUNCTION CREAMOVCAJ(cTipDoc,cCtaCaja,cMarcaF,cBanco,cNumero,dFecha,nMonto,cWhere,cCuenta)
+
+   LOCAL oTable,oTipo
+
+   DEFAULT cWhere:=""
+  
+   IF !Empty(cWhere)
+      cWhere:=" WHERE "+cWhere
+   ENDIF
+ 
+   oTable:=OpenTable("SELECT * FROM DPCAJAMOV "+cWhere," WHERE "$cWhere)
+
+   IF oTable:RecCount()=0
+     oTable:Append()
+     oTable:Replace("CAJ_NUMTRA",SQLINCREMENTAL("DPCAJAMOV","CAJ_NUMTRA","CAJ_CODCAJ"+GetWhere("=",cCtaCaja)))
+   ENDIF
+
+   oTable:Replace("CAJ_DOCASO",oCliRec:REC_NUMERO)
+   oTable:Replace("CAJ_CODSUC",oDp:cSucursal     )
+   oTable:Replace("CAJ_CODCAJ",cCtaCaja          )
+   oTable:Replace("CAJ_ORIGEN","REC"             ) // Recibos de Pago
+   oTable:Replace("CAJ_FECHA" ,dFecha            ) // Fecha de la Transacción
+   oTable:Replace("CAJ_FCHCON",oCliRec:REC_FECHA ) // Fecha para Contabilizar
+   oTable:Replace("CAJ_HORA"  ,oCliRec:REC_HORA  )
+   oTable:Replace("CAJ_MONTO" ,nMonto)
+   oTable:Replace("CAJ_DEBCRE",IIF(Left(oCliRec:REC_TIPPAG,1)="D",-1,1)) // Ingreso/Egreso
+   oTable:Replace("CAJ_TIPO"  ,cTipDoc)
+   oTable:Replace("CAJ_DESCRI",oCliRec:oCliNombre:GetText())
+   oTable:Replace("CAJ_CODMAE",oCliRec:REC_CODIGO)
+   oTable:Replace("CAJ_NUMCAJ",oDp:cIpLocal) // NETNAME())
+   oTable:Replace("CAJ_USUARI",oDp:cUsuario)
+   oTable:Replace("CAJ_NUMERO",cNumero     )
+   oTable:Replace("CAJ_CHQCTA",cCuenta     )
+   oTable:Replace("CAJ_MARCAF",cMarcaF     )
+   oTable:Replace("CAJ_CONTAB","N")
+   oTable:Replace("CAJ_ACT"   ,1  ) 
+   oTable:Replace("CAJ_CENCOS",oCliRec:REC_CENCOS)
+   oTable:Replace("CAJ_VALCA2",oCliRec:REC_VALCAM)
+   oTable:Replace("CAJ_DI",DIV(nMonto,oCliRec:REC_VALCAM))
+
+   oTipo:=OpenTable("SELECT ICJ_REQNUM,ICJ_INGRES,ICJ_EGRESO FROM DPCAJAINST WHERE ICJ_CODIGO"+GetWhere("=",cTipDoc))
+
+   IF oTipo:ICJ_REQNUM .AND. oTipo:ICJ_INGRES .AND. oTipo:ICJ_EGRESO
+      oTable:Replace("CAJ_NUMERO","R"+oCliRec:REC_NUMERO)
+    ENDIF
+
+    // INNER JOIN DPCAJAINST   ON DPCAJAMOV.CAJ_TIPO=ICJ_CODIGO AND ICJ_REQNUM=1 AND ICJ_INGRES=1 AND ICJ_EGRESO=1
+   // Requiere Directorio Bancario
+   oTable:Replace("CAJ_BCODIR",cBanco)
+
+   IF !oTable:Commit(cWhere)
+      oTable:End()
+      RETURN .F.
+   ENDIF
+
+   oTable:End()
+
+RETURN .T.
+
+/*
+// Crea Movimiento Bancario
+*/
+FUNCTION CREAMOVBCO(cCodBco,cNumero,cCtaBco,cTipDoc,nMonto,dFecha,cWhere)
+   LOCAL oTable,nIDB:=0
+   LOCAL nSigno:=SQLGET("DPBANCOTIP","TDB_SIGNO","TDB_CODIGO"+GetWhere("=",cTipDoc))
+
+   DEFAULT cWhere:=""
+
+   IF !Empty(cWhere)
+       cWhere:=" WHERE "+cWhere
+   ENDIF
+
+   nIDB:=EJECUTAR("IDBCAL",cTipDoc,nMonto,dFecha)
+
+   oTable:=OpenTable("SELECT * FROM DPCTABANCOMOV "+cWhere ," WHERE "$cWhere)
+
+   IF oTable:RecCount()=0
+
+      oTable:Append()
+
+//      oTable:Replace("MOB_NUMTRA",SQLINCREMENTAL("DPCTABANCOMOV","MOB_NUMTRA","MOB_CUENTA"+GetWhere("=",cCtaBco)+;
+//                     "AND MOB_CODBCO"+GetWhere("=",cCodBco)))
+
+      oTable:Replace("MOB_NUMTRA",SQLINCREMENTAL("DPCTABANCOMOV","MOB_NUMTRA",;
+                     "    MOB_CUENTA"+GetWhere("=",cCtaBco)+;
+                     "AND MOB_CODBCO"+GetWhere("=",cCodBco)+;
+                     "AND MOB_TIPO"  +GetWhere("=",cTipDoc)))
+
+   ENDIF
+
+   oTable:Replace("MOB_DOCASO",oCliRec:REC_NUMERO)
+   oTable:Replace("MOB_ORIGEN","REC"             ) // Recibos de Pago
+   oTable:Replace("MOB_FECHA" ,dFecha            )
+   oTable:Replace("MOB_FCHCON",CTOD("")          )
+   oTable:Replace("MOB_FCHREG",dFecha            )
+   oTable:Replace("MOB_CODSUC",oCliRec:REC_CODSUC)
+
+
+   oTable:Replace("MOB_HORA"  ,oCliRec:REC_HORA )
+   oTable:Replace("MOB_MONTO" ,nMonto )
+   oTable:Replace("MOB_CODBCO",cCodBco)
+   oTable:Replace("MOB_CUENTA",cCtaBco)
+   oTable:Replace("MOB_DOCUME",cNumero)
+   oTable:Replace("MOB_TIPO"  ,cTipDoc)
+   oTable:Replace("MOB_IDB"   ,nIDB   )
+   oTable:Replace("MOB_DESCRI",GetFromVar("{oDp:xDPCLIENTES}")+": "+oCliRec:oCliNombre:GetText())
+// oTable:Replace("MOB_CODMAE",oCliRec:REC_CODIGO)
+   oTable:Replace("MOB_USUARI",oDp:cUsuario)
+   oTable:Replace("MOB_ACT"   ,1 ) 
+   oTable:Replace("MOB_CENCOS",oCliRec:REC_CENCOS)
+   oTable:Replace("MOB_FCHCON",CTOD(""))
+   oTable:Replace("MOB_VALCA2",oCliRec:REC_VALCAM)
+   oTable:Replace("MOB_DI",DIV(nMonto,oCliRec:REC_VALCAM))              
+   IF !oTable:Commit(cWhere) 
+       oTable:End()
+       RETURN .F.
+   ENDIF
+   oTable:End()
+
+RETURN .T.
+
+
+// Crea el Documento de Pago del Cliente
+FUNCTION CREADOCCLI(cTipDoc,cNumero,cCodigo,nMonto,cCodSuc,nMtoOtr,nCxC)
+   LOCAL oTable,cWhere,cWhereDoc,aFields:={},lResp:=.T.,lIva:=.T.
+   LOCAL oDoc,nMtoIva:=0
+
+   // Busca Documento Original
+
+   cWhere:="DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+           "DOC_TIPDOC"+GetWhere("=",cTipDoc           )+" AND "+;
+           "DOC_NUMERO"+GetWhere("=",cNumero           )+" AND "+;
+           "DOC_CODIGO"+GetWhere("=",cCodigo           )+" AND "+;
+           "DOC_ACT = 1 AND "
+
+   cWhereDoc:=cWhere+;
+             "DOC_TIPTRA='D' "
+
+   cWhere   :=cWhere+;
+             "DOC_TIPTRA='P' AND "+;
+             "DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)
+
+   // Busca el pago existent
+
+   oTable:=OpenTable("SELECT DOC_NETO,DOC_CODTER FROM DPDOCCLI WHERE "+cWhere,.T.)
+
+   IF oTable:RecCount()=0 
+
+      oTable:End()
+      oTable:=OpenTable("SELECT * FROM DPDOCCLI WHERE "+cWhereDoc,.T.)
+      oTable:End()
+
+      oDoc:=OpenTable("SELECT * FROM DPDOCCLI",.F.)
+
+      oDoc:Append()
+      AEVAL(oTable:aFields,{|a,n|oDoc:Replace(a[1],oTable:FieldGet(a[1]))})
+      oDoc:Replace("DOC_TIPTRA","P")
+      oDoc:Replace("DOC_NETO"   ,nMonto            )
+      oDoc:Replace("DOC_OTROS"  ,nMtoOtr           )
+      oDoc:Replace("DOC_ACT"    ,1                 )
+//    oDoc:Replace("DOC_CXC"    ,oDoc:DOC_CXC*-1   )
+      oDoc:Replace("DOC_CXC"    ,nCxC*-1           )
+      oDoc:Replace("DOC_RECNUM" ,oCliRec:REC_NUMERO)
+      oDoc:Replace("DOC_FECHA"  ,oCliRec:REC_FECHA )
+      oDoc:Replace("DOC_FCHREC" ,oCliRec:REC_FECHA )
+      oDoc:Replace("DOC_FCHVEN" ,oDoc:DOC_FECHA ) // JN Esta es la Fecha de Emision para Determinar los Días Entre la Factura y Pago 
+      oDoc:Replace("DOC_PLAZO"  ,oCliRec:REC_FECHA-oDoc:DOC_FECHA ) // JN Dias, Esta es la Fecha de Emision para Determinar los Días Entre la Factura y Pago 
+      oDoc:Replace("DOC_HORA"   ,oCliRec:REC_HORA  )
+      oDoc:Replace("DOC_BASNET" ,0                 )
+      oDoc:Replace("DOC_MTOIVA" ,0                 )
+      oDoc:Replace("DOC_DOCORG" ,"P"               )
+      oDoc:Replace("DOC_CODTER" ,oDoc:DOC_CODTER   )
+    //  oDoc:Replace("DOC_DI" ,IIF(oCliRec:REC_VALCAM=1 .OR. !oCliRecX:lAfeDiDoc,0,DIV(nMonto,oCliRec:REC_VALCAM)))
+     // ?nMonto,oTable:DOC_VALCA2
+      oDoc:Replace("DOC_DI" ,DIV(nMonto,oTable:DOC_VALCA2))
+
+
+      oDoc:Commit()
+      oDoc:End()
+
+   ELSE
+
+      oTable:Replace("DOC_FCHREC" ,oCliRec:REC_FECHA )
+      oTable:Replace("DOC_FECHA"  ,oCliRec:REC_FECHA )
+      oTable:Replace("DOC_FCHVEN" ,oCliRec:REC_FECHA )
+      oTable:Replace("DOC_HORA"   ,oCliRec:REC_HORA  )
+      oTable:Replace("DOC_NETO"   ,nMonto            )
+      oTable:Replace("DOC_OTROS"  ,nMtoOtr           )
+
+      oTable:Commit(oTable:cWhere)
+
+   ENDIF
+
+   oTable:End()
+
+
+   // Verifica si Aplica IVA, en caso de ser SI, debe crear el Cuerpo del Documento
+   EJECUTAR("DPRECPAG"," WHERE "+cWhere)
+
+   // oCliRec:PAGADO(cCodSuc,cTipDoc,cNumDoc,cCodigo)
+   // Aqui debe Buscar el Total
+
+RETURN lResp
+
+// EOF

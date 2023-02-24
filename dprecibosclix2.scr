@@ -1,0 +1,2444 @@
+// Programa   : DPRECIBOSCLIX2
+// Fecha/Hora : 24/11/2005 17:45:20
+// Propósito  : Recibos de Ingreso
+// Creado Por : Juan Navas
+// Modificado : Riztan Gutierrez - Informática Del Centro, C.A. (JUNIO 2007)
+// Llamado por: DPMENU
+// Aplicación : Ventas 
+// Tabla      : DPRECIBOSCLI2
+
+#INCLUDE "DPXBASE.CH"
+#INCLUDE "SAYREF.CH"
+
+PROCE MAIN(lAuto,cTipPag,cCodSuc,cCodCli,cRecord,lView,cSucCli)
+  LOCAL cTitle:="",cScope:="REC_CODSUC"+GetWhere("=",oDp:cSucursal),cNumIni
+  LOCAL oSayRef,oFontB,oBrw,oCol,oFontGrid,oFont,oData,oFontPago,oFolder
+
+  LOCAL aTipPag:=GETOPTIONS("DPRECIBOSCLI","REC_TIPPAG"),aTipCaj:={},aCaja:={}
+  LOCAL aCajas :=ASQL("SELECT CAJ_CODIGO,CAJ_NOMBRE FROM DPCAJA")
+  LOCAL aFormas:={} // Formas de Pago
+  LOCAL aDocs  :={} // Documentos
+
+  DEFAULT cTipPag:="P",lAuto:=.F.,lView:=.F.,cRecord:=""
+
+  cScope:=cScope + IIF( Empty(cRecord) ,  "" , " AND "+cRecord )
+
+  AADD(aDocs,{"DOCUMENTO","NUMERO",CTOD(""),0,0})
+  
+  LOADFORMAS(.T.,.T.) // .F.
+
+
+  //letras general 1.Tamaño de letras Encabezado del grid, 2.Tamaño de letra del folder Documento, 3. letra pie del Grid
+
+  DEFINE FONT oFont      NAME "Verdana" SIZE 0, -14 BOLD             
+  DEFINE FONT oFontGrid  NAME "Verdana" SIZE 0, -14                 
+  DEFINE FONT oFontOtr   NAME "Verdana" SIZE 0, -14
+                     
+/*
+  IF Empty(oDp:cModeVideo)
+
+    DEFINE FONT oFontGrid  NAME "Arial" SIZE 0, -16
+    DEFINE FONT oFontPago  NAME "Arial" SIZE 0, -16
+  ELSE
+    DEFINE FONT oFontGrid  NAME "Arial" SIZE 0, -16
+  ENDIF
+*/
+
+  AEVAL(aCajas,{|a,n|AADD(aTipCaj,a[1]),AADD(aCaja,a[2])})
+
+  cTitle:=GetFromVar("{oDp:DPRECIBOSCLI2}")
+  cTitle:="Recibos de Ingreso ODE"
+
+  IF !Empty(cSucCli)
+     cTitle:=cTitle +" Sucursal "+cSucCli
+  ENDIF
+
+  DOCENC(cTitle,"oCliRec","DPRECIBOSCLI.EDT")
+
+
+  IF lView
+    oCliRec:lInc:=.F.
+    oCliRec:lMod:=.F.
+    oCliRec:lEli:=.F.
+  ENDI
+
+
+/*
+  IF !EJECUTAR("DPRECIBOSPAR",oCliRec)
+     oCliRec:End()
+     RETURN .T.
+  ENDIF
+*/
+
+
+ 
+  EJECUTAR("DPRECIBOSPAR",oCliRec)
+
+  oData  :=DATASET("SUC_RECCLI"+oDp:cSucursal,"ALL")
+
+  //oCliRec:cNumIni   :=oData:Get("Numero"   ,STRZERO(1,8))
+  //oCliRec:lRecNumero:=oData:Get("lEditar"  ,.F.)
+  //oData:End(.F.)
+  oCliRec:SetScope(cScope)
+  oCliRec:SetTable("DPRECIBOSCLI2","REC_NUMERO")
+  oCliRec:cWhereRecord:=cScope
+
+  //?CSCOPE,cNumIni
+
+  //IF !oCliRec:lRecNumero
+    oCliRec:SetIncremental("REC_NUMERO","REC_CODSUC"+GetWhere("=",oDp:cSucursal))
+  //ENDIF
+
+
+  IF oDp:nVersion>=4.1
+
+    oCliRec:AddBtnEdit("cliente.bmp",oDp:xDPCLIENTES,;
+                                 "(oCliRec:nOption<>0)",;
+                                 " oCliRec:LISTCLIENTE()"  ,"CLI")
+
+  ENDIF
+
+  oCliRec:cCodCliDoc :=cCodCli
+  oCliRec:cTipDoc    :=oCliRec:REC_TIPDOC
+  oCliRec:cPrimary   :="REC_CODSUC,REC_NUMERO"
+  oCliRec:aTipPag    :=aTipPag
+  oCliRec:aTipCaj    :=aTipCaj
+  oCliRec:cTipPag    :=cTipPag
+  oCliRec:aCajas     :=ACLONE(aCajas)
+  oCliRec:aDataPag   :={} // Copia de los Pagos
+  oCliRec:aDocOrg    :={} 
+  oCliRec:aFormas    :={}
+  oCliRec:lBrwEdit   :=.F.
+  oCliRec:lBrwDEdit  :=.F.
+  oCliRec:cCodCli    :=""    // Cliente Actual
+  oCliRec:aDocs      :=ACLONE(aDocs) // Documentos
+  oCliRec:aDocsIni   :=ACLONE(aDocs) // Documentos
+  oCliRec:lDocs      :=.F.   // No Edita Documentos
+  oCliRec:lRev       :=.F.   // Revalorizable
+  oCliRec:lPar_Moneda:=.F.   // En Otra Moneda
+  oCliRec:cMemo      :=""    // Campo Memo
+  oCliRec:RECTIPDOC  :=""
+  oCliRec:RECNUMDOC  :=""
+  oCliRec:cTipDocAnt :="" // Tipo de Documento Anticipo
+  oCliRec:cNumDocAnt :="" // Tipo de Documento Anticipo
+  oCliRec:cNomDoc    :=GetFromVar("{oDp:xDPCLIENTESREC}")
+  oCliRec:oFrmDoc    :=NIL
+  //oCliRec:cRecord    :=cRecord
+  oCliRec:nDifDi    :=0
+  oCliRec:nForPagDi:=0
+  oCliRec:nTotDocDi:=0
+  oCliRec:nMtoDif:=0
+  oCliRec:lAfeDiDoc:=.T.
+
+
+  oCliRec:cPostSave  :="POSTGRABAR"
+  oCliRec:cPreSave   :="PREGRABAR"
+  oCliRec:cPreDelete :="PREDELETE"
+  oCliRec:cPostDelete:="POSTDELETE" 
+  oCliRec:cList      :="DPRECIBOSCLI2.BRW"
+  oCliRec:cView      :="VIEW" // Consultar
+
+  oCliRec:REC_PAGOS  :=0 // Monto de los Pagos
+  oCliRec:REC_DEBE   :=0 // Débito
+  oCliRec:REC_HABER  :=0 // Haber
+  oCliRec:REC_ACT    :=1 // Situación
+  oCliRec:REC_MEMO   :="" // Campo Memo
+  oCliRec:REC_MONTO  :=0  // Monto
+  oCliRec:REC_MTODIF :=0  // Diferencia
+  oCliRec:aCajaDat   :={} // Data de Caja 
+  oCliRec:aBcoDat    :={} // Data de Banco
+  oCliRec:aDatView   :={}
+  oCliRec:aDocRev    :={} // Documentos Revaluados
+  oCliRec:RECFECHA   :=CTOD("") // Fecha
+  oCliRec:cSucCli    :=cSucCli
+  oCliRec:aMonedas:=aTable("SELECT MON_CODIGO,MON_DESCRI FROM DPTABMON WHERE MON_CODIGO IN ('Bs','USD')",.T.)
+
+
+*****AG20080407
+  oCliRec:cList:=NIL
+*****AG20080407
+
+  AADD(oCliRec:aDocOrg,{1,2,3,4,5,6,7,8,.F.,10})
+ 
+  oCliRec:SetMemo("REC_NUMMEM","Descripción Amplia")
+
+  IF DPVERSION()>4
+    oCliRec:SetAdjuntos("REC_FILMAI") // Vinculo con DPFILEEMP
+  ENDIF
+
+
+  oCliRec:AddBtn("MENU.bmp","Menú de Opciones"   ,;
+                            "(oCliRec:nOption=0)",;
+                            " oCliRec:PRINTER()"  ,"CLI")
+
+  oCliRec:NewPago(.F.)
+
+  //oCliRec:Windows(0,0,445+100,780+100)
+  oCliRec:Windows(0,0,600,1000)
+
+
+  @ 2.6,1 SAYREF oSayRef PROMPT GetFromVar("{oDp:xDPCLIENTES}")+":" ;
+          SIZE 42,12;
+          FONT oFontB;
+          RIGHT;
+          COLORS CLR_HBLUE,oDp:nGris;
+          OF oCliRec:oDlg
+
+  oSayRef:bAction:={||oCliRec:CONCLIENTE()}
+
+  @ 3.1,1 SAYREF oSayRef PROMPT "Cobrador:"; 
+          SIZE 42,12;
+          RIGHT;
+          COLORS CLR_HBLUE,oDp:nGris
+
+  oSayRef:bAction:={||oCliRec:CONVENDEDOR()}
+
+  @ 2.6,30 SAYREF oSayRef PROMPT GetFromVar("{oDp:xDPCAJA}")+":" ;
+          SIZE 42,12;
+          FONT oFontB;
+          RIGHT;
+          COLORS CLR_HBLUE,oDp:nGris
+
+  oSayRef:bAction:={||oCliRec:ViewCaja()}
+
+  @ 1.6,1 SAY "Tipo:"   SIZE NIL,09 RIGHT
+  @ 2.6,1 SAY "Número:" SIZE NIL,09 RIGHT
+  @ 3.6,1 SAY "Fecha:"  SIZE NIL,09 RIGHT
+
+  @ 1, 1 GROUP oCliRec:oGroup TO 11.4,6 PROMPT ""
+
+  @ 1.5,1 COMBOBOX oCliRec:oREC_TIPPAG VAR oCliRec:REC_TIPPAG ITEMS aTipPag;
+                 SIZE 120,40 ON CHANGE oCliRec:CHANGETIP();
+                 WHEN (AccessField("DPRECIBOSCLI2","REC_TIPPAG",oCliRec:nOption);
+                 .AND. oCliRec:nOption=1 .AND. LEN(oCliRec:oREC_TIPPAG:aItems)>1);
+                 .AND. Empty(oCliRec:cCodCliDoc)
+
+  COMBOINI(oCliRec:oREC_TIPPAG)
+
+  @ 5.0,10 BMPGET oCliRec:oREC_CODIGO VAR oCliRec:REC_CODIGO;
+                  VALID EJECUTAR("DPCEROCLI",oCliRec:REC_CODIGO,oCliRec:oREC_CODIGO);
+                        .AND. oCliRec:VALCODCLI();
+                  NAME "BITMAPS\FIND.BMP"; 
+                  ACTION oCliRec:LBXCLIENTES();
+                  WHEN (AccessField("DPDOCCLI","REC_CODIGO",oCliRec:nOption);
+                      .AND. oCliRec:nOption=1 .AND. Empty(oCliRec:cCodCliDoc));
+                 SIZE 60,10
+
+//  oCliRec:oREC_CODIGO:bKeyDown:={|nKey| IIF(nKey=13 , EVAL(oCliRec:oREC_CODIGO:bValid), NIL ) }
+ 
+  @ 7.0,06 BMPGET oCliRec:oREC_CODCOB VAR oCliRec:REC_CODCOB;
+                 VALID CERO(oCliRec:REC_CODCOB,NIL,.T.) .AND. oCliRec:VALCODCOB();
+                 NAME "BITMAPS\FIND.BMP"; 
+                 ACTION (oDpLbx:=DpLbx("DPVENDEDOR",NIL,"VEN_SITUAC='A'"),;
+                         oDpLbx:GetValue("VEN_CODIGO",oCliRec:oREC_CODCOB)); 
+                 WHEN (AccessField("DPRECIBOSCLI2","REC_CODCOB",oCliRec:nOption);
+                 .AND. oCliRec:nOption!=0);
+                 SIZE 39,10
+
+  @ 1.5,20 COMBOBOX oCliRec:oREC_CODCAJ VAR oCliRec:REC_CODCAJ ITEMS aCaja;
+           SIZE 120,40 ON CHANGE oCliRec:CHANGECAJ();
+           WHEN (AccessField("DPRECIBOSCLI2","REC_CODCAJ",oCliRec:nOption);
+                .AND. oCliRec:nOption!=0 .AND. LEN(oCliRec:aCajas)>1)
+
+  COMBOINI(oCliRec:oREC_CODCAJ)
+
+  // AG20080403
+  @ 6.0,1 BMPGET oCliRec:oREC_NUMERO VAR oCliRec:REC_NUMERO;
+                 VALID CERO(oCliRec:REC_NUMERO,NIL,.T.) .AND. oCliRec:VALNUMERO();
+                 WHEN (AccessField("DPDOCCLI","REC_NUMERO",oCliRec:nOption);
+                      .AND. oCliRec:nOption=1 .AND. oCliRec:lRecNumero);
+                 SIZE 40,10
+
+  // AG20080403. Antes:  .AND. oCliRec:nOption=1 .AND. (oCliRec:lRecNumero .OR. oCliRec:lEditar));
+
+  // .AND. oCliRec:nOption=1 .AND. oCliRec:lRecNumero);
+
+  @ 12,10 BMPGET oCliRec:oREC_FECHA  VAR oCliRec:REC_FECHA  PICTURE "99/99/9999";
+           NAME "BITMAPS\Calendar.bmp";
+           ACTION LbxDate(oCliRec:oREC_FECHA ,oCliRec:REC_FECHA);
+           VALID (oCliRec:VALFECHA() .AND. EJECUTAR("DPVALFECHA",oCliRec:REC_FECHA,.T.,.T.) .AND. ;
+                  oCliRec:CLIVALCAM());
+           WHEN (AccessField("DPDOCMOV","REC_FECHA",oCliRec:nOption);
+                .AND. oCliRec:nOption!=0 .AND. oCliRec:lRecFecha );
+           SIZE 55,10
+
+
+  @ 1.6, 06.0 COMBOBOX oCliRec:oREC_CODMON VAR oCliRec:REC_CODMON ITEMS oDp:aMonedas;
+                       VALID oCliRec:CLIVALCAM(!Eval(oCliRec:oREC_VALCAM:bWhen));
+                       ON CHANGE oCliRec:CLIVALCAM();
+                       WHEN (AccessField("DPRECIBOCLI2","REC_CODMON",oCliRec:nOption);
+                             .AND. (oCliRec:nOption!=0 .AND. oCliRec:lRecMoneda .AND. oCliRec:lPar_Moneda) .OR. oCliRec:nOption=1 ) SIZE 100,NIL
+
+  ComboIni(oCliRec:oREC_CODMON)
+
+  @ 2,10 GET oCliRec:oREC_VALCAM  VAR oCliRec:REC_VALCAM;
+              PICTURE "999,999,999.9999";
+              WHEN ((!oDp:cMoneda==LEFT(oCliRec:REC_CODMON,LEN(oDp:cMoneda))) .AND. ;
+                    AccessField("DPRECIBOCLI2","REC_VALCAM",oCliRec:nOption);
+                    .AND. oCliRec:nOption!=0   );
+              SIZE 41,10 RIGHT
+
+  @ 2,17 SAY oCliRec:oCliNombre;
+         PROMPT EJECUTAR("RECCLINOMBRE",oCliRec);
+         SIZE 140,09
+
+  @ 3,17 SAY oCliRec:oVenNombre;
+         PROMPT SQLGET("DPVENDEDOR","VEN_NOMBRE","VEN_CODIGO"+GetWhere("=",oCliRec:REC_CODCOB));
+         SIZE 120,09
+
+  @ 2.6,40 SAY "Moneda:" SIZE NIL,12 RIGHT
+  @ 3.6,40 SAY "Valor :" SIZE NIL,12 RIGHT
+
+  @ 3.6,40 SAY "Estado:" SIZE NIL,12 RIGHT
+
+ @ 10, 0 FOLDER oFolder ITEMS "Forma de Pago","Documentos","Otros Datos","Comentarios";
+          OF oCliRec:oDlg SIZE 952,248
+
+
+/* antes
+  @ 10, 0 FOLDER oDoc:oFolder ITEMS "Forma de Pago","Documentos","Otros Datos","Comentarios";
+          OF oDoc:oDlg SIZE 390,61
+*/
+  SETFOLDER( 1)
+
+  oBrw:=TXBrowse():New( oFolder:aDialogs[1]  )
+
+  oBrw:SetArray( oCliRec:aFormas ,.F.)
+  oBrw:lHScroll       :=.F.
+  oBrw:lFooter        :=.T.
+  oBrw:lVScroll       :=.T.
+  oBrw:l3D            :=.F.
+  oBrw:lRecordSelector:=.F.
+  oBrw:oFont          :=oFontGrid
+  oBrw:lDownAuto      :=.F.
+
+// oBrw:oFont          :=oFontPago
+
+
+  oCliRec:oBrw        :=oBrw
+
+  oCol:=oBrw:aCols[1]
+  oCol:cHeader      := "Forma"
+  oCol:nWidth       := 180
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTFORMA(oCol,uValue)}
+
+  oCol:=oBrw:aCols[2]
+  oCol:cHeader      := "Marca"
+  oCol:nWidth       := 105
+  oCol:bClrHeader   := {|oBrw|oBrw:=oCliRec:oBrw,{CLR_BLUE,12582911}}
+  oCol:bOnPostEdit  := {|oCol,uValue|oCliRec:PUTFORMA(oCol,uValue)}
+
+  oCol:=oBrw:aCols[3]
+  oCol:cHeader      := "Banco"
+  oCol:nWidth       := 160-15
+  oCol:bClrHeader   := {|oBrw|oBrw:=oCliRec:oBrw,{CLR_BLUE,12582911}}
+  oCol:bOnPostEdit  := {|oCol,uValue|oCliRec:PUTBANCO(oCol,uValue)}
+
+  oCol:=oBrw:aCols[4]
+  oCol:cHeader      := "Cuenta"
+  oCol:nWidth       := 118+70
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTCUENTA(oCol,uValue)}
+  oCol:nEditType    :=1
+
+  oCol:=oBrw:aCols[5]
+  oCol:cHeader      := "Número"
+  oCol:nWidth       := 110-18
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTNUMPAG(oCol,uValue)}
+
+  oCol:=oBrw:aCols[6]
+  oCol:cHeader      := "Fecha"
+  oCol:nWidth       := 92
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTFECHA(oCol,uValue)}
+  oCol:cFooter      :="Recibido"
+
+  oCol:=oBrw:aCols[7]
+  oCol:cHeader      := "Monto"
+  oCol:nWidth       := 145-12
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:cEditPicture :="99,999,999,999.99"
+  oCol:bStrData     :={|oBrw|oBrw:=oCliRec:oBrw,TRAN(oBrw:aArrayData[oBrw:nArrayAt,7],"99,999,999,999.99")}
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nFootStrAlign:=AL_RIGHT
+  oCol:nEditType    :=1
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTMONTO(oCol,uValue)}
+  oCol:cFooter      :="0.00"
+
+  oBrw:DelCol(8)
+
+  AEVAL(oBrw:aCols,{|oCol,n|oCol:bClrHeader   := {|oBrw|oBrw:=oCliRec:oBrw,{CLR_GREEN,12582911}},;
+                            oCol:oFooterFont  :=oFont,;
+                            oCol:oHeaderFont  :=oFont})
+
+  oBrw:bClrFooter:= {|oBrw|oBrw:=oCliRec:oBrw,{CLR_GREEN,8580861}}
+  oBrw:bClrStd   := {|oBrw|oBrw:=oCliRec:oBrw,{IIF(!oCliRec:lBrwEdit,CLR_GRAY,CLR_BLACK), iif( oBrw:nArrayAt%2=0,14612478,13104638 ) } }
+
+  oBrw:bChange   := {||oCliRec:ASIGNAFORMA()}
+
+
+  oBrw:CreateFromCode()
+  oBrw:bWhen:={|| !( Empty(oCliRec:REC_CODIGO) .AND. Empty(oCliRec:REC_CODCOB) )}
+
+
+  // Documentos
+  SETFOLDER(2)
+  oBrw:=TXBrowse():New(oFolder:aDialogs[2] )
+
+  oBrw:SetArray( ACLONE(oCliRec:aDocs) ,.F.)
+  oBrw:lHScroll       :=.F.
+  oBrw:lFooter        :=.T.
+  oBrw:lVScroll       :=.T.
+  oBrw:l3D            :=.F.
+  oBrw:lRecordSelector:=.F.
+  oBrw:oFont          :=oFontGrid
+  oBrw:lDownAuto      :=.T.
+
+  oCliRec:oBrwD       :=oBrw
+
+  oCol:=oBrw:aCols[1]
+  oCol:cHeader      := "Documento"
+  oCol:nWidth       := 200
+
+  oCol:=oBrw:aCols[2]
+  oCol:cHeader      := "Número"
+  oCol:nWidth       := 110
+
+  oCol:=oBrw:aCols[3]
+  oCol:cHeader      := "Fecha"
+  oCol:nWidth       := 110
+ // oCol:bStrData     :={|oBrw|oBrw:=oCliRec:oBrwD, DTOC(oBrw:aArrayData[oBrw:nArrayAt,3])}
+
+  oCol:=oBrw:aCols[4]
+  oCol:cHeader      := "Debe"
+  oCol:nWidth       := 255
+  oCol:nDataStrAlign:= AL_RIGHT
+  oCol:cEditPicture :="99,999,999,999.99"
+
+  oCol:bStrData     :={|oBrw|oBrw:=oCliRec:oBrwD, IIF(oBrw:aArrayData[oBrw:nArrayAt,4]=0,"",TRAN(oBrw:aArrayData[oBrw:nArrayAt,4],"99,999,999,999.99"))}
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nFootStrAlign:=AL_RIGHT
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTDEBCRE(oCol,uValue,4)}
+  oCol:cFooter      :="0.00"
+  oCol:bClrStd      := {|oBrw|oBrw:=oCliRec:oBrwD,{IIF(!oCliRec:aDocOrg[oBrw:nArrayAt,9],CLR_GRAY,CLR_HBLUE), iif( oBrw:nArrayAt%2=0,14612478,13104638 ) } }
+  oCol:bClrFooter   := {||{CLR_HBLUE,8580861}}
+
+
+  oCol:=oBrw:aCols[5]
+  oCol:cHeader      := "Haber"
+  oCol:nWidth       := 255
+  oCol:nDataStrAlign:= AL_RIGHT
+
+  oCol:cEditPicture :="99,999,999,999.99"
+  oCol:bStrData     :={|oBrw|oBrw:=oCliRec:oBrwD, IIF(oBrw:aArrayData[oBrw:nArrayAt,5]=0,"",TRAN(oBrw:aArrayData[oBrw:nArrayAt,5],"99,999,999,999.99"))}
+  oCol:nHeadStrAlign:=AL_RIGHT
+  oCol:nDataStrAlign:=AL_RIGHT
+  oCol:nFootStrAlign:=AL_RIGHT
+  oCol:bOnPostEdit  :={|oCol,uValue|oCliRec:PUTDEBCRE(oCol,uValue,5)}
+  oCol:cFooter      :="0.00"
+  oCol:bClrStd      := {|oBrw|oBrw:=oCliRec:oBrwD,{IIF(!oCliRec:aDocOrg[oBrw:nArrayAt,9],CLR_GRAY,CLR_HRED), iif( oBrw:nArrayAt%2=0,14612478,13104638 ) } }
+  oCol:bClrFooter   := {||{CLR_HRED,8580861}}
+
+
+  oBrw:bClrStd      := {|oBrw|oBrw:=oCliRec:oBrwD,{IIF(!oCliRec:aDocOrg[oBrw:nArrayAt,9],CLR_GRAY,CLR_BLACK), iif( oBrw:nArrayAt%2=0,14612478,13104638 ) } }
+
+  oBrw:bKeyDown     := {|nKey|oCliRec:RunKeyD(nKey)}
+  oBrw:bLDblClick   := {|oBrw|oCliRec:DblClick() }
+  oBrw:bChange      := {|oBrw|oCliRec:BrwChange()}
+  oBrw:bClrFooter   := {||{CLR_GREEN,8580861}}
+
+  AEVAL(oBrw:aCols,{|oCol,n|oCol:bClrHeader   := {|oBrw|oBrw:=oCliRec:oBrwD,{CLR_GREEN,12582911}},;
+                            oCol:oFooterFont  :=oFont,;
+                            oCol:oHeaderFont  :=oFont})
+
+  oBrw:CreateFromCode()
+
+  SETFOLDER(3)
+
+  oCliRec:oScroll:=oCliRec:SCROLLGET("DPRECIBOSCLI2","DPRECIBOSCLI2.SCG","")
+
+  IF oCliRec:IsDef("oScroll")
+    oCliRec:oScroll:SetEdit(.F.)
+  ENDIF
+
+  oCliRec:oScroll:SetColSize(220,260,240)
+
+  oCliRec:oScroll:SetColorHead(CLR_BLACK ,6220027,oFont) 
+
+  oCliRec:oScroll:SetColor(14612478,CLR_GREEN,1,13104638,oFontB) 
+  oCliRec:oScroll:SetColor(14612478,0,2,13104638,oFont) 
+  oCliRec:oScroll:SetColor(14612478,0,3,13104638,oFontB)
+
+  SETFOLDER(4)
+
+  @ 0,0 GET oCliRec:oMemo VAR oCliRec:REC_MEMO MULTILINE SIZE 235,44;
+            WHEN (AccessField("DPRECIBOCLI","REC_NUMMEM",oCliRec:nOption);
+                 .AND. oCliRec:nOption!=0);
+
+
+  SETFOLDER(0)
+
+  oCliRec:oFolder:=oFolder
+
+  @ 2.6,40 SAY "Total Documentos:" SIZE NIL,09 RIGHT
+
+  @ 2.6,40 SAY oCliRec:oREC_MONTO PROMPT TRAN(oCliRec:REC_MONTO,"999,999,999,999.99");
+           SIZE NIL,09 RIGHT
+
+  @ 1.6,30 SAY "Total Recibido:" SIZE NIL,09 RIGHT
+  @ 2.6,30 SAY oCliRec:oREC_PAGOS PROMPT TRAN(oCliRec:REC_PAGOS,"999,999,999,999.99");
+           SIZE NIL,09 RIGHT
+
+  @ 2,1 SAY oCliRec:oEstado PROMPT IIF(oCliRec:REC_ACT=1,"Activo","Anulado") UPDATE
+
+  @ 1.6,30 SAY "Diferencia:" SIZE NIL,09 RIGHT
+
+  @ 2.6,30 SAY oCliRec:oREC_MTODIF PROMPT TRAN(oCliRec:REC_MTODIF,"999,999,999,999.99");
+           SIZE NIL,09 RIGHT
+
+  @09, 33  SBUTTON oCliRec:oBtnRTI ;
+           SIZE 45, 20 FONT oFont;
+           FILE "BITMAPS\RETISLR.BMP","BITMAPS\RETISLR.BMP","BITMAPS\RETISLRG.BMP" NOBORDER;
+           LEFT PROMPT "Retención ISLR";
+           COLORS CLR_BLACK, { CLR_WHITE, 4509179, 1 };
+           ACTION (oCliRec:ISLR());
+           WHEN oCliRec:oFolder:nOption=2 .AND. oCliRec:nOption<>0;
+                UPDATE
+
+  oCliRec:oBtnRTI:cToolTip:="Crear Retención ISLR"
+  oCliRec:oBtnRTI:cMsg    :=oBtn:cToolTip
+
+  oCliRec:oFolder:bChange:={||oCliRec:oBtnRTI:ForWhen(),;
+                              oCliRec:oBtnISLR:ForWhen()}
+
+  @12, 33  SBUTTON oCliRec:oBtnISLR ;
+           SIZE 45, 22 FONT oFont;
+           FILE "BITMAPS\retiva.bmp","BITMAPS\retivag.bmp","BITMAPS\retivag.bmp" NOBORDER;
+           LEFT PROMPT "Retención IVA";
+	           COLORS CLR_BLACK, { CLR_WHITE, 4509179, 1 };
+           ACTION (oCliRec:RTI());
+           WHEN oCliRec:oFolder:nOption=2 .AND. oCliRec:nOption<>0;
+
+  oCliRec:oBtnISLR:cToolTip:="Crear Retención de IVA"
+  oCliRec:oBtnISLR:cMsg    :=oBtn:cToolTip
+
+  @12, 33  SBUTTON oCliRec:oBtnDoc ;
+           SIZE 45, 22 FONT oFont;
+           FILE "BITMAPS\documentocxc.bmp","BITMAPS\documentocxc.bmp","BITMAPS\documentocxcg.bmp" NOBORDER;
+           LEFT PROMPT "Documentos";
+	           COLORS CLR_BLACK, { CLR_WHITE, 4509179, 1 };
+           ACTION (oCliRec:DOCUMENTOS());
+           WHEN oCliRec:oFolder:nOption=2 .AND. oCliRec:nOption<>0;
+                .AND. Empty(oCliRec:cCodCliDoc)
+
+  oCliRec:oBtnISLR:cToolTip:="Documentos de Cuentas por Cobrar"
+  oCliRec:oBtnISLR:cMsg    :=oBtn:cToolTip
+
+ @ 15.3,37 SAY oCliRec:oTotDocDi PROMPT TRAN(oCliRec:nTotDocDi,"999,999,999,999.99");
+           SIZE 80,12 RIGHT
+
+ @ 16.3,37 SAY oCliRec:oForPagDi PROMPT TRAN(oCliRec:nForPagDi,"999,999,999,999.99");
+           SIZE 80,12 RIGHT
+
+  //oCliRec:oFocusFind:=oCliRec:oREC_NUMERO
+  oCliRec:Activate({||oCliRec:Inicio()})
+
+RETURN oCliRec
+
+FUNCTION INICIO()
+
+   oCliRec:aPagType:={} // Tipos de Edición Pagos
+   oCliRec:aDocType:={} // Tipos de Edición Documentos
+
+   oCliRec:oBrw:SetColor(NIL,14612478)
+   oCliRec:oBrwD:SetColor(NIL,14612478)
+   oCliRec:oScroll:oBrw:SetColor(CLR_GREEN,14612478)
+
+   IF !Empty(oCliRec:cCodCliDoc) 
+      oCliRec:nOption:=1
+      oCliRec:LoadData(1)
+   ENDIF
+
+RETURN .T.
+/*
+// Anular Recibos
+*/
+FUNCTION PREDELETE()
+  LOCAL cResp:="",lResp:=.t.,aDocs:={}
+
+  IF !EJECUTAR("DPRECIBOANUL",oCliRec)
+     oCliRec:MensajeErr(cResp,"Recibo no puede ser Anulado")
+     RETURN .F.
+  ENDIF
+  
+  IF !MensajeNS("Desea Anular","Recibo de Pago "+oCliRec:REC_NUMERO)
+     RETURN .F.
+  ENDIF
+
+  DpSqlBegin()
+
+  SQLUPDATE("DPRECIBOSCLI2","REC_ACT",0,"REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND REC_NUMERO"+;
+                                                    GetWhere("=",oCliRec:REC_NUMERO))
+
+// DR20080426. Así debe quedar
+  SQLUPDATE("DPDOCCLI","DOC_ACT",0,"DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                   "DOC_TIPTRA='P' AND "+;
+                                   "DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO))
+
+  aDocs:=ASQL("SELECT DOC_CODSUC,DOC_TIPDOC,DOC_NUMERO,DOC_CODIGO FROM DPDOCCLI WHERE "+;
+              "DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+              "DOC_TIPTRA='P' AND "+;
+              "DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO))
+
+  IF !Empty(oCliRec:REC_TIPDOC) 
+
+      SQLUPDATE("DPDOCCLI",{"DOC_ACT","DOC_ESTADO"},{0,"NU"},"DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                       "DOC_TIPDOC"+GetWhere("=",oCliRec:REC_TIPDOC)+" AND "+;
+                                       "DOC_NUMERO"+GetWhere("=",oCliRec:REC_NUMDOC)+" AND "+;
+                                       "DOC_TIPTRA='D' ")
+  ENDIF
+
+  SQLUPDATE("DPCAJAMOV","CAJ_ACT",0,"CAJ_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+;
+                                    " AND CAJ_DOCASO"+GetWhere("=",oCliRec:REC_NUMERO)+;
+                                    " AND CAJ_ORIGEN"+GetWhere("=","REC")+" AND CAJ_ACT=1")
+
+  SQLUPDATE("DPCTABANCOMOV","MOB_ACT",0,"    MOB_DOCASO"+GetWhere("=",oCliRec:REC_NUMERO)+;
+                                        "AND MOB_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+;
+                                        "AND MOB_ORIGEN"+GetWhere("=","REC")+" AND MOB_ACT=1")
+
+  // Borra asiento contable
+  IF !Empty(oCliRec:REC_CBTNUM)
+
+    SQLDELETE("DPASIENTOS", "MOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                            "MOC_NUMCBT"+GetWhere("=",oCliRec:REC_CBTNUM)+" AND "+;
+                            "MOC_FECHA "+GetWhere("=",oCliRec:REC_FECHA )+" AND "+;
+                            "MOC_DOCPAG"+GetWhere("=",oCliRec:REC_NUMERO)+" AND "+;
+                            "MOC_ORIGEN"+GetWhere("=","VTA"))
+  ENDIF
+
+
+  SQLUPDATE("DPDOCCLI","DOC_ACT",0,;
+            "DOC_CODSUC"+GetWhere("=" ,oCliRec:REC_CODSUC)+" AND "+;
+            "DOC_TIPDOC"+GetWhere("=" ,oCliRec:REC_TIPDOC)+" AND "+;
+            "DOC_NUMERO"+GetWhere("=" ,oCliRec:REC_NUMDOC)+" AND "+;
+            "DOC_TIPTRA='D'")
+
+  // Inactiva el Pago del Anticipo para ser Utilizado en Otro Pago
+  IF oCliRec:REC_TIPDOC="ANT" .OR. oCliRec:REC_TIPDOC="AOD" 
+
+    cWhere:="DOC_CODSUC"+GetWhere("=" ,oCliRec:REC_CODSUC)+" AND "+;
+            "DOC_TIPDOC"+GetWhere("=" ,oCliRec:REC_TIPDOC)+" AND "+;
+            "DOC_NUMERO"+GetWhere("=" ,oCliRec:REC_NUMDOC)+" AND "+;
+            "DOC_TIPTRA='P' "
+
+    SQLUPDATE("DPDOCCLI","DOC_ACT",0,cWhere)
+
+  ENDIF
+
+
+  IF !lResp
+
+    DpSqlRollBack()
+
+  ELSE
+
+    DpSqlCommit()
+    AEVAL(aDocs,{|a,n|oCliRec:PAGADO(a[1],a[2],a[3],a[4]) })
+
+  ENDIF
+
+  oCliRec:REC_ACT:=0
+  oCliRec:oEstado:Refresh(.T.)
+  oCliRec:LOAD()
+
+RETURN .F.
+
+FUNCTION POSTDELETE()
+RETURN .F.
+
+FUNCTION VALCODCLI()
+  LOCAL cRecibo,cCodCob
+
+  IF Empty(oCliRec:REC_CODIGO) .OR. !(ISMYSQLGET("DPCLIENTES","CLI_CODIGO",oCliRec:REC_CODIGO))
+     oCliRec:oREC_CODIGO:KeyBoard(VK_F6)
+     RETURN .T.
+  ENDIF
+
+  // oCliRec:oBrw:Gotop(.T.)
+  // oCliRec:oBrwD:Gotop(.T.)
+  
+  oCliRec:oCliNombre:Refresh(.T.)
+  oCliRec:lBrwEdit:=Eval(oCliRec:oBrw:bWhen)
+  oCliRec:oBrw:ForWhen()
+
+  IF Left(oCliRec:REC_TIPPAG,1)="A"
+
+      oCliRec:oFolder:SetOption(1)
+      oCliRec:oBrwD:Enable()
+
+      RETURN .T.
+
+  ENDIF
+
+
+  oCliRec:lPar_Moneda:=UPPE(MYSQLGET("DPCLIENTES","CLI_ENOTRA","CLI_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO)))="S"
+  oCliRec:oREC_CODMON:ForWhen(.T.)
+
+  IF !(oCliRec:cCodCli==oCliRec:REC_CODIGO) .OR. (oCliRec:REC_DEBE=0 .AND. oCliRec:REC_HABER=0)
+
+     cRecibo:=SQLGETMAX("DPRECIBOSCLI2","REC_NUMERO","REC_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO))
+     cCodCob:=MYSQLGET("DPRECIBOSCLI2","REC_CODCOB","REC_NUMERO"+GetWhere("=",cRecibo))
+     oCliRec:oREC_CODCOB:VarPut(cCodCob,.T.)
+     oCliRec:oVenNombre:Refresh(.T.)
+
+     // Debe Obtener los Documentos por Cobrar
+     IF Left(oCliRec:REC_TIPPAG,1)<>"A" .AND. !oCliRec:LoadDoc() 
+
+        IF MensajeSN(GetFromVar("{oDp:xDPCLIENTES}")+" no tiene Documentos por Cobrar","Desea realizar un Anticipo")
+           oCliRec:oREC_TIPPAG:VarPut(oCliRec:oREC_TIPPAG:aItems[1],.t.)
+           RETURN .T.
+        ENDIF
+
+        RETURN .F.
+
+     ENDIF
+
+     // Anticipo debe Iniciar Browse
+     // IF Left(oCliRec:REC_TIPPAG,1)="A"
+      // oCliRec:LoadDoc()
+     // ENDIF
+
+  ENDIF
+
+  oCliRec:oFolder:aEnable[1]:=.T.
+  oCliRec:oFolder:Refresh(.F.)
+  oCliRec:cCodCli:=oCliRec:REC_CODIGO
+
+  IF Left(oCliRec:REC_TIPPAG,1)="P"
+     oCliRec:oFolder:SetOption(2)
+  ENDIF
+
+  oCliRec:oBrw:nArrayAt:=1
+  oCliRec:oBrwD:nArrayAt:=1
+
+
+RETURN .T.
+
+FUNCTION VALCODCOB()
+
+    IF Empty(oCliRec:REC_CODCOB) .OR. !(SQLGET("DPVENDEDOR","VEN_CODIGO","VEN_CODIGO"+GetWhere("=",oCliRec:REC_CODCOB))==oCliRec:REC_CODCOB)
+       DPFOCUS(oCliRec:oREC_CODCOB)
+       EVAL(oCliRec:oREC_CODCOB:bAction)
+       RETURN .T.
+    ENDIF
+
+    oCliRec:oVenNombre:Refresh(.T.)
+    oCliRec:lBrwEdit:=Eval(oCliRec:oBrw:bWhen)
+    oCliRec:oBrw:ForWhen()
+
+RETURN .T.
+
+FUNCTION CLIVALCAM(lDoc)
+   
+   DEFAULT lDoc:=.F.
+
+   IF lDoc
+
+     IF LEFT(oCliRec:REC_TIPPAG,1)="A"
+       oCliRec:oFolder:SetOption( 1 )
+       oCliRec:oFolder:Refresh(.T.)
+       DpFocus(oCliRec:oBrw)
+     ELSE
+       oCliRec:oFolder:SetOption( 2 )
+       oCliRec:oFolder:Refresh(.F.)
+       DpFocus(oCliRec:oBrwD)
+     ENDIF
+
+   ENDIF
+
+   oCliRec:RECSETVALCAM()
+
+RETURN .T.
+
+FUNCTION CONCLIENTE()
+  LOCAL lFound:=.F.
+
+  lFound:=!Empty(oCliRec:REC_CODIGO) .AND. SQLGET("DPCLIENTES","CLI_CODIGO","CLI_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO))=oCliRec:REC_CODIGO
+
+  IF lFound  
+     EJECUTAR("DPCLIENTESCON",NIL,oCliRec:REC_CODIGO)
+  ENDIF
+
+  IF !lFound .AND. oCliRec:nOption<>0
+     // Aqui Podemos Mostrar todos los Clientes
+     oCliRec:LBXCLIENTES(.T.)
+//   EVAL(oCliRec:oREC_CODIGO:bAction) // Lista los Clientes
+  ENDIF
+
+RETURN .T.
+
+/*
+FUNCTION CONCLIENTE()
+  LOCAL lFound:=.F.
+
+  lFound:=!Empty(oCliRec:REC_CODIGO) .AND. SQLGET("DPCLIENTES","CLI_CODIGO","CLI_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO))=oCliRec:REC_CODIGO
+
+  IF lFound  
+     EJECUTAR("DPCLIENTESCON",NIL,oCliRec:REC_CODIGO)
+  ENDIF
+
+  IF !lFound .AND. oCliRec:nOption<>0
+     EVAL(oCliRec:oREC_CODIGO:bAction) // Lista los Clientes
+  ENDIF
+
+RETURN .T.
+*/
+FUNCTION CONVENDEDOR()
+RETURN .T.
+
+FUNCTION VALNUMERO()
+
+   IF !oCliRec:ValUnique(oCliRec:REC_NUMERO,NIL,.F.)
+      MensajeErr("Recibo "+oCliRec:REC_NUMERO,"ya Existe")
+      RETURN .F.
+   ENDIF
+
+RETURN .T.
+
+FUNCTION VALFECHA()
+RETURN .T.
+
+/*
+// Tipo de Pago
+*/
+FUNCTION CHANGETIP()
+
+   IF LEFT(oCliRec:REC_TIPPAG,1)="A" // No tiene Documentos
+
+      oCliRec:lDocs:=.F.
+      oCliRec:oFolder:aEnable[2]:=.F. // oCliRec:lDocs
+      oCliRec:oFolder:Refresh(.F.)
+    //  oCliRec:aDocOrg:={}
+
+      oCliRec:oFolder:SetOption(1)
+      oCliRec:oBrwD:Enable()
+
+
+
+      RETURN .T.
+
+   ELSE
+
+      oCliRec:lDocs             :=(LEN(oCliRec:aDocs)>1)
+      oCliRec:oFolder:aEnable[2]:= oCliRec:lDocs
+      oCliRec:oFolder:Refresh(.F.)
+      oCliRec:oBrwD:Disable()
+
+   ENDIF
+
+   IF EVAL(oCliRec:oBrw:bWhen) .AND. !oCliRec:lDocs 
+//     ? "AQUI RESOLVER CAMBIO DE TIPO"
+//     oCliRec:LoadDoc()
+//     oCliRec:lDocs:=.T.
+   ENDIF
+
+   oCliRec:lVentas:=!(LEFT(oCliRec:REC_TIPPAG,1)="D")
+
+   IF oCliRec:cTipPag<>LEFT(oCliRec:REC_TIPPAG,1) .OR. LEFT(oCliRec:REC_TIPPAG,1)="D"
+
+      oCliRec:LOADFORMAS(oCliRec:lVentas,.T.)
+      oCliRec:aForPag:={}
+      oCliRec:ASIGNAFORMA()
+
+   ENDIF
+
+   oCliRec:cTipPag:=LEFT(oCliRec:REC_TIPPAG,1)
+
+RETURN .T.
+
+FUNCTION CHANGECAJ()
+RETURN .T.
+
+FUNCTION NewPago(lRefresh)
+
+  LOCAL aLine:={}
+
+  aLine:={"1","2","3","4","5",CTOD(""),0,.T.,1}
+  
+  IF ValType(oCliRec:oBrw)="O"
+
+    aLine:=ACLONE(ATAIL(oCliRec:oBrw:aArrayData)) // [oCliRec:oBrw:aArrayAt,1]
+    AEVAL(aLine,{|a,n|aLine[n]:=CTOEMPTY(a)})
+
+//  aLine[5]:=oCliRec:REC_FECHA
+    aLine[6+1]:=0
+    AADD(oCliRec:oBrw:aArrayData,aLine)
+    oCliRec:oBrw:nColSel:=1
+    oCliRec:oBrw:GoBottom()
+    oCliRec:nRowSel:=oCliRec:oBrw:nRowSel
+
+  ELSE
+
+    AADD(oCliRec:aFormas,aLine)
+    oCliRec:nRowSel:=1
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Carga Documento
+*/
+FUNCTION LOAD()
+  LOCAL nAt:=0,oCol,aData:={},oTable,cTipo,nMonto:=0,cSql,cResp:="",uValue,aLine
+ 
+  IF oCliRec:nOption=3 .AND. !EJECUTAR("DPRECIBOANUL",oCliRec)
+     oCliRec:MensajeErr(cResp,"Recibo no puede ser Modificado")
+     RETURN .F.
+  ENDIF
+
+  oCliRec:aBcoDat :={}
+  oCliRec:aCajaDat:={}
+
+  oCliRec:oFolder:aEnable[2]:=.T.
+  oCliRec:cCodCli:=""
+  oCliRec:lBrwEdit:=(oCliRec:nOption>0)
+  oCliRec:oBrw:Refresh(.F.)
+//  oCliRec:oScroll:SetValues(.T.)
+//  oCliRec:oScroll:oBrw:GoTop(.T.)
+
+//  oCliRec:oScroll:SetEdit(oCliRec:nOption=1 .OR. oCliRec:nOption=2,oCliRec:nOption)
+
+  oCliRec:lVentas:=!(LEFT(oCliRec:REC_TIPPAG,1)="A")
+
+  IF oCliRec:cTipPag<>LEFT(oCliRec:REC_TIPPAG,1)="A"
+     oCliRec:LOADFORMAS(oCliRec:lVentas,.T.)
+  ENDIF
+
+  oCliRec:cTipPag:=LEFT(oCliRec:REC_TIPPAG,1)
+
+  IF oCliRec:nOption=0
+    AEVAL(oCliRec:oBrw:aCols,{|oCol,n|oCol:nEditType:=0})
+  ENDIF
+
+  oCliRec:RECTIPDOC :=oCliRec:REC_TIPDOC
+  oCliRec:RECNUMDOC :=oCliRec:REC_NUMDOC
+  oCliRec:REC_CODSUC:=oDp:cSucursal
+
+  IF oCliRec:nOption=1
+
+    IF !EJECUTAR("DPVALFECHA")
+       RETURN .F.
+    ENDIF
+
+    aLine:=ACLONE(oCliRec:oBrwD:aArrayData[1])
+    AEVAL(aLine,{|a,n| aLine[n]:=CTOEMPTY(aLine[n])})
+   
+    oCliRec:oBrwD:aArrayData:={ACLONE(aLine)}
+    oCliRec:oBrwD:nArrayAt:=1
+    oCliRec:oBrwD:nRowSel :=1
+    oCliRec:oBrwD:Gotop(.T.)
+    oCliRec:oBrwD:Refresh(.F.)
+
+    oCliRec:RECAUTONUM()
+
+    AADD(aData,{"","","","",SPACE(14),CTOD(""),0,.F.,1})
+   
+    oCliRec:oBrw:aArrayData:=ACLONE(aData)
+    oCliRec:oBrw:aCols[6+1]:cFooter:="0.00"
+    oCliRec:oMemo:VarPut("",.T.)
+    oCliRec:REC_NUMMEM:=0
+    oCliRec:RECTIPDOC :=""
+    oCliRec:RECNUMDOC :=""
+
+    oCliRec:oBrw:Refresh(.T.)
+//  oCliRec:oBrw:GoTop(.T.)
+
+    oCliRec:oFolder:aEnable[2]:=.F.
+    oCliRec:oFolder:SetOption( 1 )
+    oCliRec:oFolder:Refresh(.F.)
+
+    oCliRec:SET("REC_FECHA" ,IIF(oDp:lFechaNew,oDp:dFecha,DATE()))
+    oCliRec:SET("REC_HORA"  ,TIME()       )
+    oCliRec:SET("REC_ACT"   ,1            )
+    oCliRec:SET("REC_TIPDOC",""           )
+    oCliRec:SET("REC_NUMDOC",""           )
+    oCliRec:SET("REC_CODSUC",oDp:cSucursal)
+    oCliRec:SET("REC_CENCOS",oDp:cCenCos  )
+
+    IF !Empty(oCliRec:cCodCli)
+       oCliRec:SET("REC_CODIGO",oCliRec:cCodCli)
+    ENDIF
+
+    oCliRec:REC_CODSUC:=oDp:cSucursal
+    oCliRec:REC_TIPPAG:=oCliRec:cTipPag
+
+    COMBOINI(oCliRec:oREC_TIPPAG)
+
+    nAt:=ASCAN(oCliRec:aCajas,{|a,n|a[1]=oDp:cCaja})
+    nAt:=MAX(nAt,1)
+
+    oCliRec:REC_CODCAJ:=oCliRec:aCajas[nAt,2]
+
+    COMBOINI(oCliRec:oREC_CODCAJ)
+
+    oCliRec:oREC_NUMERO:Refresh(.T.)
+
+    oCliRec:REC_CODMON:=oDp:cMoneda
+    COMBOINI(oCliRec:oREC_CODMON)
+    oCliRec:oREC_TIPPAG:VarPut("P",.T.)
+    oCliRec:CALMONTO()
+
+    IF !Empty(oCliRec:cCodCliDoc)
+       oCliRec:oREC_CODIGO:VarPut(oCliRec:cCodCliDoc)
+       oCliRec:REC_CODIGO:=oCliRec:cCodCliDoc
+       EVAL(oCliRec:oREC_CODIGO:bValid)
+       oCliRec:SET("REC_TIPDOC","P")
+       oCliRec:SET("REC_CODIGO",oCliRec:cCodCliDoc)
+    ENDIF
+
+
+  ELSE
+
+    IF oCliRec:nOption=3
+     IF !EJECUTAR("DPVALFECHA",oCliRec:REC_FECHA)
+       RETURN .F.
+     ENDIF
+    ENDIF
+
+     IF !Empty( oCliRec:REC_NUMMEM )
+        oCliRec:oMemo:VarPut(ALLTRIM(SQLGET("DPMEMO","MEM_MEMO","MEM_NUMERO"+GetWhere("=",oCliRec:REC_NUMMEM))),.T.)
+     ENDIF
+
+     oCliRec:oREC_TIPPAG:VarPut(oCliRec:REC_TIPPAG,.t.)
+
+    // Debe Recupar los Datos BANCOS
+    oTable:=OpenTable(" SELECT MOB_TIPO,MOB_CUENTA,MOB_FECHA,MOB_CODBCO,MOB_DOCUME,MOB_MONTO,"+;
+                      " BAN_NOMBRE,MOB_NUMTRA,MOB_DI FROM DPCTABANCOMOV "+;
+                      " INNER JOIN DPBANCOS ON DPBANCOS.BAN_CODIGO = MOB_CODBCO "+;
+                      " WHERE MOB_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+;
+                      " AND MOB_DOCASO"+GetWhere("=",oCliRec:REC_NUMERO)+;
+                      " AND MOB_ORIGEN"+GetWhere("=","REC")+;
+                      " AND MOB_ACT=1",.T.)
+
+    oCliRec:aBcoDat:=ACLONE(oTable:aDataFill)
+
+    WHILE !oTable:Eof()
+
+      cTipo:=oTable:MOB_TIPO
+      nAt  :=ASCAN(oDp:aFormas,{|a,n|a[6]=cTipo})
+      cTipo:=IIF(nAt>0,oDp:aFormas[nAt,1],cTipo)
+
+      AADD(aData,{cTipo,"",oTable:BAN_NOMBRE,oTable:MOB_CUENTA,oTable:MOB_DOCUME,oTable:MOB_FECHA,;
+                  oTable:MOB_MONTO,.F.,oTable:MOB_DI})
+
+      oTable:DbSkip()
+
+    ENDDO
+
+    oTable:End()
+    // Lee Caja
+//(RG20080409)
+    oTable:=OpenTable(" SELECT CAJ_TIPO,CAJ_MARCAF,CAJ_BCODIR,CAJ_CHQCTA,CAJ_FECHA,CAJ_NUMERO,CAJ_MONTO,CAJ_NUMTRA, "+;
+                      "CAJ_DI FROM DPCAJAMOV "+;
+                      " WHERE CAJ_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+;
+                      " AND   CAJ_DOCASO"+GetWhere("=",oCliRec:REC_NUMERO)+;
+                      " AND CAJ_ORIGEN"+GetWhere("=","REC")+;
+                      " AND CAJ_ACT=1",.T.)
+
+   // ?CLPCOPY(ODP:CSQL)
+    oCliRec:aCajaDat:=ACLONE(oTable:aDataFill)
+
+    oCliRec:LOADFORMAS(.T.,.T.,.T.)
+//  ViewArray(oDp:aFormas)
+
+    oTable:Gotop()
+
+    WHILE !oTable:Eof()
+
+      cTipo:=oTable:CAJ_TIPO
+      nAt  :=ASCAN(oDp:aFormas,{|a,n|a[6]=cTipo})
+      cTipo:=IIF(nAt>0,oDp:aFormas[nAt,1],cTipo)
+
+//(RG20080409)
+      AADD(aData,{cTipo,oTable:CAJ_MARCAF,oTable:CAJ_BCODIR,oTable:CAJ_CHQCTA,oTable:CAJ_NUMERO,oTable:CAJ_FECHA,oTable:CAJ_MONTO,.T.,oTable:CAJ_DI})
+
+      oTable:DbSkip()
+
+    ENDDO
+
+    oTable:End()
+
+    AEVAL(aData,{|a,n|nMonto:=nMonto+a[6+1]})
+    oCliRec:oBrw:aCols[6+1]:cFooter:=TRAN(nMonto,"999,999,999,999.99")
+    oCliRec:oBrw:aArrayData:=ACLONE(aData)
+    oCliRec:oBrw:Refresh(.T.)
+
+//L.B.    TECNODATOS
+    IF oCliRec:REC_ACT=0
+      // ANULADO
+      aLine:=ACLONE(oCliRec:oBrwD:aArrayData[1])
+      AEVAL(aLine,{|a,n| aLine[n]:=CTOEMPTY(aLine[n])})
+      oCliRec:oBrwD:aArrayData:={ACLONE(aLine)}
+      oCliRec:oBrwD:nArrayAt:=1
+      oCliRec:oBrwD:nRowSel :=1
+      oCliRec:oBrwD:Gotop(.F.)
+      oCliRec:oBrwD:Refresh(.T.)
+    ENDIF
+// L.B.
+
+    oCliRec:LOADDOC(.F.)
+    COMBOINI(oCliRec:oREC_CODMON) // DR20080329
+  ENDIF
+
+  IF oCliRec:nOption=1 .OR. oCliRec:nOption=3
+
+    oCliRec:aForPag:={}
+    AEVAL(oDp:aFormas,{|a,n|AADD(oCliRec:aForPag,a[1])})
+
+    uValue:=oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]
+
+    oCliRec:ASIGNAFORMA()
+
+    IF oCliRec:nOption=1
+
+       uValue:=oCliRec:aForPag[1]
+
+       IF oDp:aFormas[1,4] // Directorio Bancario
+         oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1]:=oDp:aBancoDir[1,1]
+       ENDIF
+
+    ENDIF
+
+    oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]:=uValue
+
+    oCol:nEditType:=EDIT_LISTBOX
+
+  ENDIF
+
+  oCliRec:PUTMONTO(NIL,0,.F.)
+  oCliRec:oREC_MTODIF:Refresh(.T.)
+  oCliRec:oEstado:Refresh(.T.)
+  oCliRec:oVenNombre:Refresh(.T.)
+  oCliRec:oCliNombre:Refresh(.T.)
+
+  oCliRec:aDataPag:=ACLONE(aData)
+
+  IF oCliRec:nOption=3
+    IF  Empty(aData)
+      aData:={}
+      AADD(aData,{oDp:aCajaInst[1,2],"2","3","4","5",CTOD(""),0,.F.,1})
+
+      oCliRec:oBrw:aArrayData:=ACLONE(aData)
+      oCliRec:oBrw:Refresh(.T.)
+    ELSE
+      oCliRec:NewPago(.T.)
+    ENDIF
+  ENDIF
+
+  oCliRec:RECFECHA:=oCliRec:REC_FECHA // Para Anular Asientos
+  oCliRec:oFolder:aEnable[1]:=.T.
+  oCliRec:oFolder:aEnable[2]:=(LEFT(oCliRec:REC_TIPPAG,1)="P")
+  oCliRec:oFolder:Refresh(.F.)
+
+  // Refrescar Caja de 2.0
+  nAt:=ASCAN(oCliRec:aCajas , {|a,n| oCliRec:REC_CODCAJ=a[1] })
+
+  IF nAt>0
+     oCliRec:oREC_CODCAJ:Select(nAt)
+  ENDIF
+
+RETURN .T.
+
+FUNCTION ASIGNAFORMA()
+    LOCAL oCol:=oCliRec:oBrw:aCols[1],nAt:=0
+
+    IF oCliRec:nOption=0
+       oCol:nEditType:=0
+       RETURN .F.
+    ENDIF
+
+    IF EMPTY(oCliRec:aForPag)
+       AEVAL(oDp:aFormas,{|a,n|AADD(oCliRec:aForPag,a[1])})
+    ENDIF
+
+    oCol:aEditListTxt  :=ACLONE(oCliRec:aForPag)
+    oCol:aEditListBound:=ACLONE(oCliRec:aForPag)
+
+    nAt:=ASCAN(oCliRec:oBrw:aArrayData,{|a,n|"EFECTIVO"==ALLTRIM(UPPE(a[1]))})
+
+    IF oCliRec:oBrw:nArrayAt<>nAt .AND. nAt>0 .AND. (nAt:=ASCAN(oCol:aEditListTxt,{|a,n|UPPE(ALLTRIM(a))="EFECTIVO"}),nAt>0)
+
+      oCol:aEditListTxt  :=ARREDUCE(oCol:aEditListTxt  ,nAt)
+      oCol:aEditListBound:=ARREDUCE(oCol:aEditListBound,nAt)
+
+    ENDIF
+
+    nAt:=ASCAN(oCol:aEditListTxt,oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1])
+
+    IF oCliRec:nOption<>0 .AND. nAt=0
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]:=oCol:aEditListTxt[1]
+       oCliRec:oBrw:Drawline(.f.)
+    ENDIF
+
+    oCol:nEditType:=EDIT_LISTBOX
+
+RETURN .T.
+
+/*
+// Lee las Formas de Pago
+*/
+FUNCTION LOADFORMAS(lVentas,lIni,lView)
+
+  LOCAL I,oTable,cVenta:=""
+
+  DEFAULT lVentas:=.T.,lIni:=.F.,lView:=.F.
+
+  IF lIni
+
+    oDp:aCajaInst:={}
+    oDp:aBancoTip:={}
+    oDp:aFormas  :={}
+
+  ENDIF
+
+  IF Empty(oDp:aCajaInst) 
+
+    oDp:aCajaInst:=ASQL("SELECT ICJ_CODIGO,ICJ_NOMBRE,ICJ_DIRBCO,ICJ_MONEDA,ICJ_CODMON,ICJ_BMP,ICJ_REQNUM FROM DPCAJAINST "+;
+                      "WHERE "+IIF(lVentas,"ICJ_INGRES=1","ICJ_EGRESO=1"))
+
+  ENDIF
+
+  //IF Empty(oDp:aBancoTip) .AND. COUNT("DPCTABANCO")>0
+  
+  IF Empty(oDp:aBancoTip) .AND. COUNT("DPCTABANCO","BCO_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND BCO_ACTIVA=1")>0  
+    oDp:aBancoTip:=ASQL("SELECT TDB_CODIGO,TDB_NOMBRE,TDB_BMP FROM DPBANCOTIP "+;
+                        "WHERE "+IIF(lVentas,"TDB_INGRES=12","TDB_PAGOS=1"))
+
+  ENDIF
+
+  oDp:aFormas:={}
+
+  FOR I=1 TO LEN(oDp:aCajaInst) 
+
+    AADD(oDp:aFormas,{oDp:aCajaInst[I,2],ALLTRIM(oDp:aCajaInst[I,6]),.T.,oDp:aCajaInst[I,3],oDp:aCajaInst[I,7],oDp:aCajaInst[I,1],;
+                      oDp:aCajaInst[I,4]})
+
+  NEXT I
+
+  FOR I=1 TO LEN(oDp:aBancoTip)
+    AADD(oDp:aFormas,{oDp:aBancoTip[I,2],ALLTRIM(oDp:aBancoTip[I,3]),.F.,.F.,.T.,oDp:aBancoTip[I,1],.F.})
+  NEXT I
+
+  FOR I=1 TO LEN(oDp:aFormas)
+    oDp:aFormas[I,2]:=IIF(Empty(oDp:aFormas[I,2]),"BITMAPS\xCheckOff.bmp",ALLTRIM(oDp:aFormas[i,2]))
+  NEXT I
+  
+  IF Empty(oDp:aBancoDir) 
+
+    oDp:aListMsg:={}
+
+    oDp:lMySqlNativo:=.F.
+    oTable:=OpenTable("SELECT BAN_NOMBRE,BAN_TELEF1,BAN_TELEF2,BAN_TELEF3,BAN_TELEF4,BAN_WEB  FROM DPBANCODIR ",.T.)
+    oDp:lMySqlNativo:=.F.
+    oTable:DbGotop()
+    oTable:DbEval({||oTable:Replace("BAN_TELEF1",ALLTRIM(oTable:BAN_TELEF1)+;
+                     ALLTRIM(oTable:BAN_TELEF2)+" "+;
+                     ALLTRIM(oTable:BAN_TELEF3)+" "+;
+                     ALLTRIM(oTable:BAN_TELEF4)+" "+;
+                     ALLTRIM(oTabla:BAN_WEB))})
+
+    oDp:aBancoDir:=ACLONE(oTable:aDataFill)
+
+    oTable:End()
+
+    AEVAL(oDp:aBancoDir,{|a,n|AADD(oDp:aListMsg,a[2])})
+
+  ENDIF
+
+  IF Empty(oDp:aCuentaBco) .OR. .T. 
+
+    oDp:aCuentaBco:={}
+   
+    oTable:=OpenTable(" SELECT DPBANCOS.BAN_CODIGO,BCO_CTABAN,DPBANCOS.BAN_NOMBRE FROM DPCTABANCO "+;
+                      " INNER JOIN DPBANCOS ON DPBANCOS.BAN_CODIGO = DPCTABANCO.BCO_CODIGO "+;
+                      " WHERE BCO_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND BCO_ACTIVA=1 ",.T.)
+
+    WHILE !oTable:Eof()
+       AADD(oDp:aCuentaBco,{oTable:BAN_NOMBRE,oTable:BCO_CTABAN,oTable:BAN_CODIGO})
+       oTable:DbSkip()
+    ENDDO
+    oTable:End()
+
+  ENDIF
+RETURN .T.
+
+FUNCTION PUTFORMA(oCol,uValue,cDirBco)
+    LOCAL nAt,aBancos:={},oBrw:=oCliRec:oBrw,nPos,cTipo
+
+    oCliRec:aBancos:={}
+
+    nAt:=ASCAN(oDp:aFormas,{|a,n|a[1]==uValue})
+    cTipo:=oDp:aFormas[nAt,6] // Tipo de Intrumento
+
+
+    oCliRec:lCaja  :=oDp:aFormas[nAt,3+1] // Indicador de Caja
+    oCliRec:lDirBco:=oDp:aFormas[nAt,4+1] // Directorio Bancario
+
+    oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,oCol:nPos]:=uValue
+    nPos:=oCol:nPos
+
+    IF oCol:nPos=1
+       oCliRec:PUTMARCA(oCol,uValue)
+    ELSE
+       // Banco
+       uValue:=oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]
+    ENDIF
+
+    IF oCliRec:lCaja // Debe Validar los Instrumentos de Caja
+
+      
+    ENDIF
+
+    oCol:=oCliRec:oBrw:aCols[3] // 2+1]
+
+    IF oCliRec:lDirBco // Requiere Directorio Bancario
+
+       AEVAL(oDp:aBancoDir,{|a,n|AADD(oCliRec:aBancos,a[1])})
+       oCol:aEditListTxt   :=oCliRec:aBancos
+       oCol:aEditListBound :=oCliRec:aBancos
+       oCol:nEditType      :=EDIT_LISTBOX
+       oCliRec:oBrw:nColSel:=2
+
+       IF (Empty(oCliRec:aMarcas)) //.AND. oCol:nPos=2) .OR. nPos=2
+         oCliRec:oBrw:nColSel:=3
+       ENDIF
+
+       IF Empty(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1])
+          oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1]:=oCliRec:aBancos[1]
+       ENDIF
+     
+  // antes oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]:=""
+    ENDIF
+
+    // ag cs
+    IF oCliRec:lCaja .AND. !oCliRec:lDirBco
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4]:=""
+    ENDIF
+
+    IF !oCliRec:lDirBco .AND. oCliRec:lCaja  // no hay Bancos
+
+       oCliRec:oBrw:aCols[1+1]:nEditType:=0
+       oCliRec:oBrw:aCols[2+1]:nEditType:=0
+       oCliRec:oBrw:aCols[3+1]:nEditType:=0
+       oCliRec:oBrw:aCols[4+1]:nEditType:=0
+       oCliRec:oBrw:aCols[5+1]:nEditType:=0
+
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1+1]:=""
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1]:=""
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]:=""
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4+1]:=SPACE(10)
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,5+1]:=oCliRec:REC_FECHA
+       oCliRec:oBrw:nColSel:=6+1
+
+    ENDIF
+
+    IF !oCliRec:lCaja // Bancos
+      aBancos:=ASQL(" SELECT DPBANCOS.BAN_NOMBRE,BCO_CTABAN FROM DPCTABANCO "+;
+                    " INNER JOIN DPBANCOS ON DPBANCOS.BAN_CODIGO = DPCTABANCO.BCO_CODIGO"+;
+                    " WHERE BCO_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND BCO_ACTIVA=1 ")
+
+      nAt:=ASCAN(aBancos,{|a,n|oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1]=a[1]})
+
+      IF EMPTY(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1]) .OR. nAt=0
+         oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1]:=aBancos[1,1]
+         oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]:=aBancos[1,2]
+         oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,5+1]:=oCliRec:REC_FECHA
+      ENDIF
+
+      aBancos:=ASQL("SELECT DPBANCOS.BAN_NOMBRE FROM DPCTABANCO INNER JOIN DPBANCOS ON DPBANCOS.BAN_CODIGO = DPCTABANCO.BCO_CODIGO "+;
+                    " WHERE BCO_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND BCO_ACTIVA=1 "+;
+                    " GROUP BY DPBANCOS.BAN_NOMBRE")
+
+      AEVAL(aBancos,{|a,n|AADD(oCliRec:aBancos,a[1])})
+
+      oCol:aEditListTxt   :=oCliRec:aBancos
+      oCol:aEditListBound :=oCliRec:aBancos
+      oCol:nEditType      :=EDIT_LISTBOX
+
+      EVAL(oCliRec:oBrw:aCols[2+1]:bOnPostEdit, oCliRec:oBrw:aCols[3+1],oCliRec:aBancos[1])
+
+      oCliRec:oBrw:nColSel:=2+1
+
+   ENDIF
+
+   IF Empty(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,5+1])
+      oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,5+1]:=oCliRec:REC_FECHA
+   ENDIF
+
+   oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,7+1]:=oCliRec:lCaja // Indica si es Caja
+   oBrw:aCols[6+1]:nEditType:=1
+
+   oCliRec:SETMONTO() // Sugiere Monto
+
+RETURN .T.
+
+FUNCTION PUTBANCO(oCol,uValue)
+  LOCAL aBancos,aCuentas:={},nAt,cCuenta,cTipDoc
+
+  oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,oCol:nPos]:=uValue
+
+  IF oCliRec:lCaja
+
+     oCliRec:oBrw:nColSel:=4+1
+
+     oCliRec:oBrw:aCols[3+1]:nEditType:=1
+     oCliRec:oBrw:aCols[4+1]:nEditType:=1
+
+     IF Empty(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1])
+        oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]:=SPACE(10)
+     ENDIF
+
+     // ag cs
+     IF Empty(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4])
+        oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4]:=SPACE(20)
+     ENDIF
+
+     IF Empty(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4+1])
+        oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4+1]:=SPACE(10)
+     ENDIF
+
+     // ag cs
+     // Solicita Cuenta Bancaria del Cliente
+     oCliRec:oBrw:nColSel:=4
+     oCliRec:oBrw:aCols[4]:nEditType:=1
+
+
+     cTipDoc:=oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]
+     nAt    :=ASCAN(oDp:aFormas,{|a,n|a[1]==cTipDoc})
+     cTipDoc:=oDp:aFormas[nAt,6+1]
+
+  ELSE
+
+     // Selecciona las Cuentas Bancarias
+     // oCliRec:oBrw:nColSel:=3
+     // oCliRec:oBrw:aCols[4]:nEditType:=1
+
+     oCol   :=oCliRec:oBrw:aCols[3+1]
+     cCuenta:=oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+2]
+     
+     aBancos:=ASQL("SELECT BCO_CTABAN FROM DPCTABANCO INNER JOIN DPBANCOS ON DPBANCOS.BAN_CODIGO = DPCTABANCO.BCO_CODIGO "+;
+                   " WHERE DPBANCOS.BAN_NOMBRE"+GetWhere("=",oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2+1])+;
+                   " AND BCO_CODSUC"+GetWhere("=",oDp:cSucursal)+" AND BCO_ACTIVA=1 ")
+
+     AEVAL(aBancos,{|a,n|AADD(aCuentas,a[1])})
+
+     oCol:aEditListTxt   :=aCuentas
+     oCol:aEditListBound :=aCuentas
+     oCol:nEditType      :=EDIT_LISTBOX
+     oCliRec:oBrw:nColSel:=3+1
+     nAt                 :=ASCAN(aCuentas,cCuenta)
+
+     IF nAt=0
+       oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4+1]:=SPACE(10)
+     ENDIF
+
+     IF EMPTY(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]) .OR. nAt=0
+        nAt:=1
+        oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]:=aCuentas[nAt]
+     ENDIF
+
+  ENDIF
+
+  oCliRec:SETMONTO() // Sugiere Monto
+
+RETURN .T.
+
+FUNCTION PUTCUENTA(oCol,uValue)
+
+  oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,3+1]:=uValue
+  oCliRec:oBrw:nColSel:=4+1
+  oCliRec:oBrw:aCols[4+1]:nEditType:=1
+  oCliRec:SETMONTO() // Sugiere Monto
+
+RETURN .T.
+
+/*
+// Asigna el Numero del Pago
+*/
+FUNCTION PUTNUMPAG(oCol,uValue)
+
+  IF EMPTY(uValue)
+     RETURN .F.
+  ENDIF
+
+  oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4+1]:=uValue
+  oCliRec:oBrw:nColSel:=5+1
+  oCliRec:oBrw:aCols[5+1]:nEditType:=1
+  oCliRec:SETMONTO() // Sugiere Monto
+
+RETURN .T.
+
+/*
+// Asigna el Numero del Pago
+*/
+FUNCTION PUTFECHA(oCol,uValue)
+
+
+  IF !EJECUTAR("DPVALFECHA",uValue,.T.,.T.)
+     RETURN .F.
+  ENDIF
+
+  oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,oCol:nPos]:=uValue
+  oCliRec:oBrw:nColSel:=6+1
+  oCliRec:SETMONTO() // Sugiere Monto
+
+RETURN .T.
+
+
+FUNCTION PUTMONTO(oCol,uValue,lSave)
+   LOCAL nMonto:=0
+   LOCAL cDivisa:=oDp:cMoneda,nAtP:=0,cTipDocP,nOption1:=1
+
+   DEFAULT lSave:=.T.
+
+   IF Empty(uValue) .AND. lSave .AND. oCliRec:oBrw:nArrayAt=LEN(oCliRec:oBrw:aArrayData)
+      oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,6+1]:=uValue // Monto del Pago
+      RETURN .F.
+   ENDIF
+
+   IF lSave
+      oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,6+1]:=uValue // Monto del Pago
+      cTipDocP:=oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]
+       nAtP    :=ASCAN(oDp:aFormas,{|a,n|a[1]==cTipDocP})
+       cTipDocP:=oDp:aFormas[nAtP,6]
+    // ??"CAJA O BANCO",oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,7+1]
+     nAtP:=oCliRec:oBrw:nArrayAt
+     IF oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,7+1]
+      //cDivisa:=SQLGET("DPCAJAINST","ICJ_CODMON","ICJ_NOMBRE"+GetWhere("=",oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]))
+      cDivisa:=SQLGET("DPCAJAINST","ICJ_CODMON","ICJ_CODIGO"+GetWhere("=",cTipDocP))
+
+       IF oCliRec:REC_CODMON<>cDivisa
+        // MensajeErr("No puede Registrar Pagos en en Moneda: "+cDivisa,"Debe ser la misma Moneda del Recibo")
+        // RETURN .F.
+        ENDIF
+     //?SQLGET("DPCAJAINST","ICJ_CODIGO","ICJ_NOMBRE"+GetWhere("=",oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]))
+      IF cDivisa<>oDp:cMoneda .AND. !Empty(cDivisa)
+        uValue:=EJECUTAR("MINCALVALCAM4",uValue,cDivisa,"REC",oCliRec:REC_FECHA,1,7,oCliRec:REC_VALCAM)
+       //oCliRec:oBrw:aArrayData[nAtP,9]:=oCliRec:REC_VALCAM
+       //oCliRec:REC_VALCAM:=oDp:nTicket
+      ENDIF
+ 
+     ELSE
+    
+      cDivisa:=SQLGET("DPCTABANCO","BCO_CODMON","BCO_CTABAN"+GetWhere("=",oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,4]))
+      nAtP:=oCliRec:oBrw:nArrayAt
+      IF oCliRec:REC_CODMON<>cDivisa
+        //MensajeErr("No puede Registrar Pagos en en Moneda: "+cDivisa,"Debe ser la misma Moneda del Recibo")
+      //  RETURN .F.
+      ENDIF
+
+      IF cDivisa<>oDp:cMoneda .AND. !Empty(cDivisa) 
+       uValue:=EJECUTAR("MINCALVALCAM4",uValue,cDivisa,"REC",oCliRec:REC_FECHA,1,7,oCliRec:REC_VALCAM)
+       //oCliRec:oBrw:aArrayData[nAtP,9]:=oCliRec:REC_VALCAM
+       //oCliRec:REC_VALCAM:=1
+      ENDIF
+
+     ENDIF
+    oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,7]:=uValue 
+   ENDIF
+
+   oCliRec:CALMONTO()
+
+   IF oCliRec:oBrw:nArrayAt=LEN(oCliRec:oBrw:aArrayData) .AND. lSave
+     oCliRec:NewPago(.T.)
+   ENDIF
+
+RETURN .T.
+
+FUNCTION VALFECHA()
+RETURN .T.
+
+/*
+// Carga de Documentos Pendientes
+*/
+FUNCTION LOADDOC(lSave)
+  
+  LOCAL oTable,cSql,I,aDoc:={},cWhere:="",nAt:=0 // Fecha y hora
+  LOCAL nPagado:=0,aCopy:=ACLONE(oCliRec:oBrwD:aArrayData)
+  LOCAL aCopyOrg:=ACLONE(oCliRec:aDocOrg),cHora,aLine,nValCam:=0
+
+  DEFAULT lSave:=.T.
+
+
+  oCliRec:lDocs   := .F. // No Edita Documentos
+  cHora           := IIF( !lSave , TIME() , oCliRec:REC_HORA )
+  oCliRec:lRev    :=MYSQLGET("DPCLIENTES","CLI_ENOTRA","CLI_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO))="S"
+
+
+  IF LEFT(oCliRec:REC_TIPPAG,1)="A"
+
+     // Anticipo no hay Documentos
+     // oCliRec:aDocs:={} 
+     oCliRec:oFolder:aEnable[2]:=oCliRec:lDocs
+     oCliRec:oFolder:ForWhen()
+
+     oCliRec:oBrw:Gotop(.T.)
+     oCliRec:oBrw:nArrayAt:=1
+     oCliRec:oBrw:nRowSel :=1
+
+     oCliRec:oBrwD:Gotop(.T.)
+     oCliRec:oBrwD:nArrayAt:=1
+     oCliRec:oBrwD:nRowSel :=1
+
+     // JN Anticipos no Tienen Documento 19/09/2016
+     aLine:=oCliRec:oBrwD:aArrayData[1]
+     AEVAL(aLine,{|a,n| aLine[n]:=CTOEMPTY(a)})
+     oCliRec:oBrwD:aArrayData:={}
+     AADD(oCliRec:oBrwD:aArrayData,aLine)
+
+     RETURN .T.
+
+  ENDIF
+
+  IF oCliRec:nOption=0 
+
+     cWhere:="DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)+" AND DOC_ACT=1 AND (DOC_TIPTRA='P' OR (DOC_DOCORG='R' AND DOC_TIPTRA='P'))"
+
+  ELSE
+
+     EJECUTAR("DPRECIBOSCLILDO",oCliRec)
+
+     cWhere:="(NOT (DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO)+" AND DOC_TIPTRA='P')) AND "+;
+             "DOC_TIPDOC"+GetWhere("<>","RMU"             )+" AND "+;
+             "DOC_CREREC=0  AND "+;
+             "(DOC_FECHA"+GetWhere("<=",oCliRec:REC_FECHA )+" OR "+;
+             "(DOC_FECHA"+GetWhere("=" ,oCliRec:REC_FECHA )+" AND  DOC_HORA"+GetWhere("<=",cHora)+"))"
+
+  ENDIF
+
+  IF oCliRec:nOption=1
+  //oCliRec:REC_VALCAM:=IIF(oCliRec:REC_VALCAM=0,1,oCliRec:REC_VALCAM)
+
+    //oCliRec:CLIVALCAM()
+
+     // Filtra ODE y DOD
+     cWhere:="DOC_TIPDOC IN ('ODE','DOD','ITD','AOD') AND DOC_FECHA"+GetWhere("<=",oCliRec:REC_FECHA)
+
+     // JN 13/10/2014 (Sucursal del Cliente)
+     IF !Empty(oCliRec:cSucCli)
+        cWhere:=cWhere + " AND DOC_SUCCLI"+GetWhere("=",oCliRec:cSucCli)
+     ENDIF
+
+  ENDIF
+
+  CursorWait()
+
+  cSql :=" SELECT DOC_CODIGO,DOC_CODSUC,DOC_CXC,IF(DOC_DI=0,TDC_DESCRI,CONCAT(TDC_DESCRI,' ',SUM(DOC_DI*DOC_CXC),' $')) AS TDC_DESCRI,DOC_TIPDOC,DOC_NUMERO,SUM(DOC_NETO*DOC_CXC*DOC_VALCAM) AS DOC_NETO FROM DPDOCCLI "+;
+         "  INNER JOIN DPTIPDOCCLI ON DOC_TIPDOC=TDC_TIPO "+;
+         "  WHERE DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC) +;
+         "    AND DOC_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO) +;
+         "    AND DOC_ACT=1 AND DOC_CXC<>0 AND DOC_ACT<>0 "+;
+         "    AND "+cWhere +;
+         " GROUP BY DOC_CODIGO,DOC_CODSUC,TDC_DESCRI,DOC_TIPDOC,DOC_NUMERO "+;
+         " HAVING ROUND(DOC_NETO,2)<>0 "+;
+         " ORDER BY DOC_FECHA,DOC_HORA "
+
+ //??CLPCOPY(cSql)
+
+  oTable:=OpenTable(cSql,.T.)
+
+  IF oTable:RecCount()=0
+     oTable:End()
+     oCliRec:aDocs:={} 
+     oCliRec:oFolder:aEnable[2]:=oCliRec:lDocs
+     oCliRec:oFolder:ForWhen()
+     RETURN .F.
+  ENDIF
+
+  oCliRec:lDocs:=(oTable:RecCount()>0) // No Edita Documentos
+  oCliRec:oFolder:aEnable[2]:=oCliRec:lDocs
+
+  oTable:Replace("DOC_FECHA" ,CTOD(""))
+  oTable:Replace("DOC_PAGO"  ,.F.     ) // Indica si Pagó
+  oTable:Replace("DOC_MTOORG",0       ) // Monto Original
+  oTable:Replace("DOC_MTOPAG",0       ) // Monto Pagado
+  oTable:Replace("DOC_MROREV",0       ) // Monto Revaluado
+
+  oTable:Gotop()
+  oCliRec:aDocs:={}
+
+  WHILE !oTable:Eof() 
+
+     // Buscamos Datos Complementarios
+     nValCam:=0
+     oTable:Replace("DOC_MTOORG",oTable:DOC_NETO)
+     oTable:Replace("DOC_MONNAC",oTable:DOC_NETO)
+
+     oTable:Replace("DOC_FECHA",SQLGET("DPDOCCLI","DOC_FECHA,DOC_VALCAM,DOC_CODMON,DOC_DI","DOC_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+                                                              "DOC_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+                                                              "DOC_CODIGO"+GetWhere("=",oTable:DOC_CODIGO)+" AND "+;
+                                                              "DOC_NUMERO"+GetWhere("=",oTable:DOC_NUMERO)+" AND DOC_TIPTRA='D'"))
+     oTable:Replace("DOC_VALCAM",oDp:aRow[2])
+     oTable:Replace("DOC_CODMON",oDp:aRow[3])
+     oTable:Replace("DOC_ENOTRA",DIV(oTable:DOC_NETO,oTable:DOC_VALCAM))
+     oTable:Replace("DOC_CAMBIO",nValCam)
+     oTable:Replace("DOC_DI",oDp:aRow[4])
+
+   //  IF oCliRec:lRev .AND. oCliRec:nOption<>0
+
+    //    nValCam:=EJECUTAR("DPGETVALCAM",oTable:DOC_CODMON,oCliRec:REC_FECHA,cHora)
+       // oTable:DOC_NETO:=(DIV(oTable:DOC_NETO,oTable:DOC_VALCAM))*nValCam
+
+      // IF oCliRec:nOption=0
+       // oTable:DOC_NETO:=oTable:DOC_NETO/oCliRec:REC_VALCAM
+      // ELSE
+     //   oTable:DOC_NETO:=oTable:DOC_NETO*oCliRec:REC_VALCAM
+        oTable:DOC_NETO:=oTable:DOC_NETO
+
+      // ENDIF
+
+        oTable:Replace("DOC_CAMBIO",nValCam)
+        oTable:Replace("DOC_MTOORG",oTable:DOC_NETO)
+
+   //  ENDIF
+
+     IF oCliRec:nOption<>0
+
+        nPagado:=MYSQLGET("DPDOCCLI","(DOC_NETO+DOC_OTROS)*DOC_CXC","DOC_CODSUC"+GetWhere("=",oTable:DOC_CODSUC)+" AND "+;
+                                                        "DOC_TIPDOC"+GetWhere("=",oTable:DOC_TIPDOC)+" AND "+;
+                                                        "DOC_CODIGO"+GetWhere("=",oTable:DOC_CODIGO)+" AND "+;
+                                                        "DOC_NUMERO"+GetWhere("=",oTable:DOC_NUMERO)+" AND DOC_TIPTRA='P' AND "+;
+                                                        "DOC_RECNUM"+GetWhere("=",oCliRec:REC_NUMERO))
+        nPagado:=nPagado*-1
+     ELSE
+       nPagado:=oTable:DOC_NETO*-1
+
+     IF .F. // oTable:DOC_CXC=-1 .AND. oTable:DOC_NETO<0 // Documentos Creados en Recibos
+       oTable:Replace("DOC_CXC" , 1 )
+     ENDIF
+
+     ENDIF
+
+     IF Empty(nPagado)
+        nPagado:=oTable:DOC_NETO
+     ELSE
+        oTable:Replace("DOC_PAGO"  ,.T.     ) // Indica si Pagó
+     ENDIF
+
+     IF  oCliRec:nOption<>0 .OR. (oCliRec:nOption=0 .AND. oTable:DOC_PAGO)
+       IF oCliRec:nOption=0
+
+         AADD(oCliRec:aDocs,{oTable:TDC_DESCRI,oTable:DOC_NUMERO,oTable:DOC_FECHA,;
+                             IIF(oTable:DOC_CXC=-1 ,nPagado*+1,0),;
+                             IIF(oTable:DOC_CXC=+1 ,nPagado*-1,0)})
+
+       ELSE
+
+         AADD(oCliRec:aDocs,{oTable:TDC_DESCRI,oTable:DOC_NUMERO,oTable:DOC_FECHA,;
+                             IIF(oTable:DOC_CXC= 1 ,nPagado   ,0),;
+                             IIF(oTable:DOC_CXC=-1 ,nPagado*-1,0)})
+       ENDIF
+
+     ENDIF
+
+     oTable:DbSkip()
+
+  ENDDO
+
+//  oTable:Browse()
+
+  oCliRec:aDocOrg:=ACLONE(oTable:aDataFill)
+
+  IF !lSave
+
+     FOR I=1 TO LEN(aCopy)
+       nAt:=ASCAN(oCliRec:aDocs,{|a,n|aCopy[I,1]=a[1] .AND. aCopy[I,2]=a[2]})
+
+       IF nAt>0 
+
+         IF aCopyOrg[I,9]
+       // se quito los dos 2.0
+       //    oCliRec:aDocs[nAt,4]  :=IIF(aCopy[I,4]<>0 , MIN( aCopy[I,4] , oCliRec:aDocs[nAt,4] ) , oCliRec:aDocs[nAt,4] )
+       //    oCliRec:aDocs[nAt,5]  :=IIF(aCopy[I,5]<>0 , MIN( aCopy[I,5] , oCliRec:aDocs[nAt,5] ) , oCliRec:aDocs[nAt,5] )
+           oCliRec:aDocOrg[nAt,9]:=aCopyOrg[I,9]
+
+         ENDIF
+//       oCliRec:aDocOrg[nAt,9]:=aCopyOrg[I,9]
+       ENDIF
+     NEXT I
+
+  ENDIF
+
+  oCliRec:aDatView:=IIF(oCliRec:nOption=0,oCliRec:aDocs,{})
+
+// oCliRec:aDocOrg:=ACLONE(oTable:aDataFill)
+// ? LEN(oCliRec:aDocs[1])
+
+  oCliRec:oBrwD:aArrayData:=ACLONE(oCliRec:aDocs)
+
+  oCliRec:oBrwD:nArrayAt:=1
+  oCliRec:oBrwD:nRowSel :=1
+  oCliRec:oBrwD:GoTop(.T.)  
+
+  oTable:End()
+
+  oCliRec:PUTDEBCRE(NIL,0,4,.F.)
+ 
+RETURN .T.
+
+FUNCTION PUTDEBCRE(oCol,uValue,nCol,lSave)
+   LOCAL oBrw:=oCliRec:oBrwD,nDebe:=0,nHaber:=0,I
+
+
+   LOCAL cMonDoc:=SQLGET("DPDOCCLI","DOC_CODMON","DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                   "DOC_TIPDOC"+GetWhere("=",oCliRec:aDocOrg[oBrw:nArrayAt,5])+" AND "+;
+                                                   "DOC_NUMERO"+GetWhere("=",oCliRec:aDocOrg[oBrw:nArrayAt,6])+;
+                                                   " AND DOC_ACT=1 AND DOC_TIPTRA='D'")
+   LOCAL nValCa2:=SQLGET("DPDOCCLI",IIF(oDp:cMoneda=cMonDoc,"DOC_VALCA2","DOC_VALCAM"),"DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                   "DOC_TIPDOC"+GetWhere("=",oCliRec:aDocOrg[oBrw:nArrayAt,5])+" AND "+;
+                                                   "DOC_NUMERO"+GetWhere("=",oCliRec:aDocOrg[oBrw:nArrayAt,6])+;
+                                                   " AND DOC_ACT=1 AND DOC_TIPTRA='D'")
+
+    nValCa2:=IIF(nValCa2=0,1,nValCa2)
+
+    DEFAULT lSave:=.T.
+
+   IF lSave
+
+
+      oCliRec:oREC_VALCAM:VarPut(nValCa2,.T.)
+
+      oBrw:aCols[nCol]:oEditGet:End()
+      oBrw:aCols[nCol]:oEditGet:=NIL
+
+      IF uValue>ABS(oCliRec:aDocOrg[oBrw:nArrayAt,10])
+         MensajeErr("Pago no puede superar Saldo: "+;
+                    ALLTRIM(TRAN(oCliRec:aDocOrg[oBrw:nArrayAt,10],"99,999,999,999.99"))+"del Documento")
+         RETURN .F.
+      ENDIF
+
+      oCliRec:aDocOrg[oBrw:nArrayAt,9]:=.T.
+      oBrw:aArrayData[oBrw:nArrayAt,nCol]:=uValue
+      oBrw:lAutoDown:=.F.     // estaba .T. se cambio a .F. 2.0
+      oBrw:nColSel:=4
+
+
+
+      IF uValue=0 // Recupera su Valor
+        oCliRec:aDocOrg[oBrw:nArrayAt,9]:=.F.
+        oBrw:aArrayData[oBrw:nArrayAt,nCol]:= ABS(oCliRec:aDocOrg[oBrw:nArrayAt,10])
+      ELSE
+
+        EJECUTAR("DPRECIBOSCLIASO",oCliRec)
+
+      ENDIF
+
+
+   ENDIF
+
+   oCliRec:CALMONTO()
+
+   IF lSave
+      IF oBrw:nArrayAt<LEN(oBrw:aArrayData) 
+          oBrw:nColSel:=IIF(oBrw:aArrayData[oBrw:nArrayAt+1,5]=0,4,5)
+      ENDIF
+      oBrw:lAutoDown:=.T.
+
+   ENDIF
+
+RETURN .T.
+
+FUNCTION CALMONTO()
+   LOCAL oBrw:=oCliRec:oBrwD,nDebe:=0,nHaber:=0,I,nMonto:=0
+   LOCAL nArrayAt:=oBrw:nArrayAt  // ag 2.0
+   LOCAL nRowSel :=oBrw:nRowSel   // ag 2.0
+   LOCAL nForPagDi:=0,nTotDocDi:=0,nDiDoc:=0,nValCa2:=0,cMonDoc
+
+   //oCliRec:lDi:=.F.
+
+// LOCAL aTotal:={},aData:=ACLONE(oBrw:aArrayData)
+
+   AEVAL( oCliRec:oBrw:aArrayData,{|a,n|nMonto:=nMonto+CTOO(a[6+1],"N")})
+ 
+  //Calcula DI de las Formas de Pago
+   AEVAL( oCliRec:oBrw:aArrayData,{|a,n|nForPagDi:=nForPagDi+IIF(oCliRec:REC_VALCAM<=1,0,ROUND(DIV(CTOO(a[7],"N"),oCliRec:REC_VALCAM),2))})
+
+
+  // ViewArray(oCliRec:oBrw:aArrayData)
+  // ViewArray(oCliRec:aDocOrg)
+
+
+   oCliRec:oBrw:aCols[6+1]:cFooter:=TRAN(nMonto,"99,999,999,999.99")
+   oCliRec:REC_PAGOS:=nMonto
+   
+   IF !Empty(oCliRec:aDocOrg)
+     FOR I=1 TO LEN(oBrw:aArrayData)
+       IF oCliRec:aDocOrg[I,9]
+          nDebe :=nDebe +oBrw:aArrayData[I,4]
+          nHaber:=nHaber+oBrw:aArrayData[I,5]
+         //Calcula DI de los Documentos
+          cMonDoc:=SQLGET("DPDOCCLI","DOC_CODMON","DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                   "DOC_TIPDOC"+GetWhere("=",oCliRec:aDocOrg[I,5])+" AND "+;
+                                                   "DOC_NUMERO"+GetWhere("=",oCliRec:aDocOrg[I,6])+;
+                                                   " AND DOC_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO)+ " AND DOC_TIPTRA='D' AND DOC_ACT=1")
+
+
+          nValCa2:=SQLGET("DPDOCCLI",IIF(oDp:cMoneda=cMonDoc,"DOC_VALCA2","DOC_VALCAM"),"DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                   "DOC_TIPDOC"+GetWhere("=",oCliRec:aDocOrg[I,5])+" AND "+;
+                                                   "DOC_NUMERO"+GetWhere("=",oCliRec:aDocOrg[I,6])+;
+                                                   " AND DOC_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO)+ " AND DOC_TIPTRA='D' AND DOC_ACT=1")
+
+           // nValCa2:=SQLGET("DPDOCCLI","DOC_VALCA2","DOC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                   "DOC_TIPDOC"+GetWhere("=",oCliRec:aDocOrg[I,5])+" AND "+;
+                                                   "DOC_NUMERO"+GetWhere("=",oCliRec:aDocOrg[I,6])+;
+                                                   " AND DOC_CODIGO"+GetWhere("=",oCliRec:REC_CODIGO)+ " AND DOC_TIPTRA='D' AND DOC_ACT=1")
+
+
+            nValCa2:=IIF(nValCa2=0,1,nValCa2)
+           // ?CLPCOPY(ODP:CSQL)
+           //?oBrw:aArrayData[I,4]-oBrw:aArrayData[I,5],oProPagX:aDocOrg[I,5],oProPagX:aDocOrg[I,6],nValCa2
+          nDiDoc:=ROUND(DIV((oBrw:aArrayData[I,4]-oBrw:aArrayData[I,5]),nValCa2),2)
+
+          IF oCliRec:nOption=1
+           //MensajeErr("Monto en Divisas: "+TRAN(nDiDoc,"999,999,999.99"))
+          ENDIF
+          //oCliRec:lDi:=IIF(oCliRec:lDi,.T.,IIF(nDiDoc<>0,.T.,.F.))
+          nTotDocDi:=nTotDocDi+nDiDoc
+       ENDIF
+     NEXT I
+   ENDIF
+
+  oCliRec:nForPagDi:=nForPagDi
+  oCliRec:nTotDocDi:=nTotDocDi
+
+   oCliRec:nDifDi:=ROUND(nForPagDi-nTotDocDi,2)
+
+// oCliRec:REC_PAGOS:=0
+// AEVAL(oCliRec:oBrwD , { |a,n| oCliRec:REC_PAGOS:=oCliRec:REC_PAGOS+a[6] })
+
+   oBrw:aCols[4]:cFooter:=TRAN(nDebe ,"999,999,999,999.99")
+   oBrw:aCols[5]:cFooter:=TRAN(nHaber,"999,999,999,999.99")
+
+   oCliRec:REC_MONTO :=(nDebe-nHaber)*IIF(LEFT(oCliRec:REC_TIPPAG,1)="D",-1,1)
+   oCliRec:REC_DEBE  :=nDebe  // Débito
+   oCliRec:REC_HABER :=nHaber // Haber
+
+   // JN 04/03/2011
+  // SET DECI TO 2
+
+//   oCliRec:REC_PAGOS:=INT(oCliRec:REC_PAGOS*100)/100 
+//   oCliRec:REC_MONTO:=INT(oCliRec:REC_MONTO*100)/100
+
+
+   oCliRec:REC_PAGOS:=VAL(TRAN(oCliRec:REC_PAGOS,"99999999999.99"))
+   oCliRec:REC_MONTO:=VAL(TRAN(oCliRec:REC_MONTO,"99999999999.99"))
+
+   oCliRec:REC_MTODIF:=oCliRec:REC_PAGOS-oCliRec:REC_MONTO
+
+/*
+//Inactivado ya que no guardaba los anticipos en DPDOCCLI por ser REC_MTODIF=0 TJ 05112017
+
+   // JN 19/09/2016 Anticipos no Tienen Diferencias
+   IF LEFT(oCliRec:REC_TIPPAG,1)="A"
+      oCliRec:REC_MTODIF:=0
+   ENDIF
+*/
+   oCliRec:oREC_MONTO:Refresh(.T.)
+   oCliRec:oREC_MTODIF:Refresh(.T.)
+   oCliRec:oREC_PAGOS:Refresh(.T.)
+   oCliRec:oTotDocDi:Refresh(.T.)
+   oCliRec:oForPagDi:Refresh(.T.)
+
+   oBrw:Refresh(.F.)
+   oBrw:nArrayAt:=nArrayAt
+
+RETURN .T.
+
+/*
+// Seleccionar Documento
+*/
+FUNCTION DblClick(nKey)
+  LOCAL oBrw:=oCliRec:oBrwD,nCol:=4
+
+  DEFAULT nKey:=0
+
+  IF oCliRec:nOption=0
+      CursorWait()
+
+      EJECUTAR("DPDOCCLIFAVCON",NIL,oCliRec:REC_CODSUC,;
+                                    oCliRec:aDocOrg[oBrw:nArrayAt,5],;
+                                    oCliRec:aDocOrg[oBrw:nArrayAt,6],;
+                                    oCliRec:REC_CODIGO)
+
+     RETURN NIL
+  ENDIF
+
+
+  // antes IF oCliRec:aDocOrg[oBrw:nArrayAt,3]="C"
+  IF oCliRec:aDocOrg[oBrw:nArrayAt,3]=-1
+     nCol:=5
+  ENDIF
+
+  oBrw:nColSel:=nCol
+  oBrw:DrawLine(.T.)
+  oBrw:aCols[nCol]:nEditType:=1
+
+  IF nKey<>13
+     oBrw:KeyBoard(13)
+  ENDIF
+ 
+
+RETURN .T.
+
+FUNCTION BrwChange()
+
+  oCliRec:oBrwD:aCols[4]:nEditType:=0
+  oCliRec:oBrwD:aCols[5]:nEditType:=0
+
+RETURN .T.
+
+FUNCTION RunKeyD(nKey)
+   LOCAL nCol:=oCliRec:oBrwD:nColSel
+
+  IF ValType(oCliRec:oBrwD:aCols[nCol]:oEditGet)="O"
+     RETURN .T.
+  ENDIF
+
+  IF nKey=13
+
+      oCliRec:DblClick(nKey)
+
+   ELSE
+
+      IF ValType(oCliRec:oBrwD:aCols[nCol]:oEditGet)!="O"
+        oCliRec:oBrwD:aCols[nCol]:nEditType:=1
+        oCliRec:oBrwD:aCols[nCol]:nKey     :=nKey // Presinó la Misma tecla
+        oCliRec:oBrwD:aCols[nCol]:Edit()
+      ENDIF
+
+   ENDIF
+
+RETURN .T.
+
+FUNCTION PREGRABAR()
+  LOCAL nMonto:=oCliRec:REC_PAGOS-oCliRec:REC_MONTO,lOk:=.F.,I,aControls:={}
+  LOCAL uValue
+  LOCAL nMtoDiDiBs:=0
+ // AADD(aControls,oCliRec:oREC_CODIGO)
+ // AADD(aControls,oCliRec:oREC_FECHA )
+  AADD(aControls,oCliRec:oREC_NUMERO)
+  AADD(aControls,oCliRec:oREC_CODCOB)
+
+  FOR I=1 TO LEN(aControls)
+
+
+     uValue:=aControls[I]:VarGet()
+
+     IF Empty(uValue)
+       aControls[I]:MsgErr(aControls[I]:cToolTip,"Valor no puede estar Vacio") // Muestra el Mensaje Tooltips
+       RETURN .F.
+     ENDIF
+
+     IF EVAL(aControls[I]:bWhen) .AND. !Eval(aControls[I]:bValid)
+        aControls[I]:MsgErr(aControls[I]:cToolTip)
+        RETURN .F.
+     ENDIF
+
+  NEXT I
+
+
+*****AG20080403
+  // ag cs
+  IF oCliRec:nOption=1 .AND. !oCliRec:lRecNumero
+    oCliRec:RECAUTONUM()
+  ENDIF
+
+     IF oCliRec:nOption=1 
+
+     IF SQLGET("DPRECIBOSCLI2","REC_NUMERO","REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                           "REC_NUMERO"+GetWhere("=",oCliRec:REC_NUMERO))=oCliRec:REC_NUMERO  
+
+       MensajeErr("Recibo "+oCliRec:REC_NUMERO+" ya Existe") 
+
+       IF !oCliRec:lRecNumero 
+         oCliRec:RECAUTONUM()
+       ELSE
+         DpFocus(oCliRec:oREC_NUMERO)
+       ENDIF
+     
+     RETURN .F.
+
+    ENDIF
+
+  ENDIF
+
+  IF (oCliRec:REC_DEBE=0 .AND. oCliRec:REC_HABER=0) .AND. LEFT(oCliRec:REC_TIPPAG,1)$"PD"
+
+     oCliRec:MensajeErr("No existe Documentos Seleccionados")
+     oCliRec:oFolder:SetOption( 2 )
+     DpFocus(oCliRec:oBrwD)
+
+     RETURN .F.
+
+  ENDIF
+
+  IF oCliRec:REC_PAGOS=0 .AND. LEFT(oCliRec:REC_TIPPAG,1)$"DP"
+
+     // Documentos Posteados // JN 16/03/2006
+     lOk:=.T.
+     IF LEFT(oCliRec:REC_TIPPAG,1)="P" .AND. oCliRec:REC_DEBE=oCliRec:REC_HABER
+       lok:=.T.
+     ENDIF
+
+     IF !lOk
+
+       oCliRec:MensajeErr("Debe Indicar la Forma de Pago")
+       oCliRec:oFolder:SetOption( 1 )
+       DpFocus(oCliRec:oBrw)
+
+       RETURN .F.
+
+      ENDIF
+
+  ENDIF
+
+  IF nMonto<>0 .AND. LEFT(oCliRec:REC_TIPPAG,1)$"D"
+
+     oCliRec:MensajeErr("Devolución Requiere Monto Menor que Cero")
+     oCliRec:oFolder:SetOption( 2 )
+     DpFocus(oCliRec:oBrwD)
+
+     RETURN .F.
+
+  ENDIF
+
+  // Validar Anticipos sin Datos en Caja
+  IF LEFT(oCliRec:REC_TIPPAG,1)$"A" .AND. oCliRec:REC_PAGOS=0 
+     MensajeErr("Es necesario el Monto del Anticipo")
+     RETURN .F.
+  ENDIF
+
+  oCliRec:CALMONTO()
+  oCliRec:nMtoDif:=oCliRec:REC_MTODIF
+
+  oCliRec:nMontoRev:=0
+
+/*
+   IF oCliRec:lRev
+     oCliRec:nMontoRev:=EJECUTAR("DPRECIBOSCLIREV") // Revaloriza
+  ENDIF
+*/
+
+ // Si el Documento Afecta Divisas y la Forma de Pago Tambien y Hay Diferencias en Divisas
+ //IF  oCliRec:lAfeDiDoc .AND. oCliRec:lDi .AND. oCliRec:nDifDi>0 .AND. LEFT(oCliRec:REC_TIPPAG,1)$"A"
+
+IF  oCliRec:nDifDi<>0 .AND. oCliRec:REC_CODMON<>oDp:cMoneda .AND. LEFT(oCliRec:REC_TIPPAG,1)<>"A"
+  MensajeErr("Diferencia en Divisas "+TRAN(oCliRec:nDifDi,"999,999,999.99"))
+ //nMtoDiDiBs:=ROUND(oCliRec:nDifDi*-1*oCliRec:REC_VALCAM,2)
+ // ?"dIFERE DI BS",nMtoDiDiBs,"DIFE BS ANTES ",oCliRec:nMtoDif,"VALCAM",oCliRec:REC_VALCAM
+ // IF oCliRec:nMtoDif<>0 .AND. !EJECUTAR("MINRECCLIDIFCAM",oCliRec,nMtoDiDiBs,oCliRec:nDifDi)
+ //   RETURN .F.
+ // ENDIF
+ENDIF
+
+/*
+ ?oCliRec:nDifDi
+IF  oCliRec:nDifDi=0 .AND. nMonto<>0
+
+  //?NMONTO 
+  // ?oCliRec:nDifDi
+    IF nMonto<>0 .AND. !EJECUTAR("DPRECCLIDIF",oCliRec,nMonto)
+    RETURN .F.
+  ENDIF
+
+ ENDIF
+
+*/
+
+// ?"DIFE BS ANTES ",oCliRec:nMtoDif,nMtoDiDiBs
+// oCliRec:nMtoDif:=IIF(nMtoDiDiBs>oCliRec:nMtoDif,nMtoDiDiBs-oCliRec:nMtoDif,oCliRec:nMtoDif-nMtoDiDiBs)
+ oCliRec:nMtoDif:=nMtoDiDiBs+oCliRec:nMtoDif
+
+
+ oCliRec:REC_MTODIF:=oCliRec:nMtoDif
+
+
+
+ //IF  nMonto<>0 .AND. oCliRec:REC_CODMON<>oDp:cMoneda
+
+  IF oCliRec:nMtoDif<>0 .AND. !EJECUTAR("MINRECCLIDIFCAM",oCliRec,oCliRec:nMtoDif,IIF(LEFT(oCliRec:REC_TIPPAG,1)="A",oCliRec:nDifDi,0))
+    RETURN .F.
+  ENDIF
+ 
+    
+
+  oCliRec:REC_CODCAJ:=oCliRec:aTipCaj[oCliRec:oREC_CODCAJ:nAt]
+
+  // Monto Igual a Anticipo
+  IF LEFT(oCliRec:REC_TIPPAG,1)="A"
+   oCliRec:REC_MONTO:=oCliRec:REC_PAGOS
+   oCliRec:REC_TIPDOC:="AOD"
+  ENDIF
+
+  IF oCliRec:nOption=1 .AND. !oCliRec:lRecNumero
+    oCliRec:RECAUTONUM()
+  ENDIF
+
+  IF oCliRec:nOption=1 
+
+     // Ciclo que buscar el Ultimo recibo de Ingreso
+     WHILE !Empty(SQLGET("DPRECIBOSCLI2","REC_NUMERO","REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC)+" AND "+;
+                                                     "REC_NUMERO"+GetWhere("=",oCliRec:REC_NUMERO)))
+        IF !oCliRec:lRecNumero 
+          oCliRec:RECAUTONUM()
+        ELSE
+          MensajeErr("Recibo "+oCliRec:REC_NUMERO+" ya Existe") 
+          DpFocus(oCliRec:oREC_NUMERO)
+          RETURN .F.
+        ENDIF
+     
+        SysRefresh(.T.)
+
+     ENDDO
+
+  ENDIF
+
+RETURN .T.
+
+FUNCTION POSTGRABAR()
+RETURN EJECUTAR("DPRECIBOSCLIPO2",oCliRec)
+
+// Grear RTI
+FUNCTION RTI()
+RETURN EJECUTAR("DPRECIBOSCLIRTI",oCliRec)
+
+FUNCTION ISLR()
+RETURN EJECUTAR("DPRECIBOSISLR",oCliRec)
+
+FUNCTION ImportDoc(cTipDoc,cNumero)
+  LOCAL nAt:=oCliRec:oBrwD:nArrayAt,nRow:=oCliRec:oBrwD:nRowSel
+
+  oCliRec:LOADDOC(.F.)
+
+  oCliRec:oBrwD:nArrayAt:=MIN(nAt,LEN(oCliRec:oBrwD:aArrayData))
+  oCliRec:oBrwD:nRowSel :=nRow
+
+  oCliRec:oBrwD:Refresh(.F.)
+
+RETURN .T.
+
+FUNCTION RECSETVALCAM()
+
+   oCliRec:REC_VALCAM:=EJECUTAR("DPGETVALCAM",Left(oCliRec:REC_CODMON,3),oCliRec:REC_FECHA,oCliRec:REC_HORA)
+
+   oCliRec:oREC_VALCAM:Refresh(.T.)
+
+  // oCliRec:LOADDOC(.F.)
+
+RETURN .T.
+
+FUNCTION DOCUMENTOS()
+
+    EJECUTAR("DPDOCCXC",NIL,oCliRec:REC_CODIGO)
+    oDocCxC:oPagos:=oCliRec
+
+RETURN .T.
+
+FUNCTION VIEWCAJA()
+
+  EJECUTAR("DPCAJACON",oCliRec:aCajas[oCliRec:oREC_CODCAJ:nAt,1],oCliRec:aCajas[oCliRec:oREC_CODCAJ:nAt,2])
+
+RETURN .T.
+
+FUNCTION PRINTER()
+
+  EJECUTAR("DPRECIBOCLIMN2",oCliRec:REC_CODSUC,oCliRec:REC_NUMERO,oCliRec)
+
+RETURN .T.
+
+/*
+// Actualiza estatis Apagado
+*/
+
+FUNCTION PAGADO(cCodSuc,cTipDoc,cNumDoc,cCodigo)
+   LOCAL nSaldo:=0,cWhere
+
+   cWhere:="DOC_CODSUC"+GetWhere("=",cCodSuc           )+" AND "+;
+           "DOC_NUMERO"+GetWhere("=",cNumDoc           )+" AND "+;
+           "DOC_TIPDOC"+GetWhere("=",cTipDoc           )+" AND "+;
+           "DOC_CODIGO"+GetWhere("=",cCodigo           )+" AND "+;
+           "DOC_ACT <> 0"
+
+   nSaldo:=MYSQLGET("DPDOCCLI","SUM(DOC_NETO*DOC_CXC)",cWhere)
+  
+   nSaldo:=CTOO(nSaldo,"N")
+  
+   SQLUPDATE("DPDOCCLI","DOC_ESTADO",IIF(nSaldo=0,"PA","AC"),cWhere+ " AND DOC_TIPTRA='D'")
+   SQLUPDATE("DPDOCCLI","DOC_FCHREC",IIF(nSaldo=0,oDp:dFecha,"0000-00-00"),cWhere+ " AND DOC_TIPTRA='D'") 
+   // SQLUPDATE("DPDOCCLI","DOC_RECNUM",oCliRec:REC_NUMERO     ,cWhere+ " AND DOC_TIPTRA='D'")
+   SQLUPDATE("DPDOCCLI","DOC_RECNUM",oCliRec:REC_NUMERO     ,cWhere+ " AND (DOC_TIPTRA='D' AND DOC_TIPDOC<>'AOD')")
+
+RETURN .T.
+
+FUNCTION RECAUTONUM()
+
+    // ag cs
+    oCliRec:REC_NUMERO :="D"+STRZERO(MAX(VAL(SQLINCREMENTAL("DPRECIBOSCLI2","MID(REC_NUMERO,2,8)","REC_CODSUC"+GetWhere("=",oCliRec:REC_CODSUC))),1),7)
+    //?clpcopy(odp:csql)
+    //?VALTYPE(oCliRec:REC_NUMERO) 
+   //?oCliRec:cNumero
+    //oCliRec:REC_NUMERO :=MAXCHAR(oCliRec:REC_NUMERO,oCliRec:cNumero)
+    oCliRec:oREC_NUMERO:VarPut(oCliRec:REC_NUMERO , .T.)
+
+RETURN .T.
+
+/*
+// Consulta del Documento
+*/
+FUNCTION VIEW()
+
+   //EJECUTAR("DPRECIBOSCLICON",oCliRec:REC_CODSUC,oCliRec:REC_NUMERO,oCliRec)
+
+RETURN .T.
+
+FUNCTION SETMONTO()
+   LOCAL oBrw:=oCliRec:oBrw  // ag 2.0
+
+   IF Empty(oBrw:aArrayData[oBrw:nArrayAt,6+1])
+      oBrw:aArrayData[oBrw:nArrayAt,6+1]:=MAX(oCliRec:REC_MONTO-oCliRec:REC_PAGOS,0)
+   ENDIF
+
+RETURN .T.
+
+FUNCTION CANCEL()
+
+   oCliRec:oBrw:CancelEdit()
+
+   IF ValType(oCliRec:oBrw:aCols[1]:oEditLbx)="O"
+       oCliRec:oBrw:aCols[1]:oEditLbx:End()
+   ENDIF
+
+   IF ValType(oCliRec:oBrw:aCols[4]:oEditLbx)="O"   // ag 2.0 3lineas
+       oCliRec:oBrw:aCols[4]:oEditLbx:End()
+   ENDIF
+
+   oCliRec:oBrw:nColSel:=1
+   oCliRec:oBrwD:CancelEdit()
+   oCliRec:oBrwD:nColSel:=1
+
+RETURN .T.
+
+FUNCTION LBXCLIENTES(lTodos)
+   LOCAL oDpLbx
+
+   DEFAULT lTodos:=.F.
+
+  /*
+   IF LEFT(oCliRec:REC_TIPPAG,1)="P" .AND. !lTodos
+     oDpLbx:=DpLbx("DPCLIENTESCXC")
+   ELSE
+*/
+     oDpLbx:=DpLbx("DPCLIENTES",NIL,"CLI_SITUAC='A' OR CLI_SITUAC='C'")
+ //  ENDIF
+
+   oDpLbx:GetValue("CLI_CODIGO",oCliRec:oREC_CODIGO)
+
+RETURN .T.
+
+
+FUNCTION PUTMARCA(oCol,uValue)
+    LOCAL nAt,oCol,aBancos:={},oBrw:=oCliRec:oBrw,cTipDoc
+
+    oCliRec:aMarcas:={}
+
+    nAt:=ASCAN(oDp:aFormas,{|a,n|a[1]==uValue})
+    oCliRec:lCaja  :=oDp:aFormas[nAt,3] // Indicador de Caja
+    oCliRec:lDirBco:=oDp:aFormas[nAt,4] // Directorio Bancario
+
+//  oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2]:=uValue
+
+    cTipDoc:=oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,1]
+
+    nAt    :=ASCAN(oDp:aFormas,{|a,n|a[1]==cTipDoc})
+    cTipDoc:=oDp:aFormas[nAt,6]
+
+    oCol:=oCliRec:oBrw:aCols[2]
+
+    IF oCliRec:lCaja // Debe Buscar Directorio Bancario
+
+
+       oCliRec:aMarcas:=ATABLE("SELECT IXM_MARCA FROM DPCAJAINSTXMARCA WHERE IXM_CODINS"+GetWhere("=",cTipDoc)+;
+                               " AND IXM_MARCA<>'<TODAS>' ")
+
+       IF !Empty(oCliRec:aMarcas) .OR. ASCAN(oCliRec:aMarcas,oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2])=0
+
+         oCol:aEditListTxt   :=oCliRec:aMarcas
+         oCol:aEditListBound :=oCliRec:aMarcas
+         oCol:nEditType      :=IIF( LEN(oCliRec:aMarcas)>1 , EDIT_LISTBOX , 0)
+//       oCliRec:oBrw:nColSel:=IIF( LEN(oCliRec:aMarcas)>1 , 2 , 0 )
+  
+         IF Empty(oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2]).OR. ASCAN(oCliRec:aMarcas,oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2])=0;
+            .OR. LEN(oCliRec:aMarcas)=1
+           oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2]:=oCliRec:aMarcas[1]
+
+           oCol:nEditType      :=0
+           oCliRec:oBrw:GoRight()
+           oCliRec:oBrw:GoRight()
+           oCliRec:oBrw:nColSel:=3
+
+// ? oCliRec:oBrw:nColSel
+           oCliRec:oBrw:DrawLine(.T.)
+
+         ENDIF
+
+       ELSE
+
+         oCol:nEditType      :=0
+         oCliRec:oBrw:aArrayData[oCliRec:oBrw:nArrayAt,2]:=""
+         oCliRec:oBrw:nColSel:=3
+
+         oCliRec:DrawLine(.T.)
+
+       ENDIF
+
+    ENDIF
+
+RETURN .T.
+
+/*
+// AG20080407
+*/
+FUNCTION LIST()
+  LOCAL cWhere:=""  
+
+  cWhere:="REC_CODSUC"+GetWhere("=",oDp:cSucursal)
+ 
+  IF EJECUTAR("CSRANGOFCH","DPRECIBOSCLI2",cWhere)
+
+    cWhere:="REC_CODSUC"+GetWhere("=",oDp:cSucursal)+;
+            " AND (REC_FECHA"+GetWhere(">=",oDp:dFchIniDoc)+;
+            " AND REC_FECHA"+GetWhere("<=",oDp:dFchFinDoc)+")"
+ 
+    oCliRec:ListBrw(cWhere,"DPRECIBOSCLI2.BRW")
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Listar Proveedores
+*/
+FUNCTION LISTCLIENTE()
+   LOCAL lResp,uValue:=SPACE(20),cWhere:="CLI_SITUAC"+GetWhere("=","A")
+
+   lResp:=DPBRWPAG("DPCLIENTES.BRW",NIL,@uValue,"CLI_CODIGO",.T.,cWhere)
+
+   IF !Empty(uValue)
+      oCliRec:oREC_CODIGO:VarPut(uValue,.T.)
+      EVAL(oCliRec:oREC_CODIGO:bValid)
+   ENDIF
+
+RETURN NIL
+
+// EOF

@@ -1,0 +1,1260 @@
+// Programa   : DPDOCISLR
+// Fecha/Hora : 18/02/2008 14:32:08
+// Propósito  : Crear Registro de Retencion de ISLR a Tercero.
+// Aplicación : 04 Tesoreria
+// Tipo       : STD00000
+// Update     : 06/10/2014 (JN Actualiza y reversa asientos Contables No Actualizados)
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(cCodSuc,cTipDoc,cCodTer,cNumDoc,cNomDoc,cDocOrg,nNeto,lAuto,lEdit,lPagado)
+  LOCAL I,aData:={},oFont,oGrid,oCol,cSql,oFontB,cTitle,cScope,cActual:="N",lHayConRet:=.F.
+  LOCAL cWhere,oTable,cPersona,cReside,cNumRet,oRet,nPagado,cEstado:="",cMemo
+  LOCAL lVentas:=.T.,cTabTer:="DPDOCCLI",cTabISLR:="DPDOCCLIISLR",cIniCamp:="RXC"
+  LOCAL cVarTer1:="{oDp:DPDOCCLIISLR}",cVarTer2:="{oDp:xDPCLIENTES}"
+  LOCAL nEqi,cres,cper,cTipPer
+  LOCAL dFchReg:=DPFECHA(),dFchDec:=dFchReg // JN 15/03/2017
+
+  DEFAULT cCodSuc:=STRZERO(1,6),;
+          cTipDoc:="FAC",;
+          cCodTer:=STRZERO(1,10),;
+          cNumDoc:=STRZERO(1,10),;
+          cNomDoc:=" Factura ",;
+          cDocOrg:="C",;
+          nNeto  :=0, lAuto:=.F.,lEdit:=.T.,lPagado:=.T.
+
+  IF cDocOrg="C"
+     lVentas :=.F.                  // Valor para hacer condiciones por el origen del documento
+     cTabTer :="DPDOCPRO"
+     cTabISLR:="DPDOCPROISLR"
+     cIniCamp:="RXP"
+     cVarTer1:="{oDp:DPDOCPROISLR}"
+     cVarTer2:="{oDp:xDPPROVEEDOR}"
+  ENDIF
+
+
+  cTitle:=GETFROMVAR(cVarTer1)
+
+  cWhere:="DOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+          "DOC_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+          "DOC_CODIGO"+GetWhere("=",cCodTer)+" AND "+;
+          "DOC_NUMERO"+GetWhere("=",cNumDoc)+" AND "+;
+          "DOC_TIPTRA='D'"
+
+  cEstado:=SQLGET(cTabTer,"DOC_ESTADO","DOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                       "DOC_TIPDOC"+GetWhere("=",cTipDoc)+" AND "+;
+                                       "DOC_CODIGO"+GetWhere("=",cCodTer)+" AND "+;
+                                       "DOC_NUMERO"+GetWhere("=",cNumDoc)+" AND DOC_TIPTRA='D'")
+
+  IF cTipDoc="RTI" .OR. cTipDoc="RET" 
+     MensajeErr("Al Documento "+cTipDoc+" no se aplica Retención")
+     RETURN .F.
+  ENDIF
+
+/*
+  IF cEstado="NU"
+     MensajeErr("Documento Anulado")
+     RETURN .F.
+  ENDIF
+
+  IF cEstado="PA"
+     MensajeErr("Documento "+cTipDoc+"-"+cCodTer+"-"+cNumDoc+" Está Pagado")
+     RETURN .F.
+  ENDIF
+*/
+
+  oDp:nBase:=0
+  oDp:nIVA :=0
+
+  EJECUTAR("DPDOCCLIIMP",cCodSuc,cTipDoc,cCodTer,cNumDoc,.F.,NIL,NIL,NIL,LEFT(cDocOrg,1),cDocOrg)
+
+  //
+  // Determina, Si las cuentas de Egreso, vinculadas con el plan de Cuentas Codigos Retenciones
+  //
+  IF !lVentas
+
+     lHayConRet:=COUNT("DPCTAEGRESO","INNER JOIN DPDOCPROCTA ON CCD_CTAEGR=CEG_CODIGO "+;
+                                     "INNER JOIN DPCTA       ON CEG_CUENTA=CTA_CODIGO "+;
+                                     "WHERE CCD_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                           "CCD_CODIGO"+GetWhere("=",cCodTer)+" AND "+;
+                                           "CCD_NUMERO"+GetWhere("=",cNumDoc)+" AND "+;
+                                           "CCD_TIPDOC"+GetWhere("=",cTipDoc)+" AND CTA_CODCON"+GetWhere("<>",""))>0
+  ENDIF
+
+  // Debe buscar la retención
+
+
+  IF !lVentas .AND. !lHayConRet .AND. lAuto
+
+     MensajeErr("No hay Conceptos de Retención en las Cuentas Contables Asociadas con Este Documento"+CRLF+;
+                "Asocie en las Cuentas Contables, los Conceptos de Retención",;
+                "No será Posible hacer el Cálculo en Forma Automática")
+
+     lAuto:=.F.
+
+     RETURN .T.
+
+  ENDIF
+
+  IF !lVentas .AND. lHayConRet .AND. lAuto
+
+     SQLDELETE(cTabISLR," WHERE "+cIniCamp+"_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                  cIniCamp+"_TIPDOC "+GetWhere("=",cTipDoc)+" AND "+;
+                                  IIF(!lVentas,cIniCamp+"_CODIGO"+GetWhere("=",cCodTer)+" AND ","")+;
+                                  cIniCamp+"_NUMDOC"+GetWhere("=",cNumDoc))
+
+  ENDIF
+
+  oRet:=OpenTable("SELECT * FROM "+cTabISLR+" WHERE "+cIniCamp+"_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                            cIniCamp+"_TIPDOC "+GetWhere("=",cTipDoc)+" AND "+;
+                                            IIF(!lVentas,cIniCamp+"_CODIGO"+GetWhere("=",cCodTer)+" AND ","")+;
+                                            cIniCamp+"_NUMDOC"+GetWhere("=",cNumDoc)+" LIMIT 1",.T.)
+
+//oRet:Browse()
+  oRet:End()
+
+
+  IF lVentas
+
+     cNumRet:=ALLTRIM(oRet:RXC_DOCNUM)
+
+  ELSE
+
+     cNumRet:=oRet:RXP_DOCNUM
+
+     IF lHayConRet .AND. lAuto
+       SQLDELETE(cTabISLR,oRet:cWhere) // Borra todas las Retenciones
+     ENDIF
+
+  ENDIF
+
+  IF cEstado="NU" .AND. Empty(cNumRet)
+     MensajeErr("Documento Anulado")
+     RETURN .F.
+  ENDIF
+
+  IF cEstado="PA" .AND. Empty(cNumRet) .AND. lPagado
+     MensajeErr("Documento "+cTipDoc+"-"+cCodTer+"-"+cNumDoc+" Está Pagado")
+     RETURN .F.
+  ENDIF
+
+  cMemo:="Documento :"+cTipDoc+" "+cNumRet+CRLF+""
+
+  IF !Empty(cNumRet)
+
+      IF lVentas
+
+         nPagado:=MYSQLGET(cTabTer,"SUM(DOC_NETO)","DOC_CODSUC"+GetWhere("=",cCodSuc)+" AND "+;
+                                                   "DOC_TIPDOC"+GetWhere("=","RET"  )+" AND "+;
+                                                   "DOC_NUMERO"+GetWhere("=",cNumRet)+" AND "+;
+                                                   "DOC_TIPTRA='P' AND DOC_ACT=1")
+      ENDIF
+
+      // nOption:=3
+      cTitle :=cTitle+" ["+ALLTRIM(cNumRet)+"]"
+
+  ENDIF
+
+  IF cEstado="NU" .AND. !Empty(cNumRet)
+     cTitle:=cTitle + "[ Documento Origen Anulado]"
+     lEdit:=.F.
+  ENDIF
+
+  IF cEstado="PA" .AND. !Empty(cNumRet)
+     cTitle:=cTitle + "[ Documento Origen Pagado]"
+     lEdit:=.F.
+  ENDIF
+
+  // EJECUTAR("DPDOCCLIIMP",cCodSuc,cTipDoc,cCodTer,cNumDoc,.F.,NIL,NIL,NIL,"C")
+
+  // Font Para el Browse
+  DEFINE FONT oFontB NAME "Times New Roman"   SIZE 0, -12 BOLD
+  DEFINE FONT oFont  NAME "Times New Roman"   SIZE 0, -12
+
+  IF lVentas
+     oTable:=OpenTable("SELECT CLI_NOMBRE,CLI_TIPPER,CLI_RESIDE FROM DPCLIENTES WHERE CLI_CODIGO"+GetWhere("=",cCodTer),.t.)
+     cPersona:=SAYOPTIONS("DPCLIENTES","CLI_TIPPER",oTable:CLI_TIPPER)
+     cReside :=IIF(oTable:CLI_RESIDE="S","Residente","No Residente")
+     cTipPer :=LEFT(oTable:CLI_TIPPER,1)
+  ELSE
+     oTable:=OpenTable("SELECT PRO_NOMBRE,PRO_TIPPER,PRO_RESIDE FROM DPPROVEEDOR WHERE PRO_CODIGO"+GetWhere("=",cCodTer),.t.)
+     cPersona:=SAYOPTIONS("DPPROVEEDOR","PRO_TIPPER",oTable:PRO_TIPPER)
+     cReside :=IIF(oTable:PRO_RESIDE="S","Residente","No Residente")
+     cTipPer :=LEFT(oTable:PRO_TIPPER,1)
+  ENDIF
+
+
+  // JN 8/5/2017, Asociacion Civil como Persona Natural
+  cTipPer:=IF(cTipPer="A","N",cTipPer)
+  cTipPer:=IF(cTipPer="G","J",cTipPer)
+
+  cPersona:=cTipPer
+
+  oTable:End()
+
+  IF ISFRMIDRUN(cCodSuc+cTipDoc+cNumDoc,"oDpDocIslr")
+     RETURN .T.
+  ENDIF
+
+  oDpDocIslr:=DOCENC(cTitle,"oDpDocIslr",cTabISLR+".EDT")  
+
+  oDpDocIslr:SetScope(cScope)
+  oDpDocIslr:cCodSuc   :=cCodSuc
+  oDpDocIslr:cCodTer   :=cCodTer
+  oDpDocIslr:cNumDoc   :=cNumDoc
+  oDpDocIslr:cTipDoc   :=cTipDoc
+  oDpDocIslr:cNomDoc   :=cNomDoc
+  oDpDocIslr:cNumRet   :=cNumRet
+  oDpDocIslr:cActual   :=cActual
+  oDpDocIslr:cReside   :=cReside
+  oDpDocIslr:cPersona  :=cPersona
+  oDpDocIslr:cTipPer   :=cTipPer
+  oDpDocIslr:lVentas   :=lVentas 
+  oDpDocIslr:cTabTer   :=cTabTer
+  oDpDocIslr:cTabISLR  :=cTabISLR
+  oDpDocIslr:cIniCamp  :=cIniCamp
+  oDpDocIslr:cVarTer1  :=cVarTer1
+  oDpDocIslr:cVarTer2  :=cVarTer2
+  oDpDocIslr:lAuto     :=lAuto
+  oDpDocIslr:RXC_CODSUC:=cCodSuc
+  oDpDocIslr:lInc      :=.F. // No se Puede Incluir
+  oDpDocIslr:cNumCbt   :=""
+
+  // Busca la Fecha de Emision
+  cWhere:="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+          "DOC_TIPDOC"+GetWhere("=","RET"             )+" AND "+;
+          "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+          "DOC_NUMERO"+GetWhere("=",cNumero           )+" AND "+;
+          "DOC_TIPTRA"+GetWhere("=","D")
+
+  IF "PRO"$oDpDocIslr:cTabTer
+     dFchReg:=SQLGET(oDpDocIslr:cTabTer,"DOC_FCHDEC",cWhere)
+     dFchDec:=dFchReg
+     //dFchReg:=SQLGET(oDpDocIslr:cTabTer,"DOC_FECHA,DOC_FCHDEC",cWhere)
+     //dFchDec:=DPSQLROW(2,dFchReg)
+
+  ELSE
+     dFchReg:=SQLGET(oDpDocIslr:cTabTer,"DOC_FECHA",cWhere)
+  ENDIF
+
+
+  // Si el documento de retencion ya existe debe buscar los datos de la reteción
+
+  IF Empty(dFchReg)
+    // dFchReg:=oDp:dFecha
+     dFchReg:=oDp:dFchDec
+     dFchDec:=oDp:dFchDec
+  ENDIF
+
+  oDpDocIslr:dFchReg   :=dFchReg
+  oDpDocIslr:dFchDec   :=dFchDec
+
+  oDpDocIslr:LEERDOC() // Leer la retencion y tomar la Fecha
+
+// ? CLPCOPY(oDp:cSql)
+
+
+  IF !lEdit
+    oDpDocIslr:lMod    :=.F. // No se Puede Modificar
+    oDpDocIslr:lEli    :=.F. // No se puede Anular
+  ENDIF
+
+  // Identificación del Formulario
+  oDpDocIslr:cIdFrm  :=cCodSuc+cTipDoc+cNumDoc
+
+  IF lVentas
+     oDpDocIslr:RXC_DOCTIP:=""
+     oDpDocIslr:RXC_DOCNUM:=""
+     oDpDocIslr:CLI_NOMBRE:=oTable:CLI_NOMBRE
+     oDpDocIslr:cWhereTip :="CLI_TIPPER"+GetWhere("=",cTipPer)
+  ELSE
+     oDpDocIslr:RXP_DOCTIP:=""
+     oDpDocIslr:RXP_DOCNUM:=""
+     oDpDocIslr:PRO_NOMBRE:=oTable:PRO_NOMBRE
+     oDpDocIslr:cWhereTip :="PRO_TIPPER"+GetWhere("=",cTipPer)
+  ENDIF
+
+  oDpDocIslr:cPreSave  :="PRESAVE"
+  oDpDocIslr:cPostSave :="POSTSAVE"
+  oDpDocIslr:cView     :="VIEW"
+  oDpDocIslr:cCancel   :="ISLRCANCEL"
+  oDpDocIslr:oPagos    :=NIL
+  oDpDocIslr:nTotal    :=0
+
+  oDpDocIslr:lBar      :=.T.
+  oDpDocIslr:lAutoEdit :=.T.
+  oDpDocIslr:cScope    :=cWhere
+  oDpDocIslr:SetTable(cTabTer,"DOC_CODSUC,DOC_TIPDOC,DOC_NUMERO,DOC_CODIGO"," WHERE "+cWhere)
+  // oDpDocIslr:nOption   :=3
+  oDpDocIslr:lValUnique:=.F. 
+  oDpDocIslr:lAutoEdit :=.F.      //antes .T. (TJ)
+
+  IF Empty(oDpDocIslr:cNumRet)
+     oDpDocIslr:nOption:=3
+  ENDIF
+
+  oDpDocIslr:AddBtn("MENU.bmp","Menú de Opciones (Ctrl-O)","(oDpDocIslr:nOption=0)",;
+                    "oDpDocIslr:RETMENU()","CLI",,STR(DP_CTRL_O))
+
+  AEVAL(oRet:aFields,{|a,n|oDpDocIslr:Add(a[1],oRet:FieldGet(n)) })
+  oRet:End()
+ 
+  oDpDocIslr:nBase  :=oDp:nBase
+  oDpDocIslr:Windows(0,0,400,801+60)
+
+  @ 2,01 GROUP oGrp TO 4, 21.5 PROMPT "[ "+GetFromVar(cVarTer2)+":"+ALLTRIM(oDpDocIslr:DOC_CODIGO)+" "+cPersona+"/"+cReside+" ]"
+  @ 2,10 GROUP oGrp TO 4, 21.5 PROMPT "[ Base Imponible ]"
+  @ 2,10 GROUP oGrp TO 4, 21.5 PROMPT "["+ALLTRIM(cNomDoc)+" ]"
+
+  @ 2,10 GROUP oGrp TO 4, 21.5 PROMPT "[ Fecha ]"
+
+//  IF "PRO"$oDpDocIslr:cTabTer
+//    @ 2,10 GROUP oGrp TO 4, 21.5 PROMPT "[ Estado ]"
+//  ENDIF
+
+  ///@ 2,3 SAY "No.ISRL #"+oDpDocIslr:cNUMRET
+
+  IF lVentas
+     oDpDocIslr:cScopG:="RXC_CODSUC,RXC_TIPDOC,RXC_NUMDOC"
+     @ 2,5 SAY oDpDocIslr:oNOMBRE PROMPT oDpDocIslr:CLI_NOMBRE
+  ELSE
+     @ 2,5 SAY oDpDocIslr:oNOMBRE PROMPT oDpDocIslr:PRO_NOMBRE
+     oDpDocIslr:cScopG:="RXP_CODSUC,RXP_TIPDOC,RXP_NUMDOC,RXP_CODIGO"
+  ENDIF
+
+  @ 2,5 SAY TRAN(oDpDocIslr:nBase,"99,999,999,999.99") RIGHT
+  @ 2,2 SAY SPACE(30)
+
+  @ 2,1 SAY "#"+oDpDocIslr:cNumDoc
+//  @ 2,3 SAY "No.ISRL #"+oDpDocIslr:cNUMRET
+
+  @ 2,1 SAY DTOC(oDpDocIslr:DOC_FECHA)
+
+  @ 2,1 SAY oDpDocIslr:oEstado PROMPT SAYOPTIONS( oDpDocIslr:cTabTer,"DOC_ESTADO",oDpDocIslr:DOC_ESTADO)
+
+  @ 3,20 SAY "Registro:" RIGHT
+
+  IF !oDpDocIslr:lVentas
+    @ 3,20 SAY "Declaración:" RIGHT
+  ENDIF
+
+  @ 04,43 BMPGET oDpDocIslr:oFchReg  VAR oDpDocIslr:dFchReg ;
+          PICTURE oDp:cFormatoFecha;
+          NAME "BITMAPS\Calendar.bmp";
+          ACTION LbxDate(oDpDocIslr:oFchReg ,oDpDocIslr:dFchReg);
+          VALID oDpDocIslr:VALFCHREG();
+          WHEN AccessField("DPDOCMOV","DOC_FECHA",oDpDocIslr:nOption);
+          SIZE 45,10
+
+  IF !oDpDocIslr:lVentas
+
+     @ 02,43 BMPGET oDpDocIslr:oFchDec  VAR oDpDocIslr:dFchDec ;
+             PICTURE oDp:cFormatoFecha;
+             NAME "BITMAPS\Calendar.bmp";
+             ACTION LbxDate(oDpDocIslr:oFchDec ,oDpDocIslr:dFchDec);
+             VALID oDpDocIslr:VALFchDec();
+             WHEN AccessField("DPDOCMOV","DOC_FECHA",oDpDocIslr:nOption);
+             SIZE 45,10
+
+  ENDIF
+
+//  @ 20,20 GET oDpDocIslr:dFchDec PICTURE "99/99/9999"  
+
+  cSql :="SELECT * FROM "+cTabISLR
+  
+  oGrid:=oDpDocIslr:GridEdit( cTabISLR , oDpDocIslr:cPrimary , oDpDocIslr:cScopG , cSql ) 
+
+  oGrid:cScript    :="DPDOCISLR"
+  oGrid:aSize      :={110-15,0,788+07+50,250-60}
+  oGrid:oFont      :=oFont
+  oGrid:bValid     :=".T."
+  oGrid:lBar       :=.F.
+  oGrid:lTotal     :=.T.
+  oGrid:oFontH     :=oFontB
+  oGrid:oFontB     :=oFontB
+  oGrid:cPostSave  :="GRIDPOSTSAVE"
+  oGrid:cPreSave   :="GRIDPRESAVE"
+  oGrid:cLoad      :="GRIDLOAD"
+  oGrid:cTotal     :="GRIDTOTAL" 
+  oGrid:oFontH     :=oFontB // Fuente para los Encabezados
+  oGrid:cPrint     :=""
+  oGrid:lPrint     :=.F.
+  oGrid:cPreDelete :="GRIDPREDELETE"
+  oGrid:cPostDelete:="GRIDPOSTDELETE" 
+  oGrid:lView      :=.F.
+
+  // ClassData usada mediante Variables 
+  oGrid:RET_CODCON:=oDpDocIslr:cIniCamp+"_CODCON"
+  oGrid:RET_CODEQI:=oDpDocIslr:cIniCamp+"_CODEQI"
+
+  oGrid:nClrPane1   :=16774378
+  oGrid:nClrPane2   :=16772313
+
+  oGrid:nClrPaneH   := 16700847
+  oGrid:nClrTextH   := CLR_BLACK 
+  oGrid:nRecSelColor:= 16700847
+
+  // Concepto
+  oCol:=oGrid:AddCol(oDpDocIslr:cIniCamp+"_CODCON")
+  oCol:cTitle   :="Cód"
+
+  IF oDpDocIslr:lVentas
+     oCol:bValid:={||oGrid:VRX_CODCON(oGrid:RXC_CODCON)}
+  ELSE
+     oCol:bValid:={||oGrid:VRX_CODCON(oGrid:RXP_CODCON)}
+  ENDIF
+
+  oCol:cMsgValid:="Concepto de Retención no Existe"
+  oCol:nWidth   :=40
+  oCol:cListBox :="DPCONRETISLR.LBX"
+  oCol:lPrimary :=.T. // No puede Repetirse
+  oCol:bPostEdit:='oGrid:ColCalc(oDpDocIslr:cIniCamp+"_DESCRI")'
+  oCol:nEditType:=EDIT_GET_BUTTON
+ 
+  // Valida la Figura Jurídica Y Residencia
+  IF !lVentas
+
+    oCol:cTitleListBox:=GetFromVar("{oDp:DPTARIFASRET}")+" Persona: "+cPersona+" / "+cReside
+    cReside:=LEFT(cReside,1)
+    cReside:=IIF(cReside="R","S",cReside)
+
+    oCol:cWhereListBox:="INNER JOIN DPTARIFASRET ON TBR_CODCON=CTR_CODIGO WHERE TBR_TIPPER"+;
+                        GetWhere("=",LEFT(ALLTRIM(cPersona),1))+" AND "+;
+                        "TBR_RESIDE"+GetWhere("=",cReside)+" AND CTR_ACTIVO=1 AND CTR_APLPRO=1"
+
+    // Caso que el Proveedor sea Asociación civil tendra los conceptos de persona Natural Residente
+    // TJ 15-05-2017  
+    IF LEFT(ALLTRIM(cPersona),1)='A'
+     
+      oCol:cTitleListBox:=GetFromVar("{oDp:DPTARIFASRET}")+" Persona: "+cPersona+" / "+cReside
+      cReside:=LEFT(cReside,1)
+      cReside:=IIF(cReside="R","S",cReside)
+
+      oCol:cWhereListBox:="INNER JOIN DPTARIFASRET ON TBR_CODCON=CTR_CODIGO WHERE TBR_TIPPER"+;
+                        GetWhere("=",'N')+" AND "+;
+                        "TBR_RESIDE"+GetWhere("=",cReside)+" AND CTR_ACTIVO=1 AND CTR_APLPRO=1"
+
+/*
+oCol:cWhereListBox:="INNER JOIN DPTARIFASRET ON TBR_CODCON=CTR_CODIGO WHERE TBR_TIPPER"+;
+                        GetWhere("=",LEFT(ALLTRIM(cPersona),1))+" AND "+;
+                        "TBR_RESIDE"+GetWhere("=",cReside)+" AND CTR_ACTIVO=1 AND CTR_APLPRO=1"
+*/
+
+    ENDIF
+     
+  
+
+
+  ELSE
+
+    oCol:cTitleListBox:=GetFromVar("{oDp:DPTARIFASRET}")+" Persona: "+cPersona+" / "+cReside
+    cReside:=LEFT(cReside,1)
+    cReside:=IIF(cReside="R","S",cReside)
+
+    oCol:cWhereListBox:="INNER JOIN DPTARIFASRET ON TBR_CODCON=CTR_CODIGO WHERE TBR_TIPPER"+;
+                        GetWhere("=",LEFT(ALLTRIM(cPersona),1))+" AND "+;
+                        "TBR_RESIDE"+GetWhere("=",cReside)+" AND CTR_ACTIVO=1 AND CTR_APLPRO=1"
+
+
+
+/*
+    oCol:cTitleListBox:=GetFromVar("{oDp:DPTARIFASRET}")+" Persona: "+oDp:cTipPer+" / Residente"
+
+    oCol:cWhereListBox:="INNER JOIN DPTARIFASRET ON TBR_CODCON=CTR_CODIGO WHERE LEFT(TBR_TIPPER,1)"+;
+                        GetWhere("=",LEFT(ALLTRIM(oDp:cTipPer),1))+" AND "+;
+                        "TBR_RESIDE"+GetWhere("=","S")+" AND CTR_ACTIVO=1 AND CTR_APLCLI=1"
+*/
+
+  ENDIF
+
+// Descripción
+  oCol:=oGrid:AddCol(cIniCamp+"_DESCRI")
+  oCol:cTitle:="Descripción"
+  oCol:nWidth:=250+50
+  oCol:bWhen :=".F."
+  oCol:bCalc :={||SQLGET("DPCONRETISLR","CTR_DESCRI","CTR_CODIGO"+GetWhere("=",;
+                  IIF(oDpDocIslr:lVentas,oGrid:RXC_CODCON,oGrid:RXP_CODCON)))}
+
+// Codigo Equivalente
+  oCol:=oGrid:AddCol(cIniCamp+"_CODEQI")
+  oCol:cTitle:="Cod Equivalente"
+  oCol:nWidth:=45
+  oCol:bWhen :=".F."
+  
+  // Base Imponible
+  oCol:=oGrid:AddCol(cIniCamp+"_MTOBAS")
+  oCol:cTitle:="Base Imponible"
+  oCol:nWidth:=90
+  oCol:lTotal:=.T.
+  oCol:bValid:=IIF(oDpDocIslr:lVentas,{||oGrid:VRX_MTOBAS(oGrid:RXC_MTOBAS)},;
+               {||oGrid:VRX_MTOBAS(oGrid:RXP_MTOBAS)})
+
+  // Monto Sujeto a Retención
+  oCol:=oGrid:AddCol(cIniCamp+"_MTOSUJ")
+  oCol:cTitle:="Monto Sujeto"
+  oCol:nWidth:=90
+  oCol:lTotal:=.T.
+  oCol:bValid:=IIF(oDpDocIslr:lVentas,{||oGrid:VRX_MTOSUJ(oGrid:RXC_MTOSUJ)},{||oGrid:VRX_MTOSUJ(oGrid:RXP_MTOSUJ)})
+
+  // % Retención
+  oCol:=oGrid:AddCol(cIniCamp+"_PORCEN")
+  oCol:cTitle:="% Ret."
+  oCol:nWidth:=45
+  oCol:bValid:=IIF(oDpDocIlsr:lVentas,{||oGrid:VRX_PORCEN(oGrid:RXC_PORCEN)},;
+               {||oGrid:VRX_PORCEN(oGrid:RXP_PORCEN)})
+
+  // Deducible <Sustraendo>
+  oCol:=oGrid:AddCol(cIniCamp+"_MTODED")
+  oCol:cTitle:="Sustraendo"
+  oCol:nWidth:=80
+  oCol:bValid:=IIF(oDpDocIslr:lVentas,{||oGrid:VRX_PORCEN(oGrid:RXC_PORCEN)},;
+               {||oGrid:VRX_PORCEN(oGrid:RXP_PORCEN)})
+  oCol:lTotal:=.T.
+
+  // Retención
+  oCol:=oGrid:AddCol(oDpDocIslr:cIniCamp+"_MTORET")
+  oCol:cTitle:="Retención"
+  oCol:lTotal:=.T.
+  oCol:nWidth:=95
+
+  oDpDocIslr:oFocus:=oGrid:oBrw
+
+
+  oDpDocIslr:bValid:={|| oDpDocIslr:VAL_SALIDA()}
+
+  oDpDocIslr:Activate( {|| oDpDocIslr:PreCargar() } )
+
+RETURN oDpDocIslr
+
+// antes RETURN
+
+/*
+// Carga los Datos
+*/
+FUNCTION LOAD()
+   LOCAL cActual:="N",cMotivo
+
+   oDpDocIslr:cActual:=EJECUTAR("DPDOCVIEWCON",oDpDocIslr:cCodSuc,"RET",;
+                       oDpDocIslr:cCodTer,oDpDocIslr:cNumRet,"D",.T.,.F.)
+
+
+   oDpDocIslr:cNumCbt:=oDp:cNumCbt // Numero de Comprobante Contable
+
+   IF oDpDocIslr:nOption=1
+      Return .F.
+   ENDIF
+
+   IF oDpDocIslr:nOption=3 .OR. oDpDocIslr:nOption=4
+
+      IF oDpDocIslr:ISCONTABRET(.F.)
+         RETURN .F.
+      ENDIF
+
+   ENDIF
+
+RETURN .T.
+
+/*
+// Ejecuta la Impresión del Documento
+*/
+FUNCTION PRINTER()
+LOCAL oRep
+
+  IF oDpDocIslr:lVentas
+     oRep:=REPORTE("CLIRETISRL")
+     oRep:SetRango(1,oDpDocIslr:cNumRet,oDpDocIslr:cNumRet)
+  ELSE
+     oRep:=REPORTE("PRORETISLR")
+     oRep:SetRango(1,oDpDocIslr:cNumRet,oDpDocIslr:cNumRet)
+     oRep:SetRango(2,oDpDocIslr:cCodTer,oDpDocIslr:cCodTer)
+  ENDIF 
+
+  oRep:SetCriterio(1,oDpDocIslr:cCodSuc)
+ 
+RETURN .T.
+
+/*
+// Permiso para Borrar
+*/
+FUNCTION PREDELETE()
+   LOCAL lVtas:=oDpDocIslr:lVentas,cEdo:="NU",nAct:=0,cAction:="Anular"
+   LOCAL cEstado  :=""
+   LOCAL cWhere:="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                 "DOC_TIPDOC"+GetWhere("=","RET")+" AND "+;
+                 "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+                 "DOC_NUMERO"+GetWhere("=",oDpDocIslr:cNumRet)+" AND "+;
+                 "DOC_TIPTRA='D'"
+
+  cEstado:=SQLGET(oDpDocIslr:cTabTer,"DOC_ESTADO",cWhere)
+
+  IF cEstado="NU"
+     cEdo   :="AC"
+     nAct   :=1
+     cAction:="Reactivar"
+  ENDIF
+
+  IF oDpDocIslr:ISCONTABRET(.F.)
+     RETURN .F.
+  ENDIF
+
+  IF !Empty(oDpDocIslr:cCodSuc) .AND. !Empty(oDpDocIslr:cCodTer) .AND. !Empty(oDpDocIslr:cNumRet)
+
+     IF MSgYesNo("Desea "+cAction+" Retencion "+oDpDocIslr:cNumRet,cAction+" Retencion ISLR ")
+
+       SQLUPDATE(oDpDocIslr:cTabTer,{"DOC_ESTADO","DOC_ACT"},{cEdo,nAct},cWhere)
+
+       IF ValType(oDpDocIslr:oPagos)="O" .AND. oDpDocIslr:oPagos:oWnd:hWnd>0
+         oDpDocIslr:oPagos:ImportDoc()
+       ENDIF
+         oDpDocIslr:SET("DOC_ESTADO",cEdo)
+         oDpDocIslr:oEstado:Refresh(.T.)
+       ENDIF  
+
+   ELSE
+
+     MensajeErr("No se elimino o no existe la Retencion.","Advertencia")
+
+   ENDIF
+
+RETURN .F.
+
+/*
+// Después de Borrar
+*/
+FUNCTION POSTDELETE()
+
+  IF ValType(oDpDocIslr:oPagos)="O" .AND. oDpDocIslr:oPagos:oWnd:hWnd>0
+     oDpDocIslr:oPagos:ImportDoc()
+  ENDIF
+
+RETURN .T.
+
+
+FUNCTION PRESAVE()
+   LOCAL cWhere
+
+   DEFAULT oDp:lRetIslr_Cer:=.F.
+
+   IF oDpDocIslr:nTotal<=0 .AND. !oDp:lRetIslr_Cer
+
+      IF oDpDocIslr:nOption=1 
+         MensajeErr("No se puede Registra Retención sin monto."+CRLF+"En Configurar Empresa puede Habilitar Guardar Retención con Monto Cero","Advertencia")
+         Return .F.
+      ELSE
+         MensajeErr("La Retención sera Registrada con Monto Cero"+CRLF+"Registro Necesario para la Auditoria de Transacciones","Advertencia")
+      ENDIF
+
+   ENDIF
+
+   // Debe Remover el Comprobante Contable
+
+   IF oDpDocIslr:nTotal>0
+
+     oDpDocIslr:CREARDOC()
+
+   ELSE
+
+     // Anula la Retención 
+/*
+     IF !Empty(oDpDocIslr:cNumDoc)
+
+
+       cWhere:="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+               "DOC_TIPDOC"+GetWhere("=",oDpDocIslr:cTipDoc)+" AND "+;
+               "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+               "DOC_NUMERO"+GetWhere("=",oDpDocIslr:cNumDoc)+" AND "+;
+               "DOC_TIPTRA"+GetWhere("=","D")
+
+       SQLUPDATE(oDpDocIslr:cTabTer,{"DOC_ESTADO","DOC_ACT"},{"AN",0},;
+                 "DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                 "DOC_TIPDOC"+GetWhere("=","RET")+" AND "+;
+                 "DOC_TIPTRA"+GetWhere("=","D"))
+
+      ENDIF
+*/
+
+   ENDIF
+
+   oDpDocIslr:ISCONTABRET(.T.)
+
+RETURN .T.
+
+FUNCTION ISCONTABRET(lDelete)
+
+   LOCAL cNumDoc:=IIF(oDpDocIslr:lVentas,oGrid:RXC_DOCNUM,oGrid:RXP_DOCNUM)
+   LOCAL cTipDoc:="RET",cCodAux:=oDpDocIslr:cCodTer,cTipTra:="D",cDocPag:=NIL
+   LOCAL cOrg   :=IIF(oDpDocIslr:lVentas,"VTA","COM")
+   LOCAL cWhere :="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                  "DOC_TIPDOC"+GetWhere("=",cTipDoc           )+" AND "+;
+                  "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+                  "DOC_NUMERO"+GetWhere("=",cNumDoc           )+" AND "+;
+                  "DOC_TIPTRA='D'"
+
+   LOCAL cTipDoc:="RET",cCodAux:=oDpDocIslr:cCodTer,cTipTra:="D"
+   LOCAL cNumCbt:=SQLGET(oDpDocIslr:cTabTer,"DOC_CBTNUM,DOC_FECHA",cWhere)
+   LOCAL dFecha :=DPSQLROW(2),oObj:=oDpDocIslr:oNOMBRE   
+
+   DEFAULT lDelete:=.F.
+
+   IF !Empty(cNumCbt) 
+
+     IF !EJECUTAR("ISCONTAB_ACT",cNumCbt,dFecha,cTipDoc,cNumDoc,cCodAux,cTipTra,cDocPag,cOrg,lDelete,oObj)
+        RETURN .F.
+     ENDIF
+
+     RETURN !lDelete
+
+   ENDIF
+
+RETURN .F.
+
+FUNCTION POSTSAVE()
+  LOCAL lContab:=SQLGET(IIF(oDpDocIslr:lVentas,"DPTIPDOCCLI","DPTIPDOCPRO"),"TDC_CONAUT,TDC_DESCRI","TDC_TIPO='RET'")
+  LOCAL cDescri:=ALLTRIM(DPSQLROW(2))
+  LOCAL cNumCbt:=oDpDocIslr:DOC_CBTNUM
+
+  // Actualiza Documento 
+  // oDpDocIslr:PRINTER()
+  // ?oDpDocIslr:cCodSuc,oDpDocIslr:cTipDoc,oDpDocIslr:cCodTer,oDpDocIslr:cNumDoc,"RET"
+
+  IF (lContab .AND. !Empty(oDpDocIslr:cNumCbt)) .OR. !Empty(oDpDocIslr:DOC_CBTNUM)
+
+      cNumCbt:=IF(Empty(oDpDocIslr:DOC_CBTNUM),oDpDocIslr:cNumCbt)
+
+      IF !lContab
+         MsgMemo("Documento, Retención ISLR "+oDpDocIslr:cNumRet+", está Contabilizado en "+cNumCbt+CRLF+", Es necesario rehacer el Asiento Contable")
+      ENDIF
+
+      MsgRun("Contabilizando "+cDescri + oDpDocIslr:cNumRet,"Por favor Espere",{||;
+                               EJECUTAR("DPDOCCONTAB", cNumCbt           ,;
+                                                       oDpDocIslr:cCodSuc,;
+                                                       "RET",;
+                                                       oDpDocIslr:cCodTer,;
+                                                       oDpDocIslr:cNumRet,oDpDocIslr:lVentas,.F.) })
+
+  ENDIF
+
+  // Aqui debe Cerrar el Formulario
+  oDpDocIslr:nOption =0
+  oDpDocIslr:Close()
+  EJECUTAR("TECINTERRET",oDpDocIslr:cCodSuc,oDpDocIslr:cTipDoc,oDpDocIslr:cCodTer,oDpDocIslr:cNumDoc,"RET") 
+
+  oDpDocIslr:RETMENU()
+
+  IF ValType(oDpDocIslr:oPagos)="O" .AND. oDpDocIslr:oPagos:oWnd:hWnd>0
+     oDpDocIslr:oPagos:ImportDoc()
+  ENDIF
+
+RETURN .T.
+
+/*
+// Cancel
+*/
+FUNCTION ISLRCANCEL()
+   oDpDocIslr:CLOSE()
+RETURN .T.
+
+/*
+// Carga para Incluir o Modificar en el Grid
+*/
+FUNCTION GRIDLOAD()
+   LOCAL cCodRet:="",oCol
+
+   LOCAL nBase:=oDpDocIslr:nBase,nTotal:=0
+
+   IF oGrid:nOption=1
+
+     nBase:=nBase-oGrid:GetTotal(oDpDocIslr:cIniCamp+"_MTOBAS")
+     oGrid:Set(oDpDocIslr:cIniCamp+"_MTOBAS",nBase,.T.)
+     oGrid:Set(oDpDocIslr:cIniCamp+"_MTOSUJ",nBase,.T.)
+
+     IF !oDpDocIslr:lVentas .AND. oGrid:GetTotal(oDpDocIslr:cIniCamp+"_MTORET")=0
+        cCodRet:=SQLGET("DPPROVEEDOR","PRO_CODRET","PRO_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer))
+     ENDIF
+
+     // JN 20/04/2017
+     IF !Empty(cCodRet) 
+
+       oGrid:Set(oDpDocIslr:cIniCamp+"_CODCON",cCodRet,.T.)
+       oCol:=oGrid:GetCol(oDpDocIslr:cIniCamp+"_CODCON")
+       EVAL(oCol:bValid)
+
+       oCol:=oGrid:GetCol(oDpDocIslr:cIniCamp+"_DESCRI")
+       oCol:RunCalc()
+       oGrid:oBrw:KeyBoard(13)
+       oGrid:oBrw:KeyBoard(13)
+
+
+     ENDIF
+
+   ENDIF
+
+   // Modifica la Retencion de ISLR
+   IF oGrid:nOption=3
+     oGrid:Set(oDpDocIslr:cIniCamp+"_MTOBAS",nBase,.T.)
+     oGrid:Set(oDpDocIslr:cIniCamp+"_MTOSUJ",nBase,.T.)
+   ENDIF
+
+   IF oDpDocIslr:lVentas
+
+      IF !EMPTY(oGrid:RXC_DOCTIP)
+         oDpDocIslr:RXC_DOCTIP:=oGrid:RXC_DOCTIP
+         oDpDocIslr:RXC_DOCNUM:=oGrid:RXC_DOCNUM
+      ENDIF
+
+      oGrid:RXC_TIPTRA:="D"
+      oGrid:RXC_CODIGO:=oDpDocIslr:cCodTer // Código de Tercero
+
+   ELSE
+
+      IF !EMPTY(oGrid:RXP_DOCTIP)
+         oDpDocIslr:RXP_DOCTIP:=oGrid:RXP_DOCTIP
+         oDpDocIslr:RXP_DOCNUM:=oGrid:RXP_DOCNUM
+      ENDIF
+
+      oGrid:RXP_TIPTRA:="D"
+      oGrid:RXP_CODIGO:=oDpDocIslr:cCodTer // Código de Tercero
+
+   ENDIF
+
+RETURN NIL
+
+/*
+// Ejecución despues de Grabar el Item
+*/
+FUNCTION GRIDPOSTSAVE()
+  // Totaliza el Documento
+  LOCAL oCol:=oGrid:GetCol(oDpDocIslr:cIniCamp+"_MTORET")
+
+  DEFAULT lTotal:=.T.
+
+  oDpDocIslr:GRIDTOTAL()
+
+  EJECUTAR("DOCBTNCANCELOFF",oDpDocIslr)
+
+  oDpDocIslr:CREARDOC()  // Actualiza el Total del DOCUMENTO
+
+  IF oDpDocIslr:nTotal<=0 .AND. oDp:lRetIslr_Cer=.F.
+     MensajeErr("No se puede almacenar documento sin monto.","Advertencia")
+     Return .F.
+  ENDIF
+
+RETURN .T.
+
+/*
+// Genera los Totales por Grid
+*/
+FUNCTION GRIDTOTAL()
+  LOCAL oCol:=oGrid:GetCol(oDpDocIslr:cIniCamp+"_MTORET"),lVtas:=oDpDocIslr:lVentas
+
+  IF lVtas
+     oDpDocIslr:nTotal:=oCol:CalCuleRow("oGrid:RXC_MTORET")
+  ELSE
+     oDpDocIslr:nTotal:=oCol:CalCuleRow("oGrid:RXP_MTORET")
+  ENDIF
+ 
+RETURN .T.
+
+/*
+// Valida Código de Retención
+*/
+FUNCTION VRX_CODCON(cCodCon)
+LOCAL nEqi,cRes,cPer
+
+  cRes:=oDpDocIslr:cReside
+  cPer:=oDpDocIslr:cPersona
+
+  cRes:=LEFT(cRes,1)
+  cRes:=IIF(cRes="R","S",cRes)
+
+  cPer:=LEFT(ALLTRIM(cPer),1)     //LEFT(cPer,1)
+  cPer:=IIF(cPer="J","J",cPer)
+
+  oGrid:SetV("RET_CODEQI",;
+             SQLGET("DPTARIFASRET","TBR_CODEQI",;
+                    " TBR_CODCON"+GetWhere("=",oGrid:GetV("RET_CODCON"))+" AND "+;
+                    " TBR_RESIDE"+GetWhere("=",cRes)                  +" AND "+;
+                    " TBR_TIPPER"+GetWhere("=",cPer)),;
+             .T.)
+
+
+  IF oGrid:nOption=1
+
+     IF oDpDocIslr:lVentas
+        oGrid:VRX_MTOSUJ(oGrid:RXC_MTOSUJ)
+     ELSE
+        oGrid:VRX_MTOSUJ(oGrid:RXP_MTOSUJ)
+     ENDIF
+
+   ELSE
+
+     oGrid:VRX_MTOSUJ(oDpDocIslr:nBase)
+     oGrid:VRX_MTOBAS(oDpDocIslr:nBase)
+
+   ENDIF
+
+RETURN .T.
+
+/*
+// Monto Base
+*/
+FUNCTION VRX_MTOBAS(nMtoBas)
+
+   oGrid:Set(oDpDocIslr:cIniCamp+"_MTOSUJ" , nMtoBas , .T. )
+
+RETURN .T.
+
+/*
+// Monto Sujeto
+*/
+FUNCTION VRX_MTOSUJ(nMtoSuj)
+   oDp:nRata  :=0
+   oDp:nMtoDed:=0
+   oDp:nMtoRet:=0
+
+   IF oDpDocIslr:lVentas
+      EJECUTAR("CALRETISLR",oGrid:RXC_MTOBAS,oGrid:RXC_MTOSUJ,oGrid:RXC_CODCON,oDpDocIslr:cPersona,oDpDocIslr:cReside)
+   ELSE
+      EJECUTAR("CALRETISLR",oGrid:RXP_MTOBAS,oGrid:RXP_MTOSUJ,oGrid:RXP_CODCON,oDpDocIslr:cPersona,oDpDocIslr:cReside)
+   ENDIF
+
+   oGrid:Set(oDpDocIslr:cIniCamp+"_PORCEN",oDp:nRata  ,.T.)
+   oGrid:Set(oDpDocIslr:cIniCamp+"_MTODED",oDp:nMtoDed,.T.)
+   oGrid:Set(oDpDocIslr:cIniCamp+"_MTORET",oDp:nMtoRet,.T.)
+
+RETURN .T.
+
+FUNCTION VRX_PORCEN(nRata)
+  LOCAL nMonto:=0,lVtas:=oDpDocIslr:lVentas
+  LOCAL cMtoSuj  :=IIF(lVtas,"oGrid:RXC_MTOSUJ","oGrid:RXP_MTOSUJ")
+  LOCAL cRXPorcen:=IIF(lVtas,"oGrid:RXC_PORCEN","oGrid:RXP_PORCEN")
+  LOCAL cRXDED   :=IIF(lVtas,"oGrid:RXC_MTODED","oGrid:RXP_MTODED")
+
+  nMonto:=PORCEN(&cMtoSuj,&cRXPorcen)-&cRXDED
+  nMonto:=MAX(nMonto,0)
+
+  oGrid:Set(oDpDocIslr:cIniCamp+"_MTORET",nMonto,.T.)
+
+RETURN .T.
+
+/*
+// Pre-Grabar
+*/
+FUNCTION GRIDPRESAVE()
+
+  oDpDocIslr:CREARDOC()
+
+  // Asocia el Documento
+
+  IF oDpDocIslr:lVentas
+     oDpDocIslr:RXC_DOCTIP:="RET"
+     oGrid:SET("RXC_DOCTIP","RET")
+     oGrid:SET("RXC_DOCNUM",oDpDocIslr:cNumRet)
+     oGrid:SET("RXC_FECHA",oDpDocIslr:dFchReg)
+  ELSE
+     oDpDocIslr:RXP_DOCTIP:="RET"
+     oGrid:SET("RXP_DOCTIP","RET")
+     oGrid:SET("RXP_DOCNUM",oDpDocIslr:cNumRet)
+     oGrid:SET("RXP_FECHA",oDpDocIslr:dFchReg)
+  ENDIF
+
+
+
+RETURN .T.
+
+/*
+// Crea en Forma Automática el Documento de Retención o Actualizar su contenido
+*/
+FUNCTION CREARDOC()
+  LOCAL cNumero,cNumIni:="",oData,oTable,oTableDoc,cWhere
+  LOCAL nNeto:=IF(oDpDocIslr:lVentas,oGrid:RXC_MTORET,oGrid:RXP_MTORET)
+  LOCAL nLen,lZero
+  //---IGTF-----------------------------------------------------------------------------------------
+  LOCAL nValCa2:=0
+  //---IGTF-----------------------------------------------------------------------------------------
+
+
+  // Busca el Numero de Retencion Vinculado con la Factura
+
+  IF oDpDocIslr:lVentas
+
+    cNumero:=SQLGET(oDpDocIslr:cTabISLR,"RXC_DOCNUM","RXC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                                                     "RXC_TIPDOC"+GetWhere("=",oDpDocIslr:cTipDoc)+" AND "+;
+                                                     "RXC_NUMDOC"+GetWhere("=",oDpDocIslr:cNumDoc))
+
+  ELSE
+
+    cNumero:=SQLGET(oDpDocIslr:cTabISLR,"RXP_DOCNUM","RXP_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                                                     "RXP_TIPDOC"+GetWhere("=",oDpDocIslr:cTipDoc)+" AND "+;
+                                                     "RXP_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+                                                     "RXP_NUMDOC"+GetWhere("=",oDpDocIslr:cNumDoc))
+  ENDIF
+
+  // Retencion ya Existe
+  IF Empty(cNumero) .AND. !Empty(oDpDocIslr:cNumRet)
+     cNumero:=oDpDocIslr:cNumRet
+  ENDIF
+
+  IF !Empty(cNumero)
+
+     // Debe actualizar los Datos
+     nNeto    :=oGrid:GetTotal(IF(oDpDocIslr:lVentas,"RXC_MTORET","RXP_MTORET"))
+
+     cWhere:="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+             "DOC_TIPDOC"+GetWhere("=","RET")+" AND "+;
+             "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+             "DOC_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+             "DOC_TIPTRA"+GetWhere("=","D")
+      //---IGTF-----------------------------------------------------------------------------------------
+     nValCa2:=SQLGET(oDpDocIslr:cTabTer,"DOC_VALCA2",cWhere)
+      //---IGTF-----------------------------------------------------------------------------------------
+     IF "PRO"$oDpDocIslr:cTabTer
+       SQLUPDATE(oDpDocIslr:cTabTer,{"DOC_NETO","DOC_FECHA","DOC_FCHDEC"},{nNeto,oDpDocIslr:dFchReg,oDpDocIslr:dFchDec},cWhere)
+       SQLUPDATE(oDpDocIslr:cTabTer,"DOC_DI",ROUND(DIV(nNeto,nValCa2),2),cWhere)
+
+     ELSE
+       SQLUPDATE(oDpDocIslr:cTabTer,{"DOC_NETO","DOC_FECHA"},{nNeto,oDpDocIslr:dFchReg},cWhere)
+         //---IGTF-----------------------------------------------------------------------------------------
+       SQLUPDATE(oDpDocIslr:cTabTer,"DOC_DI",ROUND(DIV(nNeto,nValCa2),2),cWhere)
+         //---IGTF-----------------------------------------------------------------------------------------
+     ENDIF
+
+     RETURN .T.
+
+  ENDIF
+
+  // Para Incluir
+  oData:=DATASET("SUC_"+IF(oDpDocIslr:lVentas,"V","C")+oDp:cSucursal,"ALL")
+  cNumIni:=oData:Get("RETNumero",SPACE(10))
+  cNumIni:=IIF(cNumIni=REPLI("0",10),STRZERO(1,10),cNumIni)
+  oData:End(.F.)
+
+  cWhere:="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+          "DOC_TIPDOC"+GetWhere("=",oDpDocIslr:cTipDoc)+" AND "+;
+          "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+          "DOC_NUMERO"+GetWhere("=",oDpDocIslr:cNumDoc)+" AND "+;
+          "DOC_TIPTRA"+GetWhere("=","D")
+
+  cNumero:=SQLINCREMENTAL(oDpDocIslr:cTabTer,"DOC_NUMERO","DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                                                          "DOC_TIPDOC"+GetWhere("=","RET")+" AND "+;
+                                                          "DOC_TIPTRA"+GetWhere("=","D"))
+
+  // Determina cual es mayor de Ambos
+  cNumero  :=IF(cNumero>cNumIni,cNumero,cNumIni)
+  oTableDoc:=OpenTable("SELECT * FROM "+oDpDocIslr:cTabTer+"  WHERE "+cWhere,.T.)
+  oTable   :=OpenTable("SELECT * FROM "+oDpDocIslr:cTabTer,.F.)
+
+  // Numero en Factura de Compra
+  IF "PRO"$oDpDocIslr:cTabTer
+
+     nLen   :=SQLGET("DPTIPDOCPRO","TDC_LEN" ,"TDC_TIPO"+GetWhere("=","RET"))
+     lZero  :=SQLGET("DPTIPDOCPRO","TDC_ZERO","TDC_TIPO"+GetWhere("=","RET"))
+
+     IF nLen>1 .AND. lZero
+        cNumero:=STRZERO(VAL(cNumero),nLen)
+     ENDIF
+
+  ENDIF
+
+  oDpDocIslr:cDocNum:=cNumero
+  oDpDocIslr:cNumRet:=cNumero
+
+  oTable:AppendBlank()
+
+  AEVAL(oTableDoc:aFields,{|a,n| oTable:Replace(a[1],oTableDoc:FieldGet(n))})
+  oTableDoc:End()
+
+  oTable:Replace("DOC_TIPDOC","RET")
+  oTable:Replace("DOC_NUMERO",cNumero)
+  oTable:Replace("DOC_IMPOTR",0)
+  oTable:Replace("DOC_OTROS" ,0)
+  oTable:Replace("DOC_DCTO"  ,0)
+  oTable:Replace("DOC_NETO"  ,nNeto     )  
+  oTable:Replace("DOC_FECHA" ,oDpDocIslr:dFchReg )
+
+  IF "PRO"$oDpDocIslr:cTabTer
+    oTable:Replace("DOC_FCHDEC",oDpDocIslr:dFchDec)
+  ENDIF
+
+  oTable:Replace("DOC_HORA"  ,TIME()    )
+  oTable:Replace("DOC_MTOIVA",0)
+  oTable:Replace("DOC_BASNET",0)
+  oTable:Replace("DOC_USUARI",oDp:cUsuario)
+  oTable:Replace("DOC_CODIGO",oDpDocIslr:cCodTer)
+
+  IF oDpDocIslr:lVentas
+
+    oTable:Replace("DOC_CXC"   ,EJECUTAR("DPTIPCXC","RET"))
+    oTable:Replace("DOC_ESTADO","AC")
+
+    IF !Empty(oDpDocIslr:oPagos)
+      oTable:Replace("DOC_FECHA",oDpDocIslr:oPagos:REC_FECHA)
+      oTable:Replace("DOC_HORA" ,oDpDocIslr:oPagos:REC_HORA )
+    ENDIF
+
+  ELSE
+
+    oTable:Replace("DOC_CXP"   ,EJECUTAR("DPTIPCXP","RET"))
+    oTable:Replace("DOC_FACAFE",oDpDocIslr:cNumDoc)
+
+
+    IF !Empty(oDpDocIslr:oPagos)
+      oTable:Replace("DOC_FECHA",oDpDocIslr:oPagos:PAG_FECHA)
+      oTable:Replace("DOC_HORA" ,oDpDocIslr:oPagos:PAG_HORA )
+    ENDIF
+
+  ENDIF
+
+  oTable:Replace("DOC_DOCORG","R")
+ //---IGTF-----------------------------------------------------------------------------------------
+  oTable:Replace("DOC_DI",ROUND(DIV(nNeto,oTable:DOC_VALCA2),2)     )
+ //---IGTF-----------------------------------------------------------------------------------------
+  oTable:Commit()
+  oTable:End()
+
+RETURN .T.
+
+/*
+// Leer el Documento de la factura
+*/
+
+FUNCTION LEERDOC()
+  LOCAL cNumero,cNumIni:="",oData,oTable,oTableDoc,cWhere
+  LOCAL nNeto:=IF(oDpDocIslr:lVentas,oGrid:RXC_MTORET,oGrid:RXP_MTORET)
+  LOCAL nLen,lZero,dFchReg:=NIL,dFchDec:=NIL
+
+  // Busca el Numero de Retencion Vinculado con la Factura
+
+  IF oDpDocIslr:lVentas
+
+    cNumero:=SQLGET(oDpDocIslr:cTabISLR,"RXC_DOCNUM","RXC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                                                     "RXC_TIPDOC"+GetWhere("=",oDpDocIslr:cTipDoc)+" AND "+;
+                                                     "RXC_NUMDOC"+GetWhere("=",oDpDocIslr:cNumDoc))
+
+  ELSE
+
+    cNumero:=SQLGET(oDpDocIslr:cTabISLR,"RXP_DOCNUM","RXP_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+                                                     "RXP_TIPDOC"+GetWhere("=",oDpDocIslr:cTipDoc)+" AND "+;
+                                                     "RXP_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+                                                     "RXP_NUMDOC"+GetWhere("=",oDpDocIslr:cNumDoc))
+  ENDIF
+
+  // Retencion ya Existe
+
+  IF !Empty(cNumero)
+
+     // Debe actualizar los Datos
+     nNeto    :=oGrid:GetTotal(IF(oDpDocIslr:lVentas,"RXC_MTORET","RXP_MTORET"))
+
+     cWhere  :="DOC_CODSUC"+GetWhere("=",oDpDocIslr:cCodSuc)+" AND "+;
+               "DOC_TIPDOC"+GetWhere("=","RET")+" AND "+;
+               "DOC_CODIGO"+GetWhere("=",oDpDocIslr:cCodTer)+" AND "+;
+               "DOC_NUMERO"+GetWhere("=",cNumero)+" AND "+;
+               "DOC_TIPTRA"+GetWhere("=","D")
+
+     IF "PRO"$oDpDocIslr:cTabTer
+       dFchReg:=SQLGET(oDpDocIslr:cTabTer,"DOC_FECHA,DOC_FCHDEC",cWhere)
+       dFchDec:=DPSQLROW(2,dFchReg)
+     ELSE
+       dFchReg:=SQLGET(oDpDocIslr:cTabTer,"DOC_FECHA",cWhere)
+     ENDIF
+
+     IF !Empty(dFchReg)
+       oDpDocIslr:dFchReg:=dFchReg
+       oDpDocIslr:dFchDec:=dFchDec
+     ENDIF
+
+   RETURN .T.
+
+  ENDIF
+
+RETURN .T.
+
+FUNCTION PRECARGAR()
+   Local cSql,oTable,I
+
+   oDpDocIslr:oFocus:=oDpDocIslr:aGrids[1]:oBrw
+
+   DPFOCUS(oDpDocIslr:aGrids[1]:oBrw)
+
+// ? oDpDocIslr:aGrids[1]:oBrw:ClassName()
+
+
+   IF !oDpDocIslr:lAuto
+     Return .F.
+   ENDIF
+
+ 
+RETURN .T.
+
+FUNCTION VAL_SALIDA()
+RETURN .T.
+
+
+FUNCTION GRIDPREDELETE()
+RETURN .T.
+
+FUNCTION GRIDPOSTDELETE()
+
+   // Recalcula el Monto de la Retencion y lo Guarda en DOC_NETO de la Retención
+   // oDpDocIslr:CREARDOC() // Actualiza Documento
+   // oGrid:GRIDPOSTSAVE(NIL,.F.) // 8/6/16
+   // Para Versión 5.0
+   EJECUTAR("DOCBTNCANCELOFF",oDpDocIslr)
+
+RETURN .T.
+
+
+FUNCTION RETMENU()
+  LOCAL cCodSuc:=oDpDocIslr:cCodSuc  
+  LOCAL cTipDoc:="RET"
+  LOCAL cNumero:=IIF(oDpDocIslr:lVentas,oDpDocIslr:RXC_DOCNUM,oDpDocIslr:RXP_DOCNUM)
+  LOCAL cCodigo:=oDpDocIslr:cCodTer
+  LOCAL cNomDoc:=""
+
+  IF oDpDocIslr:lVentas
+    EJECUTAR("DPCLIDOCMNU",cCodSuc,cTipDoc,cNumero,cCodigo,cNomDoc,NIL)
+  ELSE
+    EJECUTAR("DPPRODOCMNU",cCodSuc,cTipDoc,cNumero,cCodigo,NIL,NIL)
+  ENDIF
+
+RETURN NIL
+
+// Consulta del Documento
+FUNCTION VIEW()
+  LOCAL cTipDoc:="RET"
+  LOCAL cFile:="DPXBASE\DPDOCCLI"+cTipDoc+"CON"
+  LOCAL cCodSuc:=oDpDocIslr:cCodSuc  
+  LOCAL cTipDoc:="RET"
+  LOCAL cNumero:=IF(oDpDocIslr:lVentas,oDpDocIslr:RXC_DOCNUM,oDpDocIslr:RXP_DOCNUM)
+  LOCAL cCodigo:=oDpDocIslr:cCodTer
+  LOCAL cNomDoc:=""
+
+  IF oDpDocIslr:lVentas
+    EJECUTAR("DPDOCCLIFAVCON" ,NIL,cCodSuc,cTipDoc,cNumero,cCodigo,cNomDoc)
+  ELSE
+    EJECUTAR("DPDOCPROFACCON",NIL,cCodSuc,cTipDoc,cNumero,cCodigo)
+  ENDIF
+
+RETURN
+
+FUNCTION VALFCHREG()
+
+  IF oDpDocIslr:dFchReg<oDpDocIslr:DOC_FECHA
+    oDpDocIslr:oFchReg:MsgErr("Debe ser Mayor que Fecha del"+CRLF+"Documento "+DTOC(oDpDocIslr:DOC_FECHA),"Fecha de Registro")
+    RETURN .F.
+  ENDIF
+
+RETURN .T.
+
+FUNCTION VALFCHDEC()
+
+ IF oDpDocIslr:dFchDec<oDpDocIslr:dFchReg
+    oDpDocIslr:oFchReg:MsgErr("Debe ser Mayor que Fecha del"+CRLF+"Registro "+DTOC(oDpDocIslr:dFchReg),"Fecha de Declaración")
+    RETURN .F.
+  ENDIF
+
+// ? "VALFCHDEC()"
+RETURN .T.
+
+// EOF
